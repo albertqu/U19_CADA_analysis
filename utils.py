@@ -122,7 +122,7 @@ def signal_filter_visualize(FP_415_time, FP_415_signal, FP_470_time, FP_470_sign
         plt.plot(FP_470_time, FP_470_signal, 'b-')
         plt.plot(FP_415_time, FP_415_signal, 'm-')
         plt.plot(FP_470_time, np.vstack([f0_perc15, f0_percAuto, f0_rstd]).T)
-        plt.legend(['470 channel', '15-percentile', 'mode-percentile', 'robust-std-filter'])
+        plt.legend(['470 channel', '415 channel', '15-percentile', 'mode-percentile', 'robust-std-filter'])
     plt.xlabel('frames')
     plt.ylabel('Fluorescence (demeaned)')
 
