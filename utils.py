@@ -3,6 +3,7 @@ import time, os
 # Structure
 from collections import deque
 # Data
+import scipy
 import numpy as np
 import pandas as pd
 # Plotting
@@ -10,6 +11,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 # caiman
 from caiman.source_extraction.cnmf.deconvolution import GetSn
+from caiman.source_extraction.cnmf.utilities import fast_prct_filt
+from caiman.utils.stats import df_percentile
 
 
 ##################################################
@@ -43,7 +46,13 @@ def get_sources_from_csv(csvfile):
 ########################################################
 
 
-def f0_filter_sig(xs, ys, method=2, width=30):
+def sources_get_noise_power(s415, s470):
+    npower415 = GetSn(s415)
+    npower470 = GetSn(s470)
+    return npower415, npower470
+
+
+def f0_filter_sig(xs, ys, method=2, window=200):
     """
     Return:
         dff: np.ndarray (T, 2)
@@ -51,22 +60,29 @@ def f0_filter_sig(xs, ys, method=2, width=30):
             col1: boundary scale for noise level
     """
     if method < 10:
-        mf, mDC = median_filter(width, method)
+        mf, mDC = median_filter(window, method)
     else:
-        mf, mDC = std_filter(width, method%10, buffer=True)
+        mf, mDC = std_filter(window, method%10, buffer=True)
     dff = np.array([(mf(ys, i), mDC.get_dev()) for i in range(len(ys))])
     return dff
 
 
-def calcium_dff(xs, ys, method=2, width=30):
-    f0 =f0_filter_sig(xs, ys, method=method, width=width)[:, 0]
+def percentile_filter(xs, ys, window=200, perc=None):
+    # TODO: 1D signal only
+    if perc is None:
+        perc, val = df_percentile(ys[:window])
+    return scipy.ndimage.percentile_filter(ys, perc, window)
+
+
+def isosbestic_baseline_correct(xs, ys, method=12, window=200):
+    # TODO: this is the greedy method with only the mean estimation
+    return f0_filter_sig(xs, ys, method=method, window=window)[:, 0]
+
+
+def calcium_dff(xs, ys, xs0=None, y0=None, method=2, window=200):
+    f0 =f0_filter_sig(xs, ys, method=method, window=window)[:, 0]
     return (ys-f0) / f0
 
-
-def sources_get_noise_power(s415, s470):
-    npower415 = GetSn(s415)
-    npower470 = GetSn(s470)
-    return npower415, npower470
 
 
 ##################################################
@@ -82,13 +98,49 @@ def visualize_dist(FP_415_time, FP_415_signal, FP_470_time, FP_470_signal, sampl
     #plt.hist([dm_415, dm_470])
 
 
-def signal_filter_visualize(FP_415_time, FP_415_signal, FP_470_time, FP_470_signal, samples=200):
-    fil = f0_filter_sig(FP_415_time, FP_415_signal, method=12, width=200)[:, 0]
-    plt.plot(FP_470_time, FP_470_signal - np.mean(FP_470_signal), 'b-', FP_415_time, FP_415_signal - np.mean(
-        FP_415_signal), 'm-')
-    plt.plot(FP_415_time, fil - np.mean(FP_415_signal))
-    plt.legend(['470', '415',
-                'filtered'])
+def signal_filter_visualize(FP_415_time, FP_415_signal, FP_470_time, FP_470_signal,
+                            isosbestic=True, window=200):
+    # For visualize purpose, all signals are demeaned first:
+    FP_470_signal = FP_470_signal - np.mean(FP_470_signal)
+    FP_415_signal = FP_415_signal - np.mean(FP_415_signal)
+    if isosbestic:
+        f0 = isosbestic_baseline_correct(FP_415_time, FP_415_signal, window=window)
+        n415, n470 = sources_get_noise_power(FP_415_signal, FP_470_signal)
+        std415, std470 = np.std(FP_415_signal, ddof=1), np.std(FP_470_signal, ddof=1)
+        f0_npower_correct = f0 * n470 / n415
+        f0_std_correct = f0 * std470 / std415
+        plt.plot(FP_470_time, FP_470_signal, 'b-')
+        plt.plot(FP_415_time, FP_415_signal, 'm-')
+        plt.plot(FP_415_time, np.vstack([f0, f0_npower_correct, f0_std_correct]).T)
+        plt.legend(['470 channel', '415 channel (isosbestic)', 'raw baseline', 'noise-power-correct',
+                    'sig-power-correct'])
+    else:
+        f0_rstd = f0_filter_sig(FP_470_time, FP_470_signal, method=12, window=window)[:, 0]
+        # similar to Pnevmatikakis 2016 and caiman library
+        f0_perc15 = percentile_filter(FP_470_time, FP_470_signal, window=window, perc=15)
+        f0_percAuto = percentile_filter(FP_470_time, FP_470_signal, window=window, perc=None)
+        plt.plot(FP_470_time, FP_470_signal, 'b-')
+        plt.plot(FP_470_time, np.vstack([f0_perc15, f0_percAuto, f0_rstd]).T)
+        plt.legend(['470 channel', '15-percentile', 'mode-percentile', 'robust-std-filter'])
+    plt.xlabel('frames')
+    plt.ylabel('Fluorescence (demeaned)')
+
+
+def raw_signal_visualize(FP_415_time, FP_415_signal, FP_470_time, FP_470_signal):
+    # For visualize purpose, all signals are demeaned first:
+    fig, axes = plt.subplots(nrows=2, ncols=1, sharex=True)
+    axes[0].plot(FP_470_time, FP_470_signal, 'b-')
+    axes[0].plot(FP_415_time, FP_415_signal, 'm-')
+    axes[0].legend(['470 channel', '415 channel (isosbestic)'])
+    axes[0].set_ylabel('Fluorescence')
+
+    FP_470_signal = FP_470_signal - np.mean(FP_470_signal)
+    FP_415_signal = FP_415_signal - np.mean(FP_415_signal)
+    axes[1].plot(FP_470_time, FP_470_signal, 'b-')
+    axes[1].plot(FP_415_time, FP_415_signal, 'm-')
+    axes[1].legend(['470 channel', '415 channel (isosbestic)'])
+    axes[1].set_xlabel('frames')
+    axes[1].set_ylabel('Fluorescence (demeaned)')
 
 
 ########################################################
