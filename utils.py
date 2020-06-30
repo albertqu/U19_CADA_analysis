@@ -120,6 +120,7 @@ def signal_filter_visualize(FP_415_time, FP_415_signal, FP_470_time, FP_470_sign
         f0_perc15 = percentile_filter(FP_470_time, FP_470_signal, window=window, perc=15)
         f0_percAuto = percentile_filter(FP_470_time, FP_470_signal, window=window, perc=None)
         plt.plot(FP_470_time, FP_470_signal, 'b-')
+        plt.plot(FP_415_time, FP_415_signal, 'm-')
         plt.plot(FP_470_time, np.vstack([f0_perc15, f0_percAuto, f0_rstd]).T)
         plt.legend(['470 channel', '15-percentile', 'mode-percentile', 'robust-std-filter'])
     plt.xlabel('frames')
