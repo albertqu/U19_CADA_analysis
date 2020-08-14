@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from scipy.sparse import diags as spdiags
 from scipy.sparse import linalg as sp_linalg
+from scipy import interpolate
 # Plotting
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -54,50 +55,82 @@ def get_prob_switch_all_sessions(folder):
     pass
 
 
-def get_sources_from_csv(csvfile, window = 400):
-    pdf = pd.read_csv(csvfile, delimiter=" ", names=['time', 'calcium'], usecols=[0, 1])
-    FP_time = pdf.time.values
-    FP_signal = pdf.calcium.values
+def get_sources_from_csvs(csvfiles, window=400, tags=None, show=False):
+    """
+    Extract sources from a list of csvfiles, with csvfile[0] be channels with cleaniest
+    TODO: potentially use the fact that 415 has the same timestamps to speed up the process
+    :param csvfiles:
+    :param window:
+    :return:
+    """
+    FP_REC_signals = [None] * len(csvfiles)
+    FP_REC_times = [None] * len(csvfiles)
+    FP_415_signals = [None] * len(csvfiles)
+    FP_415_times = [None] * len(csvfiles)
+    FP_415_sel = None
+    for i in range(len(csvfiles)):
+        csvfile = csvfiles[i]
+        # Signal Sorting
+        pdf = pd.read_csv(csvfile, delimiter=" ", names=['time', 'calcium'], usecols=[0, 1])
+        FP_time = pdf.time.values
+        FP_signal = pdf.calcium.values
 
-    # # Plain Threshold
-    # min_signal, max_signal = np.min(FP_signal), np.max(FP_signal)
-    # intensity_threshold = min_signal+(max_signal - min_signal)*0.4
+        # # Plain Threshold
+        # min_signal, max_signal = np.min(FP_signal), np.max(FP_signal)
+        # intensity_threshold = min_signal+(max_signal - min_signal)*0.4
 
-    # Dynamic Threshold
-    n_win = len(FP_signal) // window
-    bulk = n_win * window
-    edge = len(FP_signal) - bulk
-    first_batch = FP_signal[:bulk].reshape((n_win, window), order='C')
-    end_batch = FP_signal[-window:]
-    edge_batch = FP_signal[-edge:]
-    sigT_sels = np.concatenate([(first_batch > np.mean(first_batch, keepdims=True, axis=1))
-                               .reshape(bulk, order='C'), edge_batch > np.mean(end_batch)])
+        # Dynamic Threshold
+        n_win = len(FP_signal) // window
+        bulk = n_win * window
+        edge = len(FP_signal) - bulk
+        first_batch = FP_signal[:bulk].reshape((n_win, window), order='C')
+        end_batch = FP_signal[-window:]
+        edge_batch = FP_signal[-edge:]
+        sigT_sels = np.concatenate([(first_batch > np.mean(first_batch, keepdims=True, axis=1))
+                                   .reshape(bulk, order='C'), edge_batch > np.mean(end_batch)])
 
-    sigD_sels = ~sigT_sels
-    FP_top_signal, FP_top_time = FP_signal[sigT_sels], FP_time[sigT_sels]
-    FP_down_signal, FP_down_time = FP_signal[sigD_sels], FP_time[sigD_sels]
-    topN, downN = len(FP_top_signal)//window, len(FP_down_signal)//window
-    top_dyn_std = np.std(FP_top_signal[:topN * window].reshape((topN, window),order='C'), axis=1).mean()
-    down_dyn_std = np.std(FP_down_signal[:downN * window].reshape((downN, window), order='C'), axis=1).mean()
-    # TODO: check for consecutives
-    # TODO: check edge case when only 415 has signal
-    if top_dyn_std >= down_dyn_std:
-        sigREC_sel, sig415_sel = sigT_sels, sigD_sels
-        FP_REC_signal, FP_REC_time = FP_top_signal, FP_top_time
-        FP_415_signal, FP_415_time = FP_down_signal, FP_down_time
-    else:
-        sigREC_sel, sig415_sel = sigD_sels, sigT_sels
-        FP_REC_signal, FP_REC_time = FP_down_signal, FP_down_time
-        FP_415_signal, FP_415_time = FP_top_signal, FP_top_time
+        sigD_sels = ~sigT_sels
+        FP_top_signal, FP_top_time = FP_signal[sigT_sels], FP_time[sigT_sels]
+        FP_down_signal, FP_down_time = FP_signal[sigD_sels], FP_time[sigD_sels]
+        topN, downN = len(FP_top_signal)//window, len(FP_down_signal)//window
+        top_dyn_std = np.std(FP_top_signal[:topN * window].reshape((topN, window),order='C'), axis=1).mean()
+        down_dyn_std = np.std(FP_down_signal[:downN * window].reshape((downN,window),order='C'),axis=1).mean()
+        # TODO: check for consecutives
+        # TODO: check edge case when only 415 has signal
+        if top_dyn_std >= down_dyn_std:
+            sigREC_sel, sig415_sel = sigT_sels, sigD_sels
+            FP_REC_signals[i], FP_REC_times[i] = FP_top_signal, FP_top_time
+            FP_415_signals[i], FP_415_times[i] = FP_down_signal, FP_down_time
+        else:
+            sigREC_sel, sig415_sel = sigD_sels, sigT_sels
+            FP_REC_signals[i], FP_REC_times[i] = FP_down_signal, FP_down_time
+            FP_415_signals[i], FP_415_times[i] = FP_top_signal, FP_top_time
+    if tags is None:
+        tags = [f'REC{i}' for i in range(len(csvfiles))]
 
-    # TODO: visualization of the separated channel, figure out best color
-
+    if show:
+        fig, axes = plt.subplots(nrows=len(csvfiles), ncols=1, sharex=True)
+        for i in range(len(csvfiles)):
+            axes[i].plot(FP_REC_times[i], FP_REC_signals[i], label=tags[i])
+            axes[i].plot(FP_415_times[i], FP_415_signals[i], label='415')
+            axes[i].legend()
     # TODO: save as pd.DataFrame
-    return FP_415_time, FP_415_signal, FP_REC_time, FP_REC_signal
+    if len(csvfiles) == 1:
+        return FP_REC_times[0], FP_REC_signals[0], FP_415_times[0], FP_415_signals[0]
+    # TODO: if shape uniform merge signals
+    return FP_REC_times, FP_REC_signals, FP_415_times, FP_415_signals
+
+
+def path_prefix_free(path, symbol='/'):
+    if path[-len(symbol):] == symbol:
+        return path[path.rfind(symbol, 0, -len(symbol))+len(symbol):-len(symbol)]
+    else:
+        return path[path.rfind(symbol) + len(symbol):]
 
 
 def decode_from_filename(filename):
     """
+    TODO: Needs more testing for multiple sessions
     `A2A-15B_RT_20200612_ProbSwitch_p243_FP_RH`, `D1-27H_LT_20200314_ProbSwitch_FP_RH_p103`
     behavioral: * **Gen-ID_EarPoke_Time_DNAME_Age_special.mat**
 FP: **Gen-ID_EarPoke_DNAME2_Hemi_Age_channel_Time(dash)[Otherthing].csv**
@@ -108,17 +141,27 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
     :param filename:
     :return:
     """
-    # case behavior
-    mBMat = re.search(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_(?P<T>\d+)_(?P<DN>[-&\w]+)_("
+    filename = path_prefix_free(filename)
+    # case exper
+    mBMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_(?P<T>\d+)_(?P<DN>[-&\w]+)_("
                       r"?P<A>p\d+)(?P<SP>[-&\w]*)\.mat", filename)
+    # case processed behavior
+    mPBMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
+                      r"(?P<A>p\d+)(?P<S>_session\d+_|_?)behavior_data.mat", filename)
     # case binary
     mBIN = None
     options, ftype = None, None
     if mBMat is not None:
         options = mBMat.groupdict()
+        ftype = "exper"
+        oS = options["SP"]
+    elif mPBMat is not None:
+        options = mPBMat.groupdict()
         ftype = "behavior"
+        oS = options["S"]
     elif mBIN is not None:
         options = mBIN.groupdict()
+        oS = ""
         ftype = "bin_mat"
     else:
         # case csv
@@ -126,30 +169,61 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
         """A2A-16B-1_RT_ChR2_switch_no_cue_LH_p147_red_2020-03-17T15_38_40.csv"""
         channels = ['keystrokes', "MetaData", "NIDAQ_Ai0_timestamp", "red", "green"]
         for c in channels:
-            mCSV = re.search(
+            mCSV = re.match(
                 r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_(?P<DN>[-&\w]+)_(?P<H>[LR]H)_"
                 r"(?P<A>p\d+)(?P<SP>[-&\w]*)" + f"_{c}" + r"(?P<S>_session\d+_|_?)(?P<T>\d{4}-?\d{2}-?\d{2})T"
                 r"(?P<TD>[_\d]+)\.csv", filename)
 
             if mCSV is not None:
                 options = mCSV.groupdict()
-                # if options['CH'] == 'green' or options['CH'] == 'red':
-                #     ftype = "FP"
-                # if "session2" in filename:
                 ftype = c
+                oS = options["S"]
+                break
                 # print(filename)
                 # print(options)
         if ftype is None:
-            print("special:", filename)
+            #print("special:", filename)
+            return None
+    mS = re.match(r".*(session\d+).*", oS)
+    fS = ""
+    if mS:
+        fS = "_"+mS.group(1)
+    options["ftype"] = ftype
+    options["animal"] = options['GEN'] + "-" + options["ID"] + "_" + options["EP"]
+    options["session"] = options['A'] + fS
+    return options
 
 
-def encode_to_filename(options, ftype):
+def encode_to_filename(folder, animal, session, ftypes="processed_all"):
     """ TODO: refer to caiman for function
     :param options:
-    :param ftype: if ftype=="all": returns all 5 files
+    :param ftype: if ftypes=="all": returns all 5 files
     :return:
     """
-    pass
+    # TODO: enable aliasing
+    paths = [os.path.join(folder, animal, session), os.path.join(folder, animal+'_'+session),
+             os.path.join(folder, animal), folder]
+    if ftypes == "raw all":
+        ftypes = ["exper", "bin_mat", "green", "red"]
+    elif ftypes == "processed_all":
+        ftypes = ["behavior", "green", "red"]
+    elif isinstance(ftypes, str):
+        ftypes = [ftypes]
+    results = {ft: None for ft in ftypes}
+    registers = 0
+    for p in paths:
+        if os.path.exists(p):
+            for f in os.listdir(p):
+                opt = decode_from_filename(f)
+                if opt is not None:
+                    ift = opt['ftype']
+                    if ift in ftypes and results[ift] is None:
+
+                        results[ift] = os.path.join(p, f)
+                        registers += 1
+                        if registers == len(ftypes):
+                            return results if len(results) > 1 else results[ift]
+    return results if len(results) > 1 else list(results.values())[0]
 
 
 def access_mat_with_path(mat, p, ravel=False, dtype=None, raw=False):
@@ -161,6 +235,7 @@ def access_mat_with_path(mat, p, ravel=False, dtype=None, raw=False):
                 hemisphere/
                 region/
             time/
+                center_in/
                 contra/
                 contra_rew/
                 contra_unrew/
@@ -172,8 +247,9 @@ def access_mat_with_path(mat, p, ravel=False, dtype=None, raw=False):
                 left_in_choice/
                 right_in_choice/
             trial_event_FP_time/
-            trials/ (1-indexed)
+            trials/
                 ITI/
+                center_in/
                 center_to_side/
                 contra/
                 contra_rew/
@@ -191,9 +267,12 @@ def access_mat_with_path(mat, p, ravel=False, dtype=None, raw=False):
             value/
                 center_to_side_times/
                 contra/
+                cue_port_side/
                 execute/
                 initiate/
                 ipsi/
+                port_side/
+                result/ : 1.2=reward, 1.1 = correct omission, 2 = incorrect, 3 = no choice,  0: undefined
                 side_to_center_time/
                 time_to_left/
                 time_to_right/
@@ -222,13 +301,41 @@ def recursive_mat_dict_view(mat, prefix=''):
 ########################################################
 
 
+def raw_fluor_to_dff(rec_time, rec_sig, iso_time, iso_sig, baseline_method='robust', zscore=False, **kwargs):
+    """ Takes in 1d signal and convert to dff (zscore dff)
+    :param rec_sig:
+    :param rec_time:
+    :param iso_sig:
+    :param iso_time:
+    :param baseline_method:
+    :param zscore:
+    :param kwargs:
+    :return:
+    """
+    # TODO: More in-depth analysis of the best baselining approach with quantitative metrics
+    if baseline_method == 'robust':
+        f0 = f0_filter_sig(rec_time, rec_sig, **kwargs)[:, 0]
+    elif baseline_method == 'isobestic':
+        dc_rec, dc_iso = np.mean(rec_sig), np.mean(iso_sig)
+        dm_rec_sig, dm_iso_sig = rec_sig - dc_rec, iso_sig - dc_iso
+        # TODO: implement impulse based optimization
+        f0_iso = isosbestic_baseline_correct(iso_time, dm_iso_sig, **kwargs) + dc_rec
+        f0 = f0_iso
+        if iso_time.shape != rec_time.shape or np.allclose(iso_time, rec_time):
+            f0 = interpolate.interp1d(iso_time, f0_iso, fill_value='extrapolate')(rec_time)
+    else:
+        raise NotImplementedError(f"Unknown baseline method {baseline_method}")
+    dff = (rec_sig - f0) / (f0 + 1e-16)
+    return (dff - np.mean(dff)) / np.std(dff, ddof=1) if zscore else dff
+
+
 def sources_get_noise_power(s415, s470):
     npower415 = GetSn(s415)
     npower470 = GetSn(s470)
     return npower415, npower470
 
 
-def f0_filter_sig(xs, ys, method=2, window=200):
+def f0_filter_sig(xs, ys, method=12, window=200):
     """
     Return:
         dff: np.ndarray (T, 2)
@@ -250,12 +357,12 @@ def percentile_filter(xs, ys, window=200, perc=None):
     return scipy.ndimage.percentile_filter(ys, perc, window)
 
 
-def isosbestic_baseline_correct(xs, ys, method=12, window=200):
+def isosbestic_baseline_correct(xs, ys, window=200, perc=50):
     # TODO: this is the greedy method with only the mean estimation
-    return f0_filter_sig(xs, ys, method=method, window=window)[:, 0]
+    #return f0_filter_sig(xs, ys, method=method, window=window)[:, 0]
+    return percentile_filter(xs, ys, window, perc)
 
-
-def calcium_dff(xs, ys, xs0=None, y0=None, method=2, window=200):
+def calcium_dff(xs, ys, xs0=None, y0=None, method=12, window=200):
     f0 =f0_filter_sig(xs, ys, method=method, window=window)[:, 0]
     return (ys-f0) / f0
 
