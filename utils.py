@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from scipy.sparse import diags as spdiags
 from scipy.sparse import linalg as sp_linalg
-from scipy import interpolate
+from scipy import interpolate, signal
 # Plotting
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -28,7 +28,7 @@ except ModuleNotFoundError:
 ##################################################
 
 
-def get_session_files_FP_ProbSwitch(folder, group, photometry='both', choices=None, processed=True):
+def get_session_files_FP_ProbSwitch(folder, groups):
     """ Returns lists of session files of different recording type
     :param group: str, expression
     :param photometry:
@@ -38,21 +38,53 @@ def get_session_files_FP_ProbSwitch(folder, group, photometry='both', choices=No
     """
     only_Ca = []
     only_DA = []
-    if processed:
-        results = []
-        return
-    else:
-        matfiles, red, green, binary, timestamps = [], [], [], [], []
-        return matfiles, red, green, binary, timestamps
+    results = {g: {a: [] for a in groups[g]} for g in groups}
+    for d in os.listdir(folder):
+        if os.path.isdir(os.path.join(folder, d)):
+            m = re.match("^(?P<animal>\w{2,3}-\d{2,}[-\w*]*_[A-Z]{2})_(?P<session>p\d+\w+)", d)
+            if m:
+                animal, day = m.group('animal'), m.group('session')
+                group_dict = results[animal.split("-")[0]]
+                if animal in group_dict:
+                    group_dict[animal].append(day)
+                elif animal not in group_dict and '*' in group_dict:
+                    group_dict[animal] = [day]
+    for g in results:
+        del results[g]['*']
+    return results
 
 
-def get_prob_switch_all_sessions(folder):
+def get_prob_switch_all_sessions(folder, groups):
     """ Exhaustively check all folder that contains ProbSwitch task .mat files and encode all sessions.
     .mat -> decode -> return group
     :param folder:
     :return:
     """
-    pass
+    only_Ca = []
+    only_DA = []
+    results = {g: {a: [] for a in groups[g]} for g in groups}
+    for d in os.listdir(folder):
+        if os.path.isdir(os.path.join(folder, d)):
+            m = re.match("^(?P<animal>\w{2,3}-\d{2,}[-\w*]*_[A-Z]{2})_(?P<session>p\d+\w+)", d)
+            if m:
+                animal, day = m.group('animal'), m.group('session')
+                group_dict = results[animal.split("-")[0]]
+                if animal in group_dict:
+                    group_dict[animal].append(day)
+                elif animal not in group_dict and '*' in group_dict:
+                    group_dict[animal] = [day]
+    for g in results:
+        del results[g]['*']
+    return results
+
+
+def check_FP_contain_dff_method(fp, methods, sig='DA'):
+    if fp is None:
+        return False
+    if isinstance(methods, str):
+        methods = [methods]
+    with h5py.File(fp, 'r') as hf:
+        return np.all([f'{sig}/dff/{m}' in hf for m in methods])
 
 
 def get_sources_from_csvs(csvfiles, window=400, tags=None, show=False):
@@ -121,11 +153,21 @@ def get_sources_from_csvs(csvfiles, window=400, tags=None, show=False):
     return FP_REC_times, FP_REC_signals, FP_415_times, FP_415_signals
 
 
-def path_prefix_free(path, symbol='/'):
+def path_prefix_free(path):
+    symbol = os.path.sep
     if path[-len(symbol):] == symbol:
         return path[path.rfind(symbol, 0, -len(symbol))+len(symbol):-len(symbol)]
     else:
         return path[path.rfind(symbol) + len(symbol):]
+
+
+def file_folder_path(f):
+    symbol = os.path.sep
+    len_sym = len(symbol)
+    if f[-len_sym:] == symbol:
+        return f[:f.rfind(symbol, 0, -len_sym)]
+    else:
+        return f[:f.rfind(symbol)]
 
 
 def decode_from_filename(filename):
@@ -147,23 +189,39 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
                       r"?P<A>p\d+)(?P<SP>[-&\w]*)\.mat", filename)
     # case processed behavior
     mPBMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
-                      r"(?P<A>p\d+)(?P<S>_session\d+_|_?)behavior_data.mat", filename)
+                      r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>FP_[LR]H)_behavior_data.mat", filename)
+    mFPMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
+                      r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>FP_[LR]H).hdf5", filename)
     # case binary
     mBIN = None
     options, ftype = None, None
     if mBMat is not None:
+        # TODO: handle session#
         options = mBMat.groupdict()
         ftype = "exper"
         oS = options["SP"]
+        options["H"] = ""
+        dn_match = re.match(".*(FP_[LR]H).*", options['DN'])
+        sp_match = re.match(".*(FP_[LR]H).*", options['SP'])
+        if dn_match:
+            options["H"] = dn_match.group(1)
+        elif sp_match:
+            options['H'] = sp_match.group(1)
     elif mPBMat is not None:
         options = mPBMat.groupdict()
         ftype = "behavior"
         oS = options["S"]
+    elif mFPMat is not None:
+        options = mFPMat.groupdict()
+        ftype = "FP"
+        oS = options['S']
     elif mBIN is not None:
+        # TODO: fill it up
         options = mBIN.groupdict()
         oS = ""
         ftype = "bin_mat"
     else:
+        #TODO: print("Warning! Certain sessions have inconsistent naming! needs more through check")
         # case csv
         #todo: merge cage id and earpoke
         """A2A-16B-1_RT_ChR2_switch_no_cue_LH_p147_red_2020-03-17T15_38_40.csv"""
@@ -178,6 +236,7 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
                 options = mCSV.groupdict()
                 ftype = c
                 oS = options["S"]
+                options['H'] = "FP_" + options['H']
                 break
                 # print(filename)
                 # print(options)
@@ -190,7 +249,7 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
         fS = "_"+mS.group(1)
     options["ftype"] = ftype
     options["animal"] = options['GEN'] + "-" + options["ID"] + "_" + options["EP"]
-    options["session"] = options['A'] + fS
+    options["session"] = options['A'] + fS + (("_"+options['H']) if options['H'] else "")
     return options
 
 
@@ -206,7 +265,7 @@ def encode_to_filename(folder, animal, session, ftypes="processed_all"):
     if ftypes == "raw all":
         ftypes = ["exper", "bin_mat", "green", "red"]
     elif ftypes == "processed_all":
-        ftypes = ["behavior", "green", "red"]
+        ftypes = ["behavior", "green", "red", "FP"]
     elif isinstance(ftypes, str):
         ftypes = [ftypes]
     results = {ft: None for ft in ftypes}
@@ -217,8 +276,8 @@ def encode_to_filename(folder, animal, session, ftypes="processed_all"):
                 opt = decode_from_filename(f)
                 if opt is not None:
                     ift = opt['ftype']
-                    if ift in ftypes and results[ift] is None:
-
+                    check_mark = opt['animal'] == animal and opt['session'] == session
+                    if ift in ftypes and results[ift] is None and check_mark:
                         results[ift] = os.path.join(p, f)
                         registers += 1
                         if registers == len(ftypes):
@@ -255,7 +314,7 @@ def access_mat_with_path(mat, p, ravel=False, dtype=None, raw=False):
                 contra_rew/
                 contra_unrew/
                 execute/
-                initiate/
+                initiate/ termination of the trial.
                 ipsi/
                 ipsi_rew/
                 ipsi_unrew/
@@ -313,8 +372,18 @@ def raw_fluor_to_dff(rec_time, rec_sig, iso_time, iso_sig, baseline_method='robu
     :return:
     """
     # TODO: More in-depth analysis of the best baselining approach with quantitative metrics
+    bms = baseline_method.split('_')
+    fast = False
+    if len(bms) > 1:
+        fast = bms[-1] == 'fast'
+        baseline_method = bms[0]
     if baseline_method == 'robust':
-        f0 = f0_filter_sig(rec_time, rec_sig, **kwargs)[:, 0]
+        f0 = f0_filter_sig(rec_time, rec_sig, buffer=not fast, **kwargs)[:, 0]
+    elif baseline_method == 'mode':
+        f0 = percentile_filter(rec_time, rec_sig, perc=None, **kwargs)
+    elif baseline_method.startswith('perc'):
+        pc = int(baseline_method[4:])
+        f0 = percentile_filter(rec_time, rec_sig, perc=pc, **kwargs)
     elif baseline_method == 'isobestic':
         dc_rec, dc_iso = np.mean(rec_sig), np.mean(iso_sig)
         dm_rec_sig, dm_iso_sig = rec_sig - dc_rec, iso_sig - dc_iso
@@ -335,8 +404,40 @@ def sources_get_noise_power(s415, s470):
     return npower415, npower470
 
 
-def f0_filter_sig(xs, ys, method=12, window=200):
+def get_sample_interval(times):
+    return np.around((np.max(times) - np.min(times)) / len(times), 0)
+
+
+def resample_quasi_uniform(sig, times, method='interpolate'):
+    if np.sum(np.diff(times) < 0) > 0:
+        shuffles = np.argsort(times)
+        sig = sig[shuffles]
+        times = times[shuffles]
+    si = get_sample_interval(times)
+    T0, Tm = np.min(times), np.max(times)
+    if method == 'interpolate':
+        new_times = np.arange(T0, Tm, si)
+        new_sig = interpolate.interp1d(times, sig, fill_value='extrapolate')(new_times)
+    elif method == 'fft':
+        new_sig, new_times = signal.resample(sig, int((Tm-T0) // si), t=times)
+    else:
+        raise NotImplementedError(f'unknown method {method}')
+    return new_sig, new_times
+
+
+def denoise_quasi_uniform(sig, times, method='wiener'):
+    new_sig, new_times = resample_quasi_uniform(sig, times)
+    if method == 'wiener':
+        return signal.wiener(new_sig), new_times
+    else:
+        raise NotImplementedError(f'Unknown method {method}')
+
+
+def f0_filter_sig(xs, ys, method=12, window=200, optimize_window=2, edge_method='prepend', buffer=False,
+                  **kwargs):
     """
+    First 2 * windows re-estimate with mode filter
+    To avoid edge effects as beginning, it uses mode filter; better solution: specify initial conditions
     Return:
         dff: np.ndarray (T, 2)
             col0: dff
@@ -345,22 +446,46 @@ def f0_filter_sig(xs, ys, method=12, window=200):
     if method < 10:
         mf, mDC = median_filter(window, method)
     else:
-        mf, mDC = std_filter(window, method%10, buffer=True)
-    dff = np.array([(mf(ys, i), mDC.get_dev()) for i in range(len(ys))])
+        mf, mDC = std_filter(window, method%10, buffer=buffer)
+    opt_w = int(np.rint(optimize_window * window))
+    # prepend
+    init_win_ys = ys[:opt_w]
+    init_win_xs = xs[:opt_w]
+    if edge_method == 'init':
+        # subpar method so far, use prepend
+        initial = percentile_filter(init_win_xs, init_win_ys, window)
+        initial_std = np.sqrt(max(0, np.mean(np.square(init_win_ys - initial))))
+        m2 = np.mean(np.square(init_win_ys[init_win_ys - initial < (method % 10) * initial_std]))
+        mDC.set_init(np.mean(initial[:window]), np.std(initial, ddof=1))
+        dff = np.array([(mf(ys, i), mDC.get_dev()) for i in range(len(ys))])
+    elif edge_method == 'prepend':
+        prepend_xs = init_win_xs[opt_w-1:0:-1]
+        prepend_ys = init_win_ys[opt_w-1:0:-1]
+        prepend_xs = 2 * np.min(init_win_xs) - prepend_xs
+        ys_pp = np.concatenate([prepend_ys, ys])
+        xs_pp = np.concatenate([prepend_xs, xs])
+        dff = np.array([(mf(ys_pp, i), mDC.get_dev()) for i in range(len(ys_pp))])[opt_w-1:]
+    elif edge_method == 'mode':
+        dff = np.array([(mf(ys, i), mDC.get_dev()) for i in range(len(ys))])
+        dff[:opt_w, 0] = percentile_filter(init_win_xs, init_win_ys, window)
+    else:
+        raise NotImplementedError(f"Unknown method {edge_method}")
+
     return dff
 
 
-def percentile_filter(xs, ys, window=200, perc=None):
+def percentile_filter(xs, ys, window=200, perc=None, **kwargs):
     # TODO: 1D signal only
     if perc is None:
         perc, val = df_percentile(ys[:window])
     return scipy.ndimage.percentile_filter(ys, perc, window)
 
 
-def isosbestic_baseline_correct(xs, ys, window=200, perc=50):
+def isosbestic_baseline_correct(xs, ys, window=200, perc=50, **kwargs):
     # TODO: this is the greedy method with only the mean estimation
     #return f0_filter_sig(xs, ys, method=method, window=window)[:, 0]
     return percentile_filter(xs, ys, window, perc)
+
 
 def calcium_dff(xs, ys, xs0=None, y0=None, method=12, window=200):
     f0 =f0_filter_sig(xs, ys, method=method, window=window)[:, 0]
@@ -403,6 +528,18 @@ def inverse_kernel(c, N=None, fft=True):
         H = spdiags([np.full(N, ic) for ic in c], np.arange(0, -3, step=-1), format='csc')
         G = sp_linalg.inv(H)
         return G[-1, ::-1]
+
+
+def moving_average(s, window=30, non_overlap=False, pad=False):
+    # pad in front
+    if non_overlap:
+        smoothen = [np.mean(s[i:i + window]) for i in range(0, len(s) - window + 1, window)]
+    else:
+        smoothen = [np.mean(s[i:i + window]) for i in range(len(s) - window + 1)]
+    if pad:
+        return np.concatenate((np.full(window-1, smoothen[0]), smoothen))
+    else:
+        return smoothen
 
 
 ########################################################
@@ -539,33 +676,40 @@ def visualize_dist(FP_415_time, FP_415_signal, FP_470_time, FP_470_signal, sampl
 
 
 def signal_filter_visualize(FP_415_time, FP_415_signal, FP_470_time, FP_470_signal,
-                            isosbestic=True, window=200):
+                            isosbestic=True, **kwargs):
     # For visualize purpose, all signals are demeaned first:
+    # kwargs might not be the best usage here
     # TODO: add exclude event property
-    FP_470_signal = FP_470_signal - np.mean(FP_470_signal)
-    FP_415_signal = FP_415_signal - np.mean(FP_415_signal)
+    mean_470 = np.mean(FP_470_signal)
+    m = mean_470
+    mean_415 = np.mean(FP_415_signal)
+    FP_470_signal = FP_470_signal - mean_470
+    FP_415_signal = FP_415_signal - mean_415
     if isosbestic:
-        f0 = isosbestic_baseline_correct(FP_415_time, FP_415_signal, window=window)
+        f0 = isosbestic_baseline_correct(FP_415_time, FP_415_signal+m, **kwargs)
         n415, n470 = sources_get_noise_power(FP_415_signal, FP_470_signal)
         std415, std470 = np.std(FP_415_signal, ddof=1), np.std(FP_470_signal, ddof=1)
         f0_npower_correct = f0 * n470 / n415
         f0_std_correct = f0 * std470 / std415
-        plt.plot(FP_470_time, FP_470_signal, 'b-')
-        plt.plot(FP_415_time, FP_415_signal, 'm-')
+        bases = {'415_mean': f0, 'f0_npower_correct': f0_npower_correct, 'f0_std_correct': f0_std_correct}
+        plt.plot(FP_415_time, FP_415_signal+m, 'm-')
+        plt.plot(FP_470_time, FP_470_signal+m, 'b-')
         plt.plot(FP_415_time, np.vstack([f0, f0_npower_correct, f0_std_correct]).T)
-        plt.legend(['470 channel', '415 channel (isosbestic)', 'raw baseline', 'noise-power-correct',
+        plt.legend(['415 channel (isosbestic)', '470 channel', 'raw baseline', 'noise-power-correct',
                     'sig-power-correct'])
     else:
-        f0_rstd = f0_filter_sig(FP_470_time, FP_470_signal, method=12, window=window)[:, 0]
+        f0_rstd = f0_filter_sig(FP_470_time, FP_470_signal+m, **kwargs)[:, 0]
         # similar to Pnevmatikakis 2016 and caiman library
-        f0_perc15 = percentile_filter(FP_470_time, FP_470_signal, window=window, perc=15)
-        f0_percAuto = percentile_filter(FP_470_time, FP_470_signal, window=window, perc=None)
-        plt.plot(FP_470_time, FP_470_signal, 'b-')
-        plt.plot(FP_415_time, FP_415_signal, 'm-')
+        f0_perc15 = percentile_filter(FP_470_time, FP_470_signal+m, perc=15, **kwargs)
+        f0_percAuto = percentile_filter(FP_470_time, FP_470_signal+m, perc=None, **kwargs)
+        bases = {'robust': f0_rstd, 'f0_perc15': f0_perc15, 'f0_percAuto': f0_percAuto}
+        plt.plot(FP_415_time, FP_415_signal+m, 'm-')
+        plt.plot(FP_470_time, FP_470_signal+m, 'b-')
         plt.plot(FP_470_time, np.vstack([f0_perc15, f0_percAuto, f0_rstd]).T)
-        plt.legend(['470 channel', '415 channel', '15-percentile', 'mode-percentile', 'robust-std-filter'])
+        plt.legend(['415 channel', '470 channel', '15-percentile', 'mode-percentile', 'robust-std-filter'])
     plt.xlabel('frames')
     plt.ylabel('Fluorescence (demeaned)')
+    return bases
 
 
 def raw_signal_visualize(FP_415_time, FP_415_signal, FP_470_time, FP_470_signal):
@@ -631,8 +775,17 @@ class DCache:
         else:
             self.dev = np.sqrt(self.m2 - self.avg ** 2)
 
+    def set_init(self, avg, m2):
+        self.avg = avg
+        self.m2 = m2
+        self.dev = np.sqrt(self.m2 - self.avg ** 2)
+        # TODO: figure out more formal way
+        self.counter = 1
+
     def add(self, signal):
         # handle nans:
+        if np.issubdtype(signal, np.number):
+            signal = np.array([signal])
         if self.cache is not None:
             assert np.prod(np.array(signal).shape) == 1, 'cache buffer only supports scalar so far'
             if not np.isnan(signal):
@@ -645,9 +798,12 @@ class DCache:
                 self.counter += 1
         else:
             if self.bandwidth is None:
-                self.bandwidth = signal.shape[0]
+                if len(signal.shape) == 0:
+                    self.bandwidth = 1
+                else:
+                    self.bandwidth = signal.shape[0]
             if self.counter < self.size:
-                if np.sum(np.isnan(signal)) > 0:
+                if np.sum(~np.isnan(signal)) > 0:
                     #print(self.avg, self.avg * (self.counter - 1), (self.avg * self.counter + signal) / (self.counter + 1))
                     self.avg = (self.avg * self.counter + signal) / (self.counter + 1)
                     self.m2 = (signal ** 2 + self.m2 * self.counter) / (self.counter+1)
@@ -661,9 +817,14 @@ class DCache:
         self.update_model()
 
     def get_val(self):
+        # avg has to be vector
+        if isinstance(self.avg, np.ndarray) and len(self.avg) == 1:
+            return self.avg[0]
         return self.avg
 
     def get_dev(self):
+        if isinstance(self.dev, np.ndarray) and len(self.dev) == 1:
+            return self.dev[0]
         return self.dev
 
 
