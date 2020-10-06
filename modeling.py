@@ -1,6 +1,7 @@
 # Utils
 from behaviors import *
 from peristimulus import *
+from utils_models import *
 
 # Data
 from pandas.api.types import is_numeric_dtype
@@ -43,6 +44,102 @@ def get_session_logistic_regression(actions, outcomes, times):
     return model, accuracy
 
 
+def output_data_for_ITI_DA_RL_model():
+    root = "/Users/albertqu/Documents/7.Research/Wilbrecht_Lab/CADA_data/"
+    save_folder = os.path.join(root, 'maria_model')
+    folder = os.path.join(root, "ProbSwitch_FP_data")
+    event_types = ['center_in', 'center_out', 'side_out']
+    #event_types = ['center_in', 'center_out', 'outcome', 'side_out']
+    zscore = True
+    base_method = 'robust_fast'
+    denoise = True
+    smooth = 0
+    time_window_dict = {'center_in': np.arange(-500, 501, 50),
+                        'center_out': np.arange(-500, 501, 50),
+                        'outcome': np.arange(-500, 2001, 50),
+                        'side_out': np.arange(-500, 1001, 50)}
+
+    choices = {'A2A': {'A2A-15B-B_RT': ["p153_FP_LH", "p238_FP_LH"],
+                       'A2A-19B_RT': ['p139_FP_LH', 'p148_FP_LH'],
+                       'A2A-19B_RV': ['p142_FP_RH', 'p156_FP_LH']},
+               "D1": {"D1-27H_LT": ["p103_FP_RH", "p189_FP_RH"],
+                      "D1-28B_LT": ["p135_session2_FP_LH"]}}
+
+
+
+    # hue: ITI, row,  col: laterality
+    for group in ['D1', 'A2A']:
+        neur_type = group if group == 'D1' else 'D2'
+        sessions = choices[group]
+        for animal in sessions:
+            for session in sessions[animal]:
+
+                tags = ['DA', 'Ca']
+
+                files = encode_to_filename(folder, animal, session)
+                matfile, green, red, fp = files['behavior'], files['green'], files['red'], files['FP']
+                # Load FP
+                if fp is not None:
+                    with h5py.File(fp, 'r') as fp_hdf5:
+                        fp_sigs = [access_mat_with_path(fp_hdf5, f'{tags[i]}/dff/{base_method}')
+                                   for i in range(len(tags))]
+                        fp_times = [access_mat_with_path(fp_hdf5, f'{tags[i]}/time') for i in
+                                    range(len(tags))]
+                else:
+                    print(f"Warning {animal} {session} does not have photometry processed!")
+                    fp_times, fp_sigs, iso_times, iso_sigs = get_sources_from_csvs([green, red],
+                                                                                   tags=('DA', 'Ca'),
+                                                                                   show=False)
+
+                    fp_sigs = [
+                        raw_fluor_to_dff(fp_times[i], fp_sigs[i], iso_times[i], iso_sigs[i], base_method,
+                                         zscore=False) for i in range(len(fp_sigs))]
+                if denoise:
+                    L = len(fp_times)
+                    new_times, new_sigs = [None] * L, [None] * L
+                    for i in range(L):
+                        new_sigs[i], new_times[i] = denoise_quasi_uniform(fp_sigs[i], fp_times[i])
+                    fp_sigs, fp_times = new_sigs, new_times
+                    # TODO: for now just do plots for one session
+                if zscore:
+                    fp_sigs = [(fp_sigs[i] - np.mean(fp_sigs[i])) / np.std(fp_sigs[i], ddof=1)
+                               for i in range(len(fp_sigs))]
+
+                mat = h5py.File(matfile, 'r')
+                # Get aligned signals to behaviors
+                N = get_trial_num(mat)
+                aligned = [np.full((len(event_types), N), np.nan) for _ in range(len(fp_sigs))]
+                for ib, beh in enumerate(event_types):
+                    ibtimes = get_behavior_times(mat, beh).ravel()
+                    nonan_sel = ~np.isnan(ibtimes)
+                    behavior_times_nonan = ibtimes[nonan_sel]
+                    for i in range(len(fp_sigs)):
+                        align_i = align_activities_with_event(fp_sigs[i], fp_times[i], behavior_times_nonan,
+                                                        time_window_dict[beh.split('{')[0]], False)
+                        if smooth > 0:
+                            aligned[i][ib, nonan_sel] = np.mean(align_i[:, 10-smooth:11+smooth], axis=1)
+                        else:
+                            aligned[i][ib, nonan_sel] = align_i[:, 11]
+                itis = get_trial_features(mat, 'ITI_raw', True)
+                rewards_str = get_trial_features(mat, 'R', True)
+                rewards = vectorize_with_map(rewards_str, {'Rewarded': 1, 'Unrewarded': 0})
+                lats_str = get_trial_features(mat, 'A', True)
+                lats = vectorize_with_map(lats_str, {'contra': 1, 'ipsi': 0})
+                mat.close()
+                datamat = np.vstack([np.arange(1, N+1), lats, rewards, itis, np.vstack(aligned)])
+                columns = np.concatenate([['trial', 'A_contra', 'R', 'ITI'],
+                                         np.concatenate([[f"{tags[i]}_{ev}" for ev in event_types]
+                                                         for i in range(len(tags))])])
+                subf = os.path.join(save_folder, neur_type, animal)
+                if not os.path.exists(subf):
+                    os.makedirs(subf)
+                fname = os.path.join(subf, f"{animal}_{session}_RL_DA_smooth{(smooth*2+1)}.csv")
+                pdf = pd.DataFrame(datamat.T, columns=columns)
+                pdf.to_csv(fname, index=False)
+
+
+
+
 ##################################################
 ################# Neural Modeling ################
 ##################################################
@@ -65,8 +162,7 @@ def get_decision_tree_modeling(fp_sigs, fp_times, behavior_times, trial_feature,
     pass
 
 
-def get_session_decision_tree_modeling(folder, animal, session, event_types, trial_feature,
-                                       model='RandomForest', zscore=True,
+def get_session_decision_tree_modeling(folder, animal, session, event_types, trial_feature, zscore=True,
                                        base_method='robust', denoise=True):
     """
     :param fp_sigs: by trial
@@ -81,8 +177,13 @@ def get_session_decision_tree_modeling(folder, animal, session, event_types, tri
     # classifier_LD_multimodels(models, labels, LD_dim=None, N_iters=100, mode='true',
     #                           ignore_labels=None, clf_models='all', clf_params=None,
     #                           cluster_param=3, label_alias=None, show=True)
-    time_window = np.arange(-2000, 2001, 50)
+    #time_window = np.arange(-2000, 2001, 50)
+    time_window_dict = {'center_in': np.arange(-500, 501, 50),
+                        'center_out': np.arange(-500, 501, 50),
+                        'outcome': np.arange(-500, 2001, 50),
+                        'side_out': np.arange(-500, 1001, 50)}
     tags = ['DA', 'Ca']
+    fit_models = ['RandomForests']
 
     files = encode_to_filename(folder, animal, session)
     matfile, green, red, fp = files['behavior'], files['green'], files['red'], files['FP']
@@ -91,9 +192,7 @@ def get_session_decision_tree_modeling(folder, animal, session, event_types, tri
         with h5py.File(fp, 'r') as fp_hdf5:
             fp_sigs = [access_mat_with_path(fp_hdf5, f'{tags[i]}/dff/{base_method}')
                        for i in range(len(tags))]
-            if zscore:
-                fp_sigs = [(fp_sigs[i] - np.mean(fp_sigs[i])) / np.std(fp_sigs[i], ddof=1)
-                           for i in range(len(fp_sigs))]
+
             fp_times = [access_mat_with_path(fp_hdf5, f'{tags[i]}/time') for i in
                         range(len(tags))]
     else:
@@ -102,51 +201,67 @@ def get_session_decision_tree_modeling(folder, animal, session, event_types, tri
                                                                        tags=('DA', 'Ca'), show=False)
 
         fp_sigs = [raw_fluor_to_dff(fp_times[i], fp_sigs[i], iso_times[i], iso_sigs[i], base_method,
-                                    zscore=zscore) for i in range(len(fp_sigs))]
-
+                                    zscore=False) for i in range(len(fp_sigs))]
     if denoise:
         L = len(fp_times)
         new_times, new_sigs = [None] * L, [None] * L
         for i in range(L):
             new_sigs[i], new_times[i] = denoise_quasi_uniform(fp_sigs[i], fp_times[i])
         fp_sigs, fp_times = new_sigs, new_times
+        # TODO: for now just do plots for one session
 
-    # TODO: for now just do plots for one session
+    if zscore:
+        fp_sigs = [(fp_sigs[i] - np.mean(fp_sigs[i])) / np.std(fp_sigs[i], ddof=1)
+                   for i in range(len(fp_sigs))]
+
     mat = h5py.File(matfile, 'r')
     # Get aligned signals to behaviors
     aligned = [[] for _ in range(len(fp_sigs))]
-    for beh in event_types:
-        behavior_times = get_behavior_times(mat, beh)
-        nonan_sel = ~np.any(np.isnan(behavior_times), axis=0)
-        behavior_times_nonan = behavior_times[:, nonan_sel]
+    behavior_times = np.vstack([get_behavior_times(mat, beh) for beh in event_types])
+    nonan_sel = ~np.any(np.isnan(behavior_times), axis=0)
+    behavior_times_nonan = behavior_times[:, nonan_sel]
+    for ib, beh in enumerate(event_types):
         # TODO: ADD caps for multiple behavior time latencies
         for i in range(len(fp_sigs)):
-            aligned[i].append(align_activities_with_event(fp_sigs[i], fp_times[i], behavior_times_nonan,
-                                               time_window, False))
+            aligned[i].append(align_activities_with_event(fp_sigs[i], fp_times[i], behavior_times_nonan[ib],
+                                                          time_window_dict[beh.split('{')[0]], False))
 
     ys = pd.DataFrame({trial_feature: get_trial_features(mat, trial_feature, True)[nonan_sel]})
     mat.close()
-
     for i in range(len(fp_sigs)):
         aligned[i] = np.hstack(aligned[i])
-        raw_features = np.concatenate([[beh + f'{ts:.0f}ms' for ts in time_window] for beh in event_types])
+
+    regrs, clfrs = [], []
+    for i in range(len(fp_sigs)):
+        raw_features = np.concatenate(
+            [[beh + f'{ts:.0f}ms' for ts in time_window_dict[beh.split('{')[0]]] for beh in event_types])
         if is_numeric_dtype(ys[trial_feature]):
-            models = {'raw': (None, aligned)}
-            reg_results = regression_multi_models(models, ys, method=['XGBoost', 'RandomForests'],
-                                    N_iters=100, raw_features_names=raw_features,
-                                    reg_params=None, show=False)
+            models = {'raw': (None, aligned[i])}
+            reg_results = regression_multi_models(models, ys, method=fit_models,
+                                                  N_iters=3, raw_features_names=raw_features,
+                                                  reg_params=None, show=True)
+            regrs.append(reg_results)
+            # plot feature importances
+            for md in fit_models:
+                visualize_feature_importance(regrs[i]['raw'][md]['f_importance'], raw_features,
+                                             tag=f'{tags[i]}_{md}_{trial_feature}')
         else:
             # TODO: clf add feature importances
-            noNA = ys != 'NA'
-            models = {'raw': (None, aligned[noNA])}
-            clfs, confs = classifier_LD_multimodels(models, raw_features, LD_dim=None, N_iters=100,
+            noNA = (ys != '').values.ravel()
+            models = {'raw': (None, aligned[i][noNA])}
+            clfs, confs = classifier_LD_multimodels(models, ys[trial_feature][noNA], LD_dim=None,
+                                                    N_iters=100,
                                                     mode='true', ignore_labels=None,
-                                                    clf_models='all', clf_params=None,
-                                                    cluster_param=3, label_alias=None, show=False)
+                                                    clf_models=fit_models, clf_params=None,
+                                                    cluster_param=3, label_alias=None, show=True)
+            clfrs.append((clfs, confs))
+
             # plot feature importances
+            for md in fit_models:
+                visualize_feature_importance(clfrs[i][0]['raw'][md]['f_importance'], raw_features,
+                                             tag=f'{tags[i]}_{md}_{trial_feature}')
+
             # plot accuracy
-
-
 
 
 def get_GLM_modeling(fp_sigs, features, model='RandomForest'):

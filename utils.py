@@ -28,7 +28,7 @@ except ModuleNotFoundError:
 ##################################################
 
 
-def get_session_files_FP_ProbSwitch(folder, groups):
+def get_probswitch_session_by_condition(folder, group='all', region='NAc', signal='all'):
     """ Returns lists of session files of different recording type
     :param group: str, expression
     :param photometry:
@@ -36,21 +36,28 @@ def get_session_files_FP_ProbSwitch(folder, groups):
     :param processed:
     :return:
     """
-    only_Ca = []
-    only_DA = []
-    results = {g: {a: [] for a in groups[g]} for g in groups}
-    for d in os.listdir(folder):
-        if os.path.isdir(os.path.join(folder, d)):
-            m = re.match("^(?P<animal>\w{2,3}-\d{2,}[-\w*]*_[A-Z]{2})_(?P<session>p\d+\w+)", d)
-            if m:
-                animal, day = m.group('animal'), m.group('session')
-                group_dict = results[animal.split("-")[0]]
-                if animal in group_dict:
-                    group_dict[animal].append(day)
-                elif animal not in group_dict and '*' in group_dict:
-                    group_dict[animal] = [day]
-    for g in results:
-        del results[g]['*']
+    if group == 'all':
+        groups = ('D1', 'A2A')
+    else:
+        groups = [group]
+    if region == 'all':
+        regions = ['NAc', 'DMS']
+    else:
+        regions = [region]
+    if signal == 'all':
+        signals = ['DA', 'Ca']
+    else:
+        signals = [signal]
+    results = {}
+    for g in groups:
+        grouppdf = pd.read_csv(os.path.join(folder, f"ProbSwitch_FP_Mice_{g}.csv"))
+        rsel = grouppdf['Region'].isin(regions)
+        fpsel = grouppdf['FP'] >= 1
+        sigsel = np.logical_and.reduce([grouppdf[f'FP_{s}_zoom'] > 0 for s in signals])
+        animal_sessions = grouppdf[rsel & fpsel & sigsel]
+        results[g] = {}
+        for animal in animal_sessions['animal'].unique():
+            results[g][animal] = sorted(animal_sessions[animal_sessions['animal'] == animal]['session'])
     return results
 
 
@@ -95,17 +102,43 @@ def get_sources_from_csvs(csvfiles, window=400, tags=None, show=False):
     :param window:
     :return:
     """
-    FP_REC_signals = [None] * len(csvfiles)
-    FP_REC_times = [None] * len(csvfiles)
-    FP_415_signals = [None] * len(csvfiles)
-    FP_415_times = [None] * len(csvfiles)
+    if isinstance(csvfiles, str):
+        csvfiles = [csvfiles]
+
+    try:
+        pdf = pd.read_csv(csvfiles[0], delimiter=" ", names=['time', 'calcium'], usecols=[0, 1])
+        FP_times = [None] * len(csvfiles)
+        FP_signals = [None] * len(csvfiles)
+        for i in range(len(csvfiles)):
+            csvfile = csvfiles[i]
+            # Signal Sorting
+            pdf = pd.read_csv(csvfile, delimiter=" ", names=['time', 'calcium'], usecols=[0, 1])
+            FP_times[i] = pdf.time.values
+            FP_signals[i] = pdf.calcium.values
+        if tags is None:
+            tags = [f'REC{i}' for i in range(len(csvfiles))]
+    except:
+        FP_times = [None] * len(csvfiles) * 2
+        FP_signals = [None] * len(csvfiles) * 2
+        for i in range(len(csvfiles)):
+            # Signal Sorting
+            csvfile = csvfiles[i]
+            pdf = pd.read_csv(csvfile, delimiter=",")
+            red_sig = pdf['Region1R'].values
+            green_sig = pdf['Region0G'].values
+            times = pdf['Timestamp'].values
+            FP_times[2 * i], FP_times[2*i+1] = times, times
+            FP_signals[2 * i], FP_signals[2*i+1] = green_sig, red_sig
+        if tags is None:
+            tags = np.concatenate([[f'REC{i}_G', f'REC{i}_R'] for i in range(len(csvfiles))])
+
+    FP_REC_signals = [None] * len(FP_signals)
+    FP_REC_times = [None] * len(FP_signals)
+    FP_415_signals = [None] * len(FP_signals)
+    FP_415_times = [None] * len(FP_signals)
     FP_415_sel = None
-    for i in range(len(csvfiles)):
-        csvfile = csvfiles[i]
-        # Signal Sorting
-        pdf = pd.read_csv(csvfile, delimiter=" ", names=['time', 'calcium'], usecols=[0, 1])
-        FP_time = pdf.time.values
-        FP_signal = pdf.calcium.values
+    for i in range(len(FP_signals)):
+        FP_time, FP_signal = FP_times[i], FP_signals[i]
 
         # # Plain Threshold
         # min_signal, max_signal = np.min(FP_signal), np.max(FP_signal)
@@ -137,17 +170,17 @@ def get_sources_from_csvs(csvfiles, window=400, tags=None, show=False):
             sigREC_sel, sig415_sel = sigD_sels, sigT_sels
             FP_REC_signals[i], FP_REC_times[i] = FP_down_signal, FP_down_time
             FP_415_signals[i], FP_415_times[i] = FP_top_signal, FP_top_time
-    if tags is None:
-        tags = [f'REC{i}' for i in range(len(csvfiles))]
 
     if show:
-        fig, axes = plt.subplots(nrows=len(csvfiles), ncols=1, sharex=True)
-        for i in range(len(csvfiles)):
-            axes[i].plot(FP_REC_times[i], FP_REC_signals[i], label=tags[i])
-            axes[i].plot(FP_415_times[i], FP_415_signals[i], label='415')
-            axes[i].legend()
+        fig, axes = plt.subplots(nrows=len(FP_REC_signals), ncols=1, sharex=True)
+        for i in range(len(FP_REC_signals)):
+            ax = axes[i] if len(FP_REC_signals) > 1 else axes
+            itag = tags[i]
+            ax.plot(FP_REC_times[i], FP_REC_signals[i], label=itag)
+            ax.plot(FP_415_times[i], FP_415_signals[i], label='415')
+            ax.legend()
     # TODO: save as pd.DataFrame
-    if len(csvfiles) == 1:
+    if len(FP_REC_signals) == 1:
         return FP_REC_times[0], FP_REC_signals[0], FP_415_times[0], FP_415_signals[0]
     # TODO: if shape uniform merge signals
     return FP_REC_times, FP_REC_signals, FP_415_times, FP_415_signals
@@ -809,6 +842,7 @@ class DCache:
                     self.m2 = (signal ** 2 + self.m2 * self.counter) / (self.counter+1)
                     self.counter += 1
             else:
+                # TODO: make two-sided
                 targets = (~np.isnan(signal)) & ((signal - self.avg) < self.get_dev() * self.thres)
                 #print(self.avg, self.avg * (self.size - 1), (self.avg * (self.size - 1) + signal) / self.size)
                 self.avg[targets] = (self.avg[targets] * (self.size - 1) + signal[targets]) / self.size

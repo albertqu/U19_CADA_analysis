@@ -1,6 +1,6 @@
 from peristimulus import *
 from behaviors import *
-from utils import get_session_files_FP_ProbSwitch, encode_to_filename, decode_from_filename
+from utils import encode_to_filename, decode_from_filename
 from caiman.utils.utils import recursively_save_dict_contents_to_group
 
 
@@ -94,7 +94,7 @@ def FP_save():
 #######################################################
 ######################### FP ##########################
 #######################################################
-def raw_trace_visualization(folder, animal, session, isel=None, zscore=True, base_method='robust'):
+def raw_trace_visualization(folder, animal, session, isel=None, zscore=True, base_method='robust_fast'):
     plots = "/Users/albertqu/Documents/7.Research/Wilbrecht_Lab/CADA_plots/FP_probswitch_raw"
     time_window_tuple = (1000, 1000, 50)
     files = encode_to_filename(folder, animal, session)
@@ -125,7 +125,7 @@ def raw_trace_visualization(folder, animal, session, isel=None, zscore=True, bas
     behaviors = ('center_in', 'center_out', 'choice', 'outcome', 'side_out')
     outcomes = ('Incorrect', 'Correct Omission', 'Rewarded')
     lateralities = ('ipsi', 'contra')
-    behavior_times = {b: get_behavior_times(mat, b) for b in behaviors}
+    behavior_times = {b: get_behavior_times(mat, b)[0] for b in behaviors}
     N_trial = len(behavior_times[behaviors[0]])
     trials = np.arange(N_trial)
     if isel is None:
@@ -191,6 +191,7 @@ def raw_trace_visualization(folder, animal, session, isel=None, zscore=True, bas
                 ev_tms = np.array([[behavior_times['center_in'][tt-2], behavior_times['side_out'][tt]]]).T
                 if flag:
                     if tt in isel or isel == tt:
+                        print("There we go")
                         fig, axes = plt.subplots(nrows=2, ncols=1, sharex=True, figsize=(20, 10))
                         for k, fsig in enumerate(sigs):
                             t_window = calculate_best_time_window(fp_times[k], ev_tms, time_window_tuple,
@@ -224,7 +225,8 @@ def raw_trace_visualization(folder, animal, session, isel=None, zscore=True, bas
                         plt.tight_layout()
                         fname = f"trial{tt+1}_trialHist_{twot}_ITI{itibin}_action_{sstay}_{animal}_{session}"
                         fname = os.path.join(plots, "iti_debug", fname)
-                        fig.savefig(fname + '.png')
+                        #fig.savefig(fname + '.png')
+                        fig.savefig(fname + '.eps')
                         plt.close(fig)
 
 
@@ -274,28 +276,47 @@ def NAcD1D2_CADA_outcome(choices=None, plot_type='trial_average'):
     folder = "/Users/albertqu/Documents/7.Research/Wilbrecht_Lab/CADA_data/ProbSwitch_FP_data"
     plots = "/Users/albertqu/Documents/7.Research/Wilbrecht_Lab/CADA_plots/FP_NAc_D1D2_CADA"
     #choices = {'A2A': {'A2A-15B-B_RT': ["p153_FP_LH"]}, "D1": {"D1-27H_LT": ["p103_FP_RH"]}}
-    if choices is None:
-        choices = {'A2A': {'A2A-15B-B_RT': ["p153_FP_LH", "p238_FP_LH"],
-                           'A2A-19B_RT': ['p139_FP_LH', 'p148_FP_LH'],
-                           'A2A-19B_RV': ['p142_FP_RH', 'p156_FP_LH']
-                           },
-                   "D1": {"D1-27H_LT": ["p103_FP_RH", "p189_FP_RH"],
-                          "D1-28B_LT": ["p135_session2_FP_LH"]}}
+    # if choices is None:
+    #     choices = {'A2A': {'A2A-15B-B_RT': ["p153_FP_LH", "p238_FP_LH"],
+    #                        'A2A-19B_RT': ['p139_FP_LH', 'p148_FP_LH'],
+    #                        'A2A-19B_RV': ['p142_FP_RH', 'p156_FP_LH']
+    #                        },
+    #                "D1": {"D1-27H_LT": ["p103_FP_RH", "p189_FP_RH"],
+    #                       "D1-28B_LT": ["p135_session2_FP_LH"]}}
     zscore = True # Should not matter with 1 session
     # base_method = 'robust'
     # denoise = True  # denoise
+    choices = get_probswitch_session_by_condition(folder, group='all', region='NAc', signal='Ca')
     for denoise in [True, False]:
         for base_method in ['robust_fast', 'perc15', 'mode']:
             # Plotting Option
-            sigs = ['all']
+            sigs = ['Ca']
             row = "FP"
             col = "A"
             hue = "O"
-            rows = ('DA', 'Ca')
+            rows = ('Ca', )
             cols = ('ipsi', 'contra')
             hues = ('Incorrect', 'Correct Omission', 'Rewarded')
+            ylims = [[(-1.5, 2.1)] * 2]
 
-            options = {'sigs': sigs, 'row': row, 'rows': rows,
+            options = {'sigs': sigs, 'row': row, 'rows': rows, 'ylim': ylims,
+                       'col': col, 'cols': cols, 'hue': hue, 'hues': hues, 'plot_type': plot_type}
+            behavior_aligned_FP_plots(folder, plots, 'outcome', choices, options,
+                                      zscore, base_method, denoise)
+    choices = get_probswitch_session_by_condition(folder, group='all', region='NAc', signal='DA')
+    for denoise in [True, False]:
+        for base_method in ['robust_fast', 'perc15', 'mode']:
+            # Plotting Option
+            sigs = ['DA']
+            row = "FP"
+            col = "A"
+            hue = "O"
+            rows = ('DA', )
+            cols = ('ipsi', 'contra')
+            hues = ('Incorrect', 'Correct Omission', 'Rewarded')
+            ylims = [[(-2.5, 2.5)] * 2]
+
+            options = {'sigs': sigs, 'row': row, 'rows': rows, 'ylim': ylims,
                        'col': col, 'cols': cols, 'hue': hue, 'hues': hues, 'plot_type': plot_type}
             behavior_aligned_FP_plots(folder, plots, 'outcome', choices, options,
                                       zscore, base_method, denoise)
@@ -308,26 +329,131 @@ def NAcD1D2_CADA_all_phase(choices=None, plot_type='trial_average'):
     #choices = {'A2A': {'A2A-15B-B_RT': ["p153_FP_LH"]}, "D1": {"D1-27H_LT": ["p103_FP_RH"]}}
     if choices is None:
         choices = {'A2A': {'A2A-15B-B_RT': ["p153_FP_LH", "p238_FP_LH"],
-                           'A2A-19B_LT': ['p159_FP_LH'],
                            'A2A-19B_RT': ['p139_FP_LH', 'p148_FP_LH'],
-                           'A2A-19B_RV': ['p142_FP_RH', 'p147_FP_LH', 'p156_FP_LH']
-                           }, "D1": {"D1-27H_LT": ["p103_FP_RH"]}}
+                           'A2A-19B_RV': ['p142_FP_RH', 'p156_FP_LH']
+                           },
+                   "D1": {"D1-27H_LT": ["p103_FP_RH", "p189_FP_RH"],
+                          "D1-28B_LT": ["p135_session2_FP_LH"]}}
     zscore = True # Should not matter with 1 session
-    base_method = 'robust'
-    denoise = True  # denoise
-    # Plotting Option
-    sigs = ['all']
-    row = "FP"
-    col = "A"
-    hue = "O"
-    rows = ('DA', 'Ca')
-    cols = ('ipsi', 'contra')
-    hues = ('Incorrect', 'Correct Omission', 'Rewarded')
+    base_method = 'robust_fast'
+    for denoise in [True, False]:
+        # Plotting Option
+        sigs = ['all']
+        row = "FP"
+        col = "A"
+        hue = "O"
+        rows = ('DA', 'Ca')
+        cols = ('ipsi', 'contra')
+        hues = ('Incorrect', 'Correct Omission', 'Rewarded')
 
-    options = {'sigs': sigs, 'row': row, 'rows': rows,
-               'col': col, 'cols': cols, 'hue': hue, 'hues': hues, 'plot_type': plot_type}
-    for behavior in ['center_in', 'center_out', 'choice', 'outcome', 'side_out']:
-        behavior_aligned_FP_plots(folder, plots, behavior, choices, options, zscore, base_method, denoise)
+        options = {'sigs': sigs, 'row': row, 'rows': rows,
+                   'col': col, 'cols': cols, 'hue': hue, 'hues': hues, 'plot_type': plot_type}
+        for behavior in ['center_in', 'center_out', 'choice', 'outcome', 'side_out']:
+            behavior_aligned_FP_plots(folder, plots, behavior, choices, options, zscore, base_method, denoise)
+
+
+def DMSD1D2_CADA_all_phase(choices=None, plot_type='trial_average'):
+    # file option
+    folder = "/Users/albertqu/Documents/7.Research/Wilbrecht_Lab/CADA_data/ProbSwitch_FP_data"
+    plots = "/Users/albertqu/Documents/7.Research/Wilbrecht_Lab/CADA_plots/FP_DMS_D1D2_CADA"
+    choices = get_probswitch_session_by_condition(folder, group='all', region='DMS', signal='all')
+    zscore = True # Should not matter with 1 session
+    base_method = 'robust_fast'
+    # PERISWITCH
+
+
+    for sg in ['Ca', 'DA']:
+        choices = get_probswitch_session_by_condition(folder, group='all', region='DMS', signal=sg)
+        #choices = {'A2A': {}, 'D1': {"D1-27H_LT": ['p105_FP_LH']}}
+        for denoise in [True, False]:
+            #for base_method in ['robust_fast', 'perc15', 'mode']:
+            for base_method in ['robust_fast']:
+                # Plotting Option
+                sigs = [sg]
+                row = "FP"
+                #col = "A"
+                col = "A{t-1,t}"
+                #hue = "O"
+                hue = None
+                rows = (sg, )
+                #cols = ('ipsi', 'contra')
+                cols = ('ipsi_stay', 'contra_stay', 'ipsi_switch', 'contra_switch')
+                #hues = ('Incorrect', 'Correct Omission', 'Rewarded')
+                hues=None
+
+                ylimMap = {
+                    'outcome': {'Ca': [[(-2, 2)] * len(cols)] * len(rows),
+                                'DA': [[(-2.5, 2.5)] * len(cols)] * len(rows)},
+                    'center_out': {'Ca': [[(-2, 2)] * len(cols)] * len(rows),
+                                   'DA': [[(-2.5, 2.5)] * len(cols)] * len(rows)},
+                    'side_out': {'Ca': [[(-2, 2)] * len(cols)] * len(rows),
+                                 'DA': [[(-2.5, 2.5)] * len(cols)] * len(rows)},
+                    'side_out{t-1}': {'Ca': [[(-2, 2)] * len(cols)] * len(rows),
+                                 'DA': [[(-2.5, 2.5)] * len(cols)] * len(rows)},
+                    'choice': {'Ca': None, 'DA': None},
+                    'center_in': {'Ca': None, 'DA': None}}
+
+                #for behavior in ['center_in', 'center_out', 'choice', 'outcome', 'side_out']:
+                for behavior in ['side_out{t-1}']:
+                    ylims = ylimMap[behavior][sg]
+
+                    options = {'sigs': sigs, 'row': row, 'rows': rows, 'ylim': ylims,
+                               'col': col, 'cols': cols, 'hue': hue, 'hues': hues, 'plot_type': plot_type}
+                    behavior_aligned_FP_plots(folder, plots, behavior, choices, options,
+                                              zscore, base_method, denoise)
+
+
+def DMSD1D2_CADA_Periswitch(choices=None, plot_type='trial_average'):
+    # file option
+    folder = "/Users/albertqu/Documents/7.Research/Wilbrecht_Lab/CADA_data/ProbSwitch_FP_data"
+    plots = "/Users/albertqu/Documents/7.Research/Wilbrecht_Lab/CADA_plots/FP_DMS_D1D2_CADA"
+    choices = get_probswitch_session_by_condition(folder, group='all', region='DMS', signal='all')
+    zscore = True # Should not matter with 1 session
+    base_method = 'robust_fast'
+    LEN = 4
+    # PERISWITCH
+
+    for sg in ['Ca', 'DA']:
+        #choices = get_probswitch_session_by_condition(folder, group='all', region='DMS', signal=sg)
+        #choices = {'A2A': {'A2A-16B-1_RT': ['p221_FP_RH']}, 'D1': {"D1-27H_LT": ['p102_FP_LH']}}
+        choices = {'A2A': {}, 'D1': {"D1-27H_LT": ['p105_FP_LH']}}
+        for denoise in [True, False]:
+            #for base_method in ['robust_fast', 'perc15', 'mode']:
+            for base_method in ['robust_fast']:
+                # Plotting Option
+                sigs = [sg]
+                for hh, hue in enumerate((f"S[-{LEN}]", f"S[{LEN}]")):
+                    row = 'R'#'FP'
+                    col = "A"
+                    rows = ('Rewarded', 'Unrewarded')
+                    #rows = (sg,)
+                    cols = ('ipsi', 'contra')
+                    fmt = '{} Pre' if hh else '{} Post'
+                    hues = [fmt.format(i) for i in range(0, LEN+1)]
+                    # ylimMap = {'outcome': {'Ca': [[(-1.0, 1.5)] * len(cols)] * len(rows),
+                    #                        'DA': [[(-1.6, 1.8)] * len(cols)] * len(rows)},
+                    #            'center_out': {'Ca': [[(-1.7, 1.7)] * len(cols)] * len(rows),
+                    #                           'DA': [[(-1.5, 1.2)] * len(cols)] * len(rows)}}
+                    ylimMap = {
+                        'outcome': {'Ca': [[(-2, 2)] * len(cols)] * len(rows),
+                                    'DA': [[(-2.5, 2.5)] * len(cols)] * len(rows)},
+                        'center_out': {'Ca': [[(-2, 2)] * len(cols)] * len(rows),
+                                       'DA': [[(-2.5, 2.5)] * len(cols)] * len(rows)},
+                        'side_out': {'Ca': [[(-2, 2)] * len(cols)] * len(rows),
+                                     'DA': [[(-2.5, 2.5)] * len(cols)] * len(rows)},
+                        'side_out{t-1}': {'Ca': [[(-2, 2)] * len(cols)] * len(rows),
+                                          'DA': [[(-2.5, 2.5)] * len(cols)] * len(rows)},
+                        'choice': {'Ca': None, 'DA': None},
+                        'center_in': {'Ca': None, 'DA': None}}
+
+                    for behavior in ['outcome']:
+                        ylims = ylimMap[behavior][sg]
+                        #ylims = None
+
+                        options = {'sigs': sigs, 'row': row, 'rows': rows, 'ylim': ylims,
+                                   'col': col, 'cols': cols, 'hue': hue, 'hues': hues, 'plot_type': plot_type}
+                        behavior_aligned_FP_plots(folder, plots, behavior, choices, options,
+                                                  zscore, base_method, denoise)
 
 
 def NAcD1D2_CADA_outcome_raw():
@@ -371,12 +497,17 @@ def behavior_aligned_FP_plots(folder, plots, behaviors, choices, options, zscore
     tags = ['DA', 'Ca']
     row, rows, col, cols = options['row'], options['rows'], options['col'], options['cols']
     hue, hues, plot_type = options['hue'], options['hues'], options['plot_type']
+    if 'ylim' in options:
+        # HAS TO BE 2D list
+        ylims = options['ylim']
+    else:
+        ylims = None
 
     if isinstance(behaviors, str):
         behaviors = [behaviors]
     if choices is None:
-        choices = {g: get_session_files_FP_ProbSwitch(folder, g) for g in ('D1', 'A2A')}
-    meas = 'zscore_' if zscore else '' + 'dF/F'
+        choices = {g: get_prob_switch_all_sessions(folder, g) for g in ('D1', 'A2A')}
+    meas = ('zscore_' if zscore else '') + 'dF/F'
     denoise_arg = '_denoise' if denoise else ''
     effect_arg = "_".join([e for e in [row, col, hue] if e])
     behavior_arg = "_".join(behaviors)
@@ -396,9 +527,6 @@ def behavior_aligned_FP_plots(folder, plots, behaviors, choices, options, zscore
                     with h5py.File(fp, 'r') as fp_hdf5:
                         fp_sigs = [access_mat_with_path(fp_hdf5, f'{tags[i]}/dff/{base_method}')
                                    for i in range(len(tags))]
-                        if zscore:
-                            fp_sigs = [(fp_sigs[i] - np.mean(fp_sigs[i])) / np.std(fp_sigs[i], ddof=1)
-                                       for i in range(len(fp_sigs))]
                         fp_times = [access_mat_with_path(fp_hdf5, f'{tags[i]}/time') for i in
                                     range(len(tags))]
                 else:
@@ -407,7 +535,7 @@ def behavior_aligned_FP_plots(folder, plots, behaviors, choices, options, zscore
                                                                                 tags=('DA', 'Ca'), show=False)
 
                     fp_sigs = [raw_fluor_to_dff(fp_times[i], fp_sigs[i], iso_times[i], iso_sigs[i], base_method,
-                                               zscore=zscore) for i in range(len(fp_sigs))]
+                                               zscore=False) for i in range(len(fp_sigs))]
 
                 if denoise:
                     L = len(fp_times)
@@ -415,6 +543,9 @@ def behavior_aligned_FP_plots(folder, plots, behaviors, choices, options, zscore
                     for i in range(L):
                         new_sigs[i], new_times[i] = denoise_quasi_uniform(fp_sigs[i], fp_times[i])
                     fp_sigs, fp_times = new_sigs, new_times
+                if zscore:
+                    fp_sigs = [(fp_sigs[i] - np.mean(fp_sigs[i])) / np.std(fp_sigs[i], ddof=1)
+                               for i in range(len(fp_sigs))]
 
                 # TODO: for now just do plots for one session
                 mat = h5py.File(matfile, 'r')
@@ -448,10 +579,11 @@ def behavior_aligned_FP_plots(folder, plots, behaviors, choices, options, zscore
                 for k, fsig in enumerate(sigs):
                     N_trials = np.arange(len(nonan_sel))[nonan_sel]
                     session_left = len(N_trials)
-                    if fsig == 'all':
+                    justsig = (row == 'FP') or (col == 'FP') or (hue == 'FP')
+                    if fsig == 'all' or (len(sigs) == 1 and justsig):
                         k_aligned = aligned
                     else:
-                        k_aligned = aligned[k]
+                        k_aligned = aligned[opt2selgroups('FP')[fsig]]
 
                     if plot_type == 'trial_raw':
                         all_ns = set()
@@ -504,9 +636,18 @@ def behavior_aligned_FP_plots(folder, plots, behaviors, choices, options, zscore
                                         plt.close(fig)
                             print('done!!!', len(all_ns), aligned[0].shape[0])
                     else:
-                        sharey_opt = 'row' if row == 'FP' else 'col'  # TODO: make it more generalized
+                        if ylims is None:
+                            sharey_opt = 'row' if row == 'FP' else 'col'  # TODO: make it more generalized
+                        else:
+                            sharey_opt = False
                         fig, axes = plt.subplots(nrows=len(rows), ncols=len(cols), sharex=True,
                                                  sharey=sharey_opt, figsize=(20, 10))
+                        if len(rows) == 1 and len(cols) == 1:
+                            axes = np.array([[axes]])
+                        if len(rows) == 1:
+                            axes = axes.reshape((1, -1))
+                        elif len(cols) == 1:
+                            axes = axes.reshape((-1, 1))
                         for i in range(len(axes)):
                             # TODO: add extra event times if needed
                             axes[i][0].set_ytitle = rows[i] + f' ({meas})'
@@ -541,6 +682,8 @@ def behavior_aligned_FP_plots(folder, plots, behaviors, choices, options, zscore
                                     axes[i][j].set_title(cols[j]+opt)
                                 else:
                                     axes[i][j].set_title(opt, fontsize='x-small')
+                                if ylims is not None:
+                                    axes[i][j].set_ylim(ylims[i][j])
                             axes[i][0].set_ylabel(rows[i] + f' ({meas})')
                         plt.subplots_adjust(hspace=0.3)
                         fig.suptitle(f"{effect_arg} effects on {neur_type} {behaviors} phase {fsig}")

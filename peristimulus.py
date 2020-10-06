@@ -88,7 +88,7 @@ def calculate_best_time_window(times, event_times, twindow_tuple, align_last):
 #######################################################
 ################### Visualization #####################
 #######################################################
-def peristimulus_time_trial_average_plot(sigs, times, tags, extra_event_times=None, ax=None):
+def peristimulus_time_trial_average_plot(sigs, times, tags, extra_event_times=None, ylim=None, ax=None):
     """
     TODO: enable feeding error bars
     Take in list of signal groups plot hued line plots in ax.
@@ -130,6 +130,8 @@ def peristimulus_time_trial_average_plot(sigs, times, tags, extra_event_times=No
         ax.axvline(eevnt, ls='--')
     ax.set_xlabel(xlb)
     ax.set_ylabel(ylbl)
+    if ylim is not None:
+        ax.set_ylim(ylim)
     if not nolegend:
         ax.legend(fontsize="xx-small")
     return ax

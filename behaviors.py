@@ -83,6 +83,7 @@ def get_trial_features(mat, feature, as_array=False):
     :param mat:
     # {} syntax for selections of features
     :param feature: time lag coded as {t-k,...} (no space in between allowed)
+    :param array_opt: 0 for boolean, 1 for return string array, 2 for digits
     :return:
     """
     fpast = trial_vector_time_lag
@@ -103,6 +104,18 @@ def get_trial_features(mat, feature, as_array=False):
             for oj in outcomes:
                 results[oi[0] + oj[0]] = np.logical_and.reduce([fpast(trial_outcomes[oi], -2),
                                                                 fpast(trial_outcomes[oj], -1)])
+    elif feature.startswith('A{'):
+        feature = feature.replace(" ", "")
+        lags = event_parse_lags(feature)
+        feature = feature.split("{")[0]
+        trial_laterality = get_trial_outcome_laterality(mat)
+        lateralities = ('ipsi', 'contra')
+        assert len(lags) == 2 and lags[0] < lags[1], 'Other lag so far not implemented'
+        for il in lateralities:
+            for jl in lateralities:
+                stay = 'stay' if (il == jl) else 'switch'
+                results[jl + '_' + stay] = np.logical_and.reduce([fpast(trial_laterality[il], lags[1]),
+                                                                  fpast(trial_laterality[jl], lags[0])])
     elif feature == 'A{t-1,t}':
         trial_laterality = get_trial_outcome_laterality(mat)
         lateralities = ('ipsi', 'contra')
@@ -111,6 +124,30 @@ def get_trial_features(mat, feature, as_array=False):
                 stay = 'stay' if (il == jl) else 'switch'
                 results[jl + '_' + stay] = np.logical_and.reduce([fpast(trial_laterality[il], 0),
                                                                   fpast(trial_laterality[jl], -1)])
+    elif feature.startswith('S['):
+        # TODO: extend to ipsi contra
+        step = int(feature[2:-1])
+        if step > 0:
+            sgn = 1
+            prepost = '{} Pre'
+            op = '+'
+        else:
+            sgn = -1
+            prepost = '{} Post'
+            op = '-'
+        results = {}
+        for i in range(0, step * sgn + 1):
+            if i == 0:
+                t0s, t1s = 't-1', 't'
+            else:
+                t0 = -1 + i*sgn
+                t1 = i * sgn
+                t0s = f't{op}{abs(t0)}' if t0 else 't'
+                t1s = f't{op}{i}'
+
+            temp = get_trial_features(mat, 'A{%s,%s}'% (t0s, t1s))
+            results[prepost.format(i)] = temp['ipsi_switch'] | temp['contra_switch']
+
     elif feature == 'ITI':
         itis = access_mat_with_path(mat, "glml/trials/ITI", ravel=True)
         intervals = [(1.05, 4), (0.65, 1.05), (0.5, 0.65), (0, 0.5)]
@@ -120,6 +157,9 @@ def get_trial_features(mat, feature, as_array=False):
         trial_outcomes = get_trial_outcomes(mat)
         outcomes = ['Incorrect', 'Correct Omission', 'Rewarded']
         results = {oo: trial_outcomes[oo] for oo in outcomes}
+
+    elif feature == 'R':
+        results = {o: get_trial_outcomes(mat)[o] for o in ['Unrewarded', 'Rewarded']}
 
     elif feature == 'A':
         trial_laterality = get_trial_outcome_laterality(mat)
@@ -133,8 +173,16 @@ def get_trial_features(mat, feature, as_array=False):
         raise NotImplementedError(f"Unimplemented {feature}")
 
     if as_array:
-        feat_array = np.full(N_trial, 'NA')
+        if not isinstance(list(results.keys())[0], str):
+            temp = {}
+            for rr in results:
+                temp[str(rr)] = results[rr]
+            results = temp
+        maxlen = len(max(results.keys(), key=len))
+        feat_array = np.full(N_trial, '', dtype=f'<U{maxlen}')
         for rf in results:
+            if len(rf) > 20:
+                print("Warning! length greater than 20, string will be truncated")
             feat_array[results[rf]] = rf
         return feat_array
     return results
@@ -148,6 +196,13 @@ def get_trial_num(mat):
 
 def decode_trial_behavior(arr, code):
     return {c: arr == code[c] for c in code}
+
+
+def vectorize_with_map(strvec, vmap):
+    res = np.full(len(strvec), np.nan)
+    for v in vmap:
+        res[strvec == v] = vmap[v]
+    return res
 
 
 def event_parse_lags(event):
@@ -164,13 +219,23 @@ def event_parse_lags(event):
 
 
 def trial_vector_time_lag(vec, t):
+    """ Takes in vector and shift it by t (pad with False, "" or nan in according to data dtype)
+    :param vec: input vector (number, str or bool)
+    :param t: shift lag (integer)
+    :return: oarr: np.ndarray: shifted array
+    @test
+    """
     if t == 0:
         return vec
     dtype = vec.dtype
     if np.issubdtype(dtype, np.bool_):
         oarr = np.zeros(len(vec), dtype=dtype)
+    elif np.issubdtype(dtype, np.number):
+        oarr = np.full(len(vec), np.nan, dtype=np.float)
+    elif np.issubdtype(dtype, np.str_):
+        oarr = np.full(len(vec), "", dtype=dtype)
     else:
-        oarr = np.full(len(vec), np.nan, dtype=dtype)
+        raise NotImplementedError(f"Unhandled dtype {dtype}")
     if t < 0:
         oarr[-t:] = vec[:t]
     else:
