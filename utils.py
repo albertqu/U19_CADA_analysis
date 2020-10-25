@@ -205,7 +205,7 @@ def file_folder_path(f):
 
 def decode_from_filename(filename):
     """
-    TODO: Needs more testing for multiple sessions
+    Takes in filenames of the following formats and returns the corresponding file options
     `A2A-15B_RT_20200612_ProbSwitch_p243_FP_RH`, `D1-27H_LT_20200314_ProbSwitch_FP_RH_p103`
     behavioral: * **Gen-ID_EarPoke_Time_DNAME_Age_special.mat**
 FP: **Gen-ID_EarPoke_DNAME2_Hemi_Age_channel_Time(dash)[Otherthing].csv**
@@ -214,7 +214,10 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
     GEN: genetic line, ID: animal ID, EP: ear poke, T: time of expr, TD: detailed HMS DN: Data Name, A: Age,
     H: hemisphere, S: session, SP: special extension
     :param filename:
-    :return:
+    :return: options: dict
+                ftype
+                animal
+                session
     """
     filename = path_prefix_free(filename)
     # case exper
@@ -287,10 +290,25 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
 
 
 def encode_to_filename(folder, animal, session, ftypes="processed_all"):
-    """ TODO: refer to caiman for function
-    :param options:
-    :param ftype: if ftypes=="all": returns all 5 files
+    """
+    :param folder: str
+            folder for data storage
+    :param animal: str
+            animal name: e.g. A2A-15B-B_RT
+    :param session: str
+            session name: e.g. p151_session1_FP_RH
+    :param ftype: list or str:
+            list (or a single str) of typed files to return
+            'exper': .mat files
+            'bin_mat': binary file
+            'green': green fluorescence
+            'red': red FP
+            'behavior': .mat behavior file
+            'FP': processed dff hdf5 file
+            if ftypes=="all"
     :return:
+            returns all 5 files in a dictionary; otherwise return all file types
+            in a dictionary, None if not found
     """
     # TODO: enable aliasing
     paths = [os.path.join(folder, animal, session), os.path.join(folder, animal+'_'+session),

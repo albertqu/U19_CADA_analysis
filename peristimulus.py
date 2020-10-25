@@ -10,6 +10,7 @@ import seaborn as sns
 
 # Utils
 from utils import *
+from behaviors import *
 
 
 #######################################################
@@ -201,3 +202,221 @@ def peristimulus_time_trial_heatmap_plot(sigs, times, trials, tags, extra_event_
 def peristimulus_multiple_file_multiple_events(mats, event_types):
     """load list of events and align all files in mats and average them"""
     pass
+
+
+def behavior_aligned_FP_plots(folder, plots, behaviors, choices, options, zscore=True,
+                              base_method='robust', denoise=True):
+    # TODO: think more carefully about multiple behavior alignment
+    """ Core function for plotting peristimulus FP signals grouped by stimulus modalities.
+    :param folder: str
+            root folder storing the FP data, e.g. "ProbSwitch_FP_data"
+    :param plots: str
+            root folder storing all the analysis plots
+    :param behaviors: list
+            list of behaviors of interests, currently the function works best with only one stimulus
+            but soon addition behavior would be added (water marks for instance)
+    :param choices: dict
+            standard CHOICE DICT defined in the documents
+    :param base_method: so far FP method is lost in hdf5, incorporate this
+    :return:
+    """
+    sigs = options['sigs']
+    tags = ['DA', 'Ca']
+    row, rows, col, cols = options['row'], options['rows'], options['col'], options['cols']
+    hue, hues, plot_type = options['hue'], options['hues'], options['plot_type']
+    if 'ylim' in options:
+        # HAS TO BE 2D list
+        ylims = options['ylim']
+    else:
+        ylims = None
+
+    if isinstance(behaviors, str):
+        behaviors = [behaviors]
+    if choices is None:
+        choices = {g: get_prob_switch_all_sessions(folder, g) for g in ('D1', 'A2A')}
+    meas = ('zscore_' if zscore else '') + 'dF/F'
+    denoise_arg = '_denoise' if denoise else ''
+    effect_arg = "_".join([e for e in [row, col, hue] if e])
+    behavior_arg = "_".join(behaviors)
+
+    # hue: ITI, row,  col: laterality
+    for group in ['D1', 'A2A']:
+        neur_type = group if group == 'D1' else 'D2'
+        sessions = choices[group]
+        time_window = np.arange(-2000, 2001, 50)
+        for animal in sessions:
+            for session in sessions[animal]:
+                print(animal, session)
+                files = encode_to_filename(folder, animal, session)
+                matfile, green, red, fp = files['behavior'], files['green'], files['red'], files['FP']
+                # Load FP
+                if fp is not None:
+                    with h5py.File(fp, 'r') as fp_hdf5:
+                        fp_sigs = [access_mat_with_path(fp_hdf5, f'{tags[i]}/dff/{base_method}')
+                                   for i in range(len(tags))]
+                        fp_times = [access_mat_with_path(fp_hdf5, f'{tags[i]}/time') for i in
+                                    range(len(tags))]
+                else:
+                    print(f"Warning {animal} {session} does not have photometry processed!")
+                    fp_times, fp_sigs, iso_times, iso_sigs = get_sources_from_csvs([green, red],
+                                                                                tags=('DA', 'Ca'), show=False)
+
+                    fp_sigs = [raw_fluor_to_dff(fp_times[i], fp_sigs[i], iso_times[i], iso_sigs[i], base_method,
+                                               zscore=False) for i in range(len(fp_sigs))]
+
+                if denoise:
+                    L = len(fp_times)
+                    new_times, new_sigs = [None] * L, [None] * L
+                    for i in range(L):
+                        new_sigs[i], new_times[i] = denoise_quasi_uniform(fp_sigs[i], fp_times[i])
+                    fp_sigs, fp_times = new_sigs, new_times
+                if zscore:
+                    fp_sigs = [(fp_sigs[i] - np.mean(fp_sigs[i])) / np.std(fp_sigs[i], ddof=1)
+                               for i in range(len(fp_sigs))]
+
+                # TODO: for now just do plots for one session
+                mat = h5py.File(matfile, 'r')
+                # Get aligned signals to behaviors
+                behavior_times = np.vstack([get_behavior_times(mat, beh) for beh in behaviors])
+                nonan_sel = ~np.any(np.isnan(behavior_times), axis=0)
+                behavior_times_nonan = behavior_times[:, nonan_sel]
+                # TODO: ADD caps for multiple behavior time latencies
+                aligned = [align_activities_with_event(fp_sigs[i], fp_times[i], behavior_times_nonan,
+                                                       time_window, False) for i in range(len(fp_sigs))]
+
+                # get trial features
+                def opt2selgroups(opt):
+                    # add in different data
+                    if opt is None:
+                        return {'all': None}
+                    if opt == 'FP':
+                        return {'DA': 0, 'Ca': 1}
+                    return get_trial_features(mat, opt)
+
+                rsel_groups, csel_groups, hsel_groups = opt2selgroups(row), opt2selgroups(col), \
+                                                        opt2selgroups(hue)
+                mat.close()
+
+                zfolder = "zscore" if zscore else "dff"
+                # TODO: come up with unifying code for fname
+                subfolder = os.path.join(plots, "behavior_aligned", plot_type, effect_arg, behavior_arg,
+                                         f"{base_method}_{zfolder}{denoise_arg}")
+                if not os.path.exists(subfolder):
+                    os.makedirs(subfolder)
+                for k, fsig in enumerate(sigs):
+                    N_trials = np.arange(len(nonan_sel))[nonan_sel]
+                    session_left = len(N_trials)
+                    justsig = (row == 'FP') or (col == 'FP') or (hue == 'FP')
+                    if fsig == 'all' or (len(sigs) == 1 and justsig):
+                        k_aligned = aligned
+                    else:
+                        k_aligned = aligned[opt2selgroups('FP')[fsig]]
+
+                    if plot_type == 'trial_raw':
+                        all_ns = set()
+                        for i in range(len(rows)):
+                            # TODO: add extra event times if needed
+                            for j in range(len(cols)):
+                                # TODO: only handle the case when row is the signal variable
+                                rsels, csels = rsel_groups[rows[i]], csel_groups[cols[j]]
+                                # TODO: find out reason for incomplete sampling
+                                if rsels is None:
+                                    rsels = np.full_like(nonan_sel, 1)
+                                if csels is None:
+                                    csels = np.full_like(nonan_sel, 1)
+                                if isinstance(csels, np.ndarray):
+                                    sels = csels[nonan_sel]
+                                else:
+                                    raise NotImplementedError("Only row can be different signals")
+                                if isinstance(rsels, np.ndarray):
+                                    sels = sels & rsels[nonan_sel]
+                                    ijk_aligned = k_aligned
+                                else:
+                                    ijk_aligned = k_aligned[rsels]
+
+                                for h in hues:
+                                    hsels = hsel_groups[h]
+                                    if hsels is not None:
+                                        sels = hsels[nonan_sel] & sels
+
+                                    in_sigs = ijk_aligned[sels]
+                                    for l in range(in_sigs.shape[0]):
+                                        extra_times = zip(behaviors[1:], np.diff(behavior_times[:, l]))
+                                        fig, ax = plt.subplots(nrows=1, ncols=1)
+                                        ax = peristimulus_time_trial_average_plot(in_sigs[l],
+                                                                                  time_window,
+                                                                                  (behaviors[0], "time(ms)", "",
+                                                                                  [h]), extra_times, ax=ax)
+                                        ax.set_ylabel(rows[i] + f' ({meas})')
+                                        ax.set_title(cols[j])
+                                        lnum = N_trials[sels][l]
+                                        all_ns.add(lnum)
+                                        session_left -= 1
+                                        print(f'trial {lnum}, sessions left: {session_left}')
+                                        fig.suptitle(f"{effect_arg} effects on {neur_type} {behaviors} phase {fsig}")
+                                        sf=f"{neur_type}_{fsig}_{behavior_arg}_{rows[i]}_{cols[j]}_{h}_t{lnum}"
+                                        subfolderK = os.path.join(subfolder, f"{animal}_{session}")
+                                        if not os.path.exists(subfolderK):
+                                            os.makedirs(subfolderK)
+                                        fname = os.path.join(subfolderK, sf)
+                                        fig.savefig(fname + '.png')
+                                        plt.close(fig)
+                            print('done!!!', len(all_ns), aligned[0].shape[0])
+                    else:
+                        if ylims is None:
+                            sharey_opt = 'row' if row == 'FP' else 'col'  # TODO: make it more generalized
+                        else:
+                            sharey_opt = False
+                        fig, axes = plt.subplots(nrows=len(rows), ncols=len(cols), sharex=True,
+                                                 sharey=sharey_opt, figsize=(20, 10))
+                        if len(rows) == 1 and len(cols) == 1:
+                            axes = np.array([[axes]])
+                        if len(rows) == 1:
+                            axes = axes.reshape((1, -1))
+                        elif len(cols) == 1:
+                            axes = axes.reshape((-1, 1))
+                        for i in range(len(axes)):
+                            # TODO: add extra event times if needed
+                            axes[i][0].set_ytitle = rows[i] + f' ({meas})'
+                            for j in range(len(axes[i])):
+                                # TODO: only handle the case when row is the signal variable
+                                rsels, csels = rsel_groups[rows[i]], csel_groups[cols[j]]
+                                if rsels is None:
+                                    rsels = np.full_like(nonan_sel, 1)
+                                if csels is None:
+                                    csels = np.full_like(nonan_sel, 1)
+                                if isinstance(csels, np.ndarray):
+                                    sels = csels[nonan_sel]
+                                else:
+                                    raise NotImplementedError("Only row can be different signals")
+                                if isinstance(rsels, np.ndarray):
+                                    sels = sels & rsels[nonan_sel]
+                                    ijk_aligned = k_aligned
+                                else:
+                                    ijk_aligned = k_aligned[rsels]
+                                if hue:
+                                    in_sigs = [ijk_aligned[hsel_groups[h][nonan_sel]& sels] for h in hues]
+                                else:
+                                    in_sigs = [ijk_aligned[sels]]
+
+                                ax = peristimulus_time_trial_average_plot(in_sigs, time_window,
+                                                                          (behaviors, "time(ms)", "", hues),
+                                                                          ax=axes[i][j])
+                                Ns = [str(isig.shape[0]) for isig in in_sigs]
+                                opt = "(N: " + ",".join(Ns) + ")"
+                                if i == 0:
+                                    # TODO: include stats significance and trial N
+                                    axes[i][j].set_title(cols[j]+opt)
+                                else:
+                                    axes[i][j].set_title(opt, fontsize='x-small')
+                                if ylims is not None:
+                                    axes[i][j].set_ylim(ylims[i][j])
+                            axes[i][0].set_ylabel(rows[i] + f' ({meas})')
+                        plt.subplots_adjust(hspace=0.3)
+                        fig.suptitle(f"{effect_arg} effects on {neur_type} {behaviors} phase {fsig}")
+                        fname = os.path.join(subfolder,
+                                     f"{neur_type}_{fsig}_{behavior_arg}_{effect_arg}_{animal}_{session}")
+                        #plt.tight_layout()
+                        fig.savefig(fname + '.png')
+                        fig.savefig(fname + '.eps')
+                        plt.close(fig)

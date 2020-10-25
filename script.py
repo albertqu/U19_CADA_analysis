@@ -90,3 +90,11 @@ np.mean(np.abs(pred_error))
 plt.plot(moving_average(pred_error, window=50, non_overlap=True))
 peristimulus_time_trial_heatmap_plot(aligned[0], time_window, center_in_trials,
                                                                ("", "time (ms)", ""))
+
+
+# https://towardsdatascience.com/interaction-effect-in-multiple-regression-3091a5d0fadd
+from statsmodels.regression import linear_model
+model = linear_model.OLS(y, X).fit()
+from sklearn.preprocessing import PolynomialFeatures
+#generating interaction terms
+x_interaction = PolynomialFeatures(2, interaction_only=True, include_bias=False).fit_transform(X)
