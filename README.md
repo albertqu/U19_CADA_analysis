@@ -17,7 +17,7 @@ The file structure listed here suggests one possible analysis file configuration
 
 ### General Setup
 <pre>
-- /<root/>
+- [root]
     - <b>CADA_data</b>: root for storing data of different modalities
         - <b>ProbSwitch_Raw</b>: Raw behavior data mats and other recording sources including photometry and binaries 
         - <b>ProbSwitch_FP_data</b>: ProbSwitch_FP_data: preprocessed data with behavior and FP dff ready for further analysis
