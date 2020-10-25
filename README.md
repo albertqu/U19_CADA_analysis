@@ -17,7 +17,7 @@ The file structure listed here suggests one possible analysis file configuration
 
 ### General Setup
 <pre>
-- <root>
+- /<root/>
     - <b>CADA_data</b>: root for storing data of different modalities
         - <b>ProbSwitch_Raw</b>: Raw behavior data mats and other recording sources including photometry and binaries 
         - <b>ProbSwitch_FP_data</b>: ProbSwitch_FP_data: preprocessed data with behavior and FP dff ready for further analysis
@@ -107,7 +107,7 @@ More specific details in documenations in `behaviors.py`
 
 ## Example Code
 The following code plot outcome times 
-```python=
+```python
 plot_type = 'trial_average'
 folder = "/Users/albertqu/Documents/7.Research/Wilbrecht_Lab/CADA_data/ProbSwitch_FP_data"
 plots = "/Users/albertqu/Documents/7.Research/Wilbrecht_Lab/CADA_plots/FP_NAc_D1D2_CADA"
