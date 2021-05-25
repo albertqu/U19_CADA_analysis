@@ -89,7 +89,8 @@ def calculate_best_time_window(times, event_times, twindow_tuple, align_last):
 #######################################################
 ################### Visualization #####################
 #######################################################
-def peristimulus_time_trial_average_plot(sigs, times, tags, extra_event_times=None, ylim=None, ax=None):
+def peristimulus_time_trial_average_plot(sigs, times, tags, extra_event_times=None, ylim=None, ax=None,
+                                         method='ci95'):
     """
     TODO: enable feeding error bars
     Take in list of signal groups plot hued line plots in ax.
@@ -106,11 +107,16 @@ def peristimulus_time_trial_average_plot(sigs, times, tags, extra_event_times=No
         ax = plt.gca()
     if isinstance(sigs, np.ndarray):
         sigs = [sigs]
-    evnt, xlb, ylbl, lgs = tags
+    if len(tags) == 4:
+        evnt, xlb, ylbl, lgs = tags
+        colors = sns.color_palette("gist_ncar_r", n_colors=len(sigs))
+    else:
+        evnt, xlb, ylbl, lgs, colors = tags
     nolegend = False
     if lgs is None:
         nolegend = True
         lgs = ['sig']
+
     for i, isig in enumerate(sigs):
         ilg = lgs[i]
         if isinstance(isig, list):
@@ -122,8 +128,16 @@ def peristimulus_time_trial_average_plot(sigs, times, tags, extra_event_times=No
             meansig = np.nanmean(isig, axis=0)
             # TODO: better method for calculating stderr with nans
             stderr = np.nanstd(isig, axis=0) / np.sqrt(isig.shape[0])
-            ax.plot(itime, meansig, label=ilg)
-            ax.fill_between(itime, meansig-stderr, meansig+stderr, alpha=0.2)
+            ax.plot(itime, meansig, color=colors[i], label=ilg)
+            if method == 'stderr':
+                lower, upper = meansig-stderr, meansig+stderr
+            elif method[:2] == 'ci':
+                alpha = 1 - float(method[2:]) / 100
+                meanlamb = lambda xs: np.mean(xs, axis=0)
+                lower, upper = get_bootstrap_CI(bootstrap_ests(isig, meanlamb, B=10000), alpha=alpha)
+            else:
+                raise NotImplementedError(f"Unknown method {method}")
+            ax.fill_between(itime, lower, upper, color=colors[i], alpha=0.2)
     ax.axvline(0, ls='--')
     if extra_event_times is None:
         extra_event_times = []
@@ -136,6 +150,33 @@ def peristimulus_time_trial_average_plot(sigs, times, tags, extra_event_times=No
     if not nolegend:
         ax.legend(fontsize="xx-small")
     return ax
+
+
+def get_bootstrap_samples(X_sample):
+    "TODO: change by default do axis 0"
+    # X_sample is P_hat
+    N = X_sample.shape[0]
+    sample_index = np.random.choice(N, N)
+    return X_sample[sample_index]
+
+
+def bootstrap_ests(X_sample, est, B=10000):
+    theta_n = est(X_sample)
+    if isinstance(theta_n, np.number):
+        K = 1
+    else:
+        K = len(theta_n)
+    theta_new = np.empty((B, K))
+    for i in range(B):
+        isamp = get_bootstrap_samples(X_sample)
+        theta_new[i] = est(isamp)
+    return theta_new
+
+
+def get_bootstrap_CI(bs_samples, alpha=0.05):
+    beta_lb = np.percentile(bs_samples, (alpha / 2) * 100, axis=0)
+    beta_ub = np.percentile(bs_samples, (1 - alpha / 2)*100, axis=0)
+    return beta_lb, beta_ub
 
 
 def peristimulus_time_trial_heatmap_plot(sigs, times, trials, tags, extra_event_times=None, trial_marks=None,
@@ -204,6 +245,7 @@ def peristimulus_multiple_file_multiple_events(mats, event_types):
     pass
 
 
+
 def behavior_aligned_FP_plots(folder, plots, behaviors, choices, options, zscore=True,
                               base_method='robust', denoise=True):
     # TODO: think more carefully about multiple behavior alignment
@@ -248,7 +290,7 @@ def behavior_aligned_FP_plots(folder, plots, behaviors, choices, options, zscore
             for session in sessions[animal]:
                 print(animal, session)
                 files = encode_to_filename(folder, animal, session)
-                matfile, green, red, fp = files['behavior'], files['green'], files['red'], files['FP']
+                matfile, green, red, fp = files['processed'], files['green'], files['red'], files['FP']
                 # Load FP
                 if fp is not None:
                     with h5py.File(fp, 'r') as fp_hdf5:
@@ -420,3 +462,5 @@ def behavior_aligned_FP_plots(folder, plots, behaviors, choices, options, zscore
                         fig.savefig(fname + '.png')
                         fig.savefig(fname + '.eps')
                         plt.close(fig)
+
+

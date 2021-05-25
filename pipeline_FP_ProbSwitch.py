@@ -1,7 +1,10 @@
 from peristimulus import *
 from behaviors import *
 from utils import encode_to_filename, decode_from_filename
-from caiman.utils.utils import recursively_save_dict_contents_to_group
+try:
+    from caiman.utils.utils import recursively_save_dict_contents_to_group
+except ModuleNotFoundError:
+    print("CaImAn not installed or environment not activated, certain functions might not be usable")
 
 
 #######################################################
@@ -32,12 +35,21 @@ def FP_save():
             for session in sessions[animal]:
                 print(animal, session)
                 files = encode_to_filename(folder_load, animal, session)
-                fp = encode_to_filename(folder_save, animal, session, 'FP')
+                files2 = encode_to_filename(folder_save, animal, session)
 
-                matfile, green, red = files['behavior'], files['green'], files['red']
+                green, red = files['green'], files['red']
+                fp, matfile = files2['FP'], files2['processed']
                 # Load FP
                 if fp is None or not check_FP_contain_dff_method(fp, base_methods) or overwrite:
+                    aux_times = None
+                    mat = h5py.File(matfile)
+
+                    if 'out' in mat:  # Processed data
+                        assert mat['out/value/green_time'].shape[0] == 1
+                        aux_times = [np.array(mat['out/value/green_time']).ravel(),
+                                     np.array(mat['out/value/red_time']).ravel()]
                     fp_times, fp_sigs, iso_times, iso_sigs = get_sources_from_csvs([green, red],
+                                                                                   aux_times=aux_times,
                                                                                 tags=('DA', 'Ca'), show=False)
 
                     if not test_only:
@@ -103,7 +115,7 @@ def raw_trace_visualization(folder, animal, session, isel=None, zscore=True, bas
     sigs = ('DA', 'Ca')
     meas = ('zscore_' if zscore else '') + 'dF/F'
 
-    matfile, green, red, fp = files['behavior'], files['green'], files['red'], files['FP']
+    matfile, green, red, fp = files['processed'], files['green'], files['red'], files['FP']
     mat = h5py.File(matfile, 'r')
     # Load FP
     if fp is not None:
@@ -249,6 +261,7 @@ def NAcD1D2_trialHist_ITI(choices=None):
     zscore = True # Should not matter with 1 session
     base_method = 'robust'
     denoise=True
+
 
     # Plotting Option
     sigs = ('DA', 'Ca')
@@ -468,8 +481,6 @@ def NAcD1D2_CADA_outcome_raw():
                               base_method, denoise)
 
 
-
-
 def NAcD1D2_Fig3_group():
     # TODO: add functionality for markers
     trial_heatmap_D1D2(center_in_func, "center_in")
@@ -526,7 +537,7 @@ def trial_heatmap_D1D2(event_time_func, tag):
             for ks, session in enumerate(sessions[animal]):
                 two_sessions.append(animal+"_"+session)
                 files = encode_to_filename(folder, animal, session)
-                matfile, green, red = files['behavior'], files['green'], files['red']
+                matfile, green, red = files['processed'], files['green'], files['red']
                 # Load FP
                 fp_times, fp_sigs, iso_times, iso_sigs = get_sources_from_csvs([green, red],
                                                                             tags=('DA', 'Ca'), show=False)
@@ -577,3 +588,123 @@ def trial_heatmap_D1D2(event_time_func, tag):
     fig.savefig(fname + '.png')
     plt.close("all")
 
+
+def postUU_switch(animal, session, pre, post, beh_arg, cond_arg, signal, ylims=None, plot_type='trial_avg'):
+    event_arg = beh_arg
+    fmat0 = drop_empty_nan(giant_eventFP_mat)
+    if animal == 'all':
+        print('careful about Ca because it is mixed')
+    group = {'al': 'mixed_' + region, 'D1': 'D1_' + region, 'A2': 'D2_' + region}[animal[:2]]
+    if len(animal) > 3:
+        fmat0 = fmat0[fmat0['animal'] == animal].reset_index(drop=True)
+    if session != 'all':
+        fmat0 = fmat0[fmat0['session'] == session].reset_index(drop=True)
+    windowsels = {'DA': (time_window_dict[beh_arg] >= 0) & (time_window_dict[beh_arg] <= 1500),
+                  'Ca': (time_window_dict[beh_arg] >= 0) & (time_window_dict[beh_arg] <= 1500)}
+
+    # Post
+    # Switch trial: A[t] != A[t-1]
+    def plusminus(x):
+        if x < 0:
+            return str(x)
+        elif x == 0:
+            return ''
+        else:
+            return f'+{x}'
+
+    postR = list(range(0, post + 1))  # post switch option
+    preR = list(range(pre, 0))  # pre switch option
+    rangeS = preR + postR
+    nRangeS = [plusminus(x) for x in rangeS]
+
+    postSal = cond_arg.split('_')[1]
+    assert pre <= -2, 'Must be at least 2 lags pre'
+
+    if signal == 'all':
+        sig_arg = 'DACa'
+        allsigs = ['DA', 'Ca']
+    else:
+        sig_arg = signal
+        allsigs = [signal]
+
+    if plot_type.startswith('dimr'):
+        dimMethod = plot_type[5:]
+        fmat0 = eventFP_mat_neurDimRed(fmat0, dimMethod, allsigs, rangeS, beh_arg, windowsels)
+
+    logsel = (fmat0['A{t-1}'] != fmat0['A']) & np.logical_and.reduce([fmat0['R'] == postSal] + [
+        fmat0['R{t+%d}' % n] == postSal for n in range(1, post + 1)]) & np.logical_and.reduce(
+        [fmat0['R{t-%d}' % n] == 'U' for n in range(1, abs(pre) + 1)]) & np.logical_and.reduce(
+        [fmat0['A{t-1}'] == fmat0['A{t-%d}' % n] for n in range(2, abs(pre) + 1)])
+    fmat_plot = fmat0[logsel].reset_index(drop=True)
+    all_bins = [f'switch{i}' for i in rangeS]
+    fig, axes = plt.subplots(nrows=len(allsigs), ncols=2, sharex=True, sharey='row',
+                             figsize=(15, len(allsigs) * 7))
+    axes = axes.reshape((len(allsigs), 2))
+    plt.subplots_adjust(hspace=0.2, wspace=0.3)
+
+    for i, sig in enumerate(allsigs):
+        for j, side in enumerate(['ipsi', 'contra']):
+            # Code Mixed switch stay behaviors later
+            actsel = np.logical_and.reduce([fmat_plot['A'] == side] +
+                                           [fmat_plot['A{t+%d}' % n] == side for n in range(1, post + 1)])
+            side_mat = fmat_plot.loc[actsel]
+            if side_mat.shape[0] == 0:
+                continue
+            print(side_mat.shape)
+            # Mixed switch stay behaviors TODO: render just stays
+            if plot_type.startswith('dimr'):
+                dimMethod = plot_type[5:]
+                if dimMethod.startswith('pca'):
+                    ncomps = int(dimMethod.split('_')[1])
+                    template = sig + f'_{event_arg}' + '{t%s}_PC'
+                    if ncomps == 1:
+                        trials = np.repeat(['t%s' % ll for ll in nRangeS], side_mat.values.shape[0])
+                        data = side_mat[[template % ll + '1' for ll in nRangeS]].values.ravel(order='F')
+                        pc1arg = sig + f'_{event_arg}_PC1'
+                        # add sns.stripplot
+                        sns.violinplot(x='trial# periswitch', y=pc1arg,
+                                       data=pd.DataFrame({'trial# periswitch': trials, pc1arg: data}),
+                                       ax=axes[i, j])
+
+                    elif ncomps == 2:
+                        trials = np.repeat(['t%s' % ll for ll in nRangeS], side_mat.values.shape[0])
+                        data1 = side_mat[[template % ll + '1' for ll in nRangeS]].values.ravel(order='F')
+                        pc1arg = sig + f'_{event_arg}_PC1'
+                        data2 = side_mat[[template % ll + '2' for ll in nRangeS]].values.ravel(order='F')
+                        pc2arg = sig + f'_{event_arg}_PC2'
+                        datapdf = pd.DataFrame({'trial# periswitch': trials,
+                                                pc1arg: data1, pc2arg: data2})
+                        sns.scatterplot(data=datapdf, x=pc1arg, y=pc2arg, hue='trial# periswitch',  # Joint
+                                        ax=axes[i, j])
+                    else:
+                        raise NotImplementedError(f"Unimplemented with PC {ncomps}")
+                elif dimMethod == 'mean':
+                    template = sig + f'_{event_arg}' + '{t%s}_mean'
+                    columns = [get_columns_FP_df(side_mat, template % ll)[0]
+                               for ll in nRangeS]
+                    metricN = sig + f'_{event_arg}' + columns[0].split('{')[1].split('}')[1]
+                    trials = np.repeat([cc.split('{')[1].split('}')[0] for cc in columns],
+                                       side_mat.values.shape[0])
+                    data = side_mat[columns].values.ravel(order='F')
+                    sns.violinplot(x='trial# periswitch', y=metricN,
+                                   data=pd.DataFrame({'trial# periswitch': trials, metricN: data}),
+                                   ax=axes[i, j])
+            else:
+                sub_traces = [None] * len(nRangeS)
+                for l, n in enumerate(nRangeS):
+                    outcomeI = get_columns_FP_df(side_mat, sig + f'_{event_arg}' + '{t%s}' % n)
+                    sub_traces[l] = side_mat[outcomeI].values
+                # TODO: Add what post look like, idea: ipsi contra can be mixed as long as it is labeled
+                peristimulus_time_trial_average_plot(sub_traces, time_window_dict[beh_arg],
+                                                     tags=(None, 'time(ms)', f'{sig} Z(dF/F)', all_bins),
+                                                     ax=axes[i, j])
+                if ylims is not None:
+                    axes[i, j].set_ylim(ylims)
+                axes[i, j].legend(fontsize='large')
+            if i == 0:
+                axes[i, j].set_title(side)
+    fig.suptitle(f'{event_arg} {cond_arg} {post} {animal} {session} ' + group)
+    switchN = f'pre{pre}_post{post}'
+    # plt.savefig(os.path.join(plot_out, f'{sig_arg}_{event_arg}_Periswitch_{plot_type}_{cond_arg}{switchN}_{animal}_{session}.png'))
+    # TODO: compare the movement time differences across stay vs switch
+    # TODO: different event FP comparison

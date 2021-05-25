@@ -94,7 +94,7 @@ def check_FP_contain_dff_method(fp, methods, sig='DA'):
         return np.all([f'{sig}/dff/{m}' in hf for m in methods])
 
 
-def get_sources_from_csvs(csvfiles, window=400, tags=None, show=False):
+def get_sources_from_csvs(csvfiles, window=400, aux_times=None, tags=None, show=False):
     """
     Extract sources from a list of csvfiles, with csvfile[0] be channels with cleaniest
     TODO: potentially use the fact that 415 has the same timestamps to speed up the process
@@ -115,9 +115,18 @@ def get_sources_from_csvs(csvfiles, window=400, tags=None, show=False):
             pdf = pd.read_csv(csvfile, delimiter=" ", names=['time', 'calcium'], usecols=[0, 1])
             FP_times[i] = pdf.time.values
             FP_signals[i] = pdf.calcium.values
+        if aux_times:
+            old_zero = FP_times[0][0]
+            if old_zero == aux_times[0][0]:
+                print('WARNING: NO UPDATE, something is up')
+            assert len(FP_times) == len(aux_times), 'MUST BE SAME dim'
+            FP_times = aux_times
+
         if tags is None:
             tags = [f'REC{i}' for i in range(len(csvfiles))]
     except:
+        print('OOPPS')
+        # TODO: aux_time input potentially needed
         FP_times = [None] * len(csvfiles) * 2
         FP_signals = [None] * len(csvfiles) * 2
         for i in range(len(csvfiles)):
@@ -225,6 +234,8 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
                       r"?P<A>p\d+)(?P<SP>[-&\w]*)\.mat", filename)
     # case processed behavior
     mPBMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
+                      r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>FP_[LR]H)_processed_data.mat", filename)
+    mPBOMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
                       r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>FP_[LR]H)_behavior_data.mat", filename)
     mFPMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
                       r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>FP_[LR]H).hdf5", filename)
@@ -245,7 +256,11 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
             options['H'] = sp_match.group(1)
     elif mPBMat is not None:
         options = mPBMat.groupdict()
-        ftype = "behavior"
+        ftype = "processed"
+        oS = options["S"]
+    elif mPBOMat is not None:
+        options = mPBOMat.groupdict()
+        ftype = "behavior_old"
         oS = options["S"]
     elif mFPMat is not None:
         options = mFPMat.groupdict()
@@ -316,7 +331,7 @@ def encode_to_filename(folder, animal, session, ftypes="processed_all"):
     if ftypes == "raw all":
         ftypes = ["exper", "bin_mat", "green", "red"]
     elif ftypes == "processed_all":
-        ftypes = ["behavior", "green", "red", "FP"]
+        ftypes = ["processed", "green", "red", "FP"]
     elif isinstance(ftypes, str):
         ftypes = [ftypes]
     results = {ft: None for ft in ftypes}
@@ -958,3 +973,10 @@ class ProgressBar:
         print(f'Skipping {task_name}, estimated run time left: {self.tstr(ETA)}')
         if ETA == 0.:
             print(f'Finished all {self.N} tasks. Total Run Time: {self.tstr(time.time()-self.start)}.')
+
+
+########################################################
+#################### Miscellaneous #####################
+########################################################
+def df_col_is_str(df, c):
+    return df[c].dtype == object and isinstance(df.iloc[0][c], str)

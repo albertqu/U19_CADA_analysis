@@ -77,7 +77,7 @@ def output_data_for_ITI_DA_RL_model():
                 tags = ['DA', 'Ca']
 
                 files = encode_to_filename(folder, animal, session)
-                matfile, green, red, fp = files['behavior'], files['green'], files['red'], files['FP']
+                matfile, green, red, fp = files['processed'], files['green'], files['red'], files['FP']
                 # Load FP
                 if fp is not None:
                     with h5py.File(fp, 'r') as fp_hdf5:
@@ -138,8 +138,6 @@ def output_data_for_ITI_DA_RL_model():
                 pdf.to_csv(fname, index=False)
 
 
-
-
 ##################################################
 ################# Neural Modeling ################
 ##################################################
@@ -186,7 +184,7 @@ def get_session_decision_tree_modeling(folder, animal, session, event_types, tri
     fit_models = ['RandomForests']
 
     files = encode_to_filename(folder, animal, session)
-    matfile, green, red, fp = files['behavior'], files['green'], files['red'], files['FP']
+    matfile, green, red, fp = files['processed'], files['green'], files['red'], files['FP']
     # Load FP
     if fp is not None:
         with h5py.File(fp, 'r') as fp_hdf5:
@@ -301,16 +299,55 @@ class NeuroMat:
     """
     A class to take trial-structured neural recording and other multi-modal measurement and featurize
     them for modelling purpose.
+    Sampling fixed once set, and therefore careful with the initialization phase!!
     credit: The design is strongly influenced by https://github.com/pillowlab/neuroGLM
+    Example usage:
+    ```
+    # (assume converted from the 1.5 index)
+    # <- initiates, center_ins, center_outs, ipsi_in/out, contra_in/out, ipsi_outcome, outcome, green
+    neurMat = NeuroMat('ms', 50, 'A2A-15B-B_RT_p153_FP_LH')
+    neurMat.trials_init(initiates) # initialize the design matrix
+    neurMat.add_variables(ipsi_out, 'ipsi_out', 'IPSI Port Exit', 'timing', ipsi_out_trials)
+    neurMat.preprocess() # After this step the raw design mat is ready
+    # Specifically RPE is considered as inheriting timestamps from outcome times
+    ```
+    Tests: Take Aligned_matrix, interp_aligned_mat(using interpolation)
+    before, after =  2000, 2000 # time window stats say
+    criticals = np.where(neurMat.designMat[:, neurMat.registers[event]] == 1)[0]
+    frB4 = int(np.ceil(before / neurMat.dt))
+    frAfter = int(np.ceil(after / neurMat.dt))
+    alignMat = np.full((len(criticals), frB4+frAfter+1), np.nan)
+    for i in range(len(criticals)):
+        cr = criticals[i]
+        # handle edge case
+        first = cr - framesB4
+        last = cr + framesAfter + 1
+        alignMat[i] = neurMat.designMat[first:last, neurMat.registers['green']]
+    #compare with interp_aligned_mat
+
     """
 
-    def __init__(self, unit, dt, id, n_trial, **kwargs):
+    def __init__(self, unit, dt, id, **kwargs):
         self.unit = unit
         self.dt = dt
         self.id = id
-        self.N = n_trial
+        # Parse To Obtain LH, NAc info
+        self.registers = {} # Store maps from event to neurMat indices
+        #self.N = n_trial
         for kw in kwargs:
             setattr(self, kw, kwargs[kw])
+
+    def trials_init(self, trial_start_time, trial_end_time):
+        # Initialize length of each trial, then initialize matrix!
+        #self.add_variable(trial_start_time, 'trial_start', 'Trial Initiation', vtype='timing')
+        # Store t0 (dist/cont), duration for each trial
+        self.trial_start = {'t0': [], # continuous times
+                            't_duration': [],
+                            't_discrete': [], # discrete start times
+                            'trial_len': [], # discrete trial len
+                            }
+        self.designMat = None
+        pass
 
     def add_variable(self, data, name, verbose, vtype, trial_inds=None):
         """
@@ -322,16 +359,32 @@ class NeuroMat:
         :return:
         """
         # TODO: enable adding new trial on live later for online experiments
-        # TODO: handle decretization
+        # TODO: handle discretization
         if not hasattr(self, name):
             setattr(self, name, {'data': [None] * self.N,
                                  'verbose': verbose,
                                  'type': vtype})
         var_dict = getattr(self, name)
         if trial_inds is not None:
+            assert len(data) == self.N
             trial_inds = np.arange(len(self.N))
         for i, ind in enumerate(trial_inds):
-            var_dict['data'][ind] = data[i]
+            if vtype == 'timing':
+                # align to trial start, then discretize, sort and assert no nan exist
+                var_dict['data'][ind] = data[trial_inds == ind]
+            elif vtype == 'trace':
+                signals, times = data
+                # align to trial_start, discretize, sort and assert no nan, copy in design matrix
+                # times portion and signal portion
+                var_dict['data'][ind] = data[i]
+            elif vtype == 'value':
+                values, time_code = data
+
+                # values portion and event time portion None, array, or field_name
+                pass
+            else:
+                raise ValueError(f"Undefined measurement type {vtype}")
+            # For all types check for nans
 
     def add_temporal_basis(self, varname, basis_type='rucosine', **kwargs):
         """
@@ -352,7 +405,15 @@ class NeuroMat:
             s, w, itv, e = defaults['start'], defaults['width'], defaults['interval'], defaults['end']
             # convolve with base to obtain shifted signal
             base = ((np.arange(s, w + self.dt, self.dt) - w / 2) * 2 * np.pi / w) / 2 + 0.5
+        pass
 
+    def preprocess(self):
+        # Convert design mat to sparse matrix and then convert to sparse matrix then apply
+        # sklearn.utils.extmath.safe_sparse_dot
+        pass
+
+    def format_designMat(self):
+        # Given all the rules, format the designMat
         pass
 
     def get_all_variables(self):
