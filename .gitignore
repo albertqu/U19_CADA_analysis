@@ -1,3 +1,6 @@
+# Ipython 
+*.ipynb*
+__pycache__
 # IDE
 .idea/
 
