@@ -29,8 +29,11 @@ except ModuleNotFoundError:
 
 
 def get_probswitch_session_by_condition(folder, group='all', region='NAc', signal='all'):
-    """ Returns lists of session files of different recording type
+    """ Searches through [folder] and find all of probswitch experiment sessions that match the
+    description; Returns lists of session files of different recording type
     :param group: str, expression
+    :param region: str, region of recording
+    :param signal: str, signal type (DA or Ca 05/25/21)
     :param photometry:
     :param choices:
     :param processed:
@@ -86,6 +89,8 @@ def get_prob_switch_all_sessions(folder, groups):
 
 
 def check_FP_contain_dff_method(fp, methods, sig='DA'):
+    """ Utility function that helps check whether the <fp> hdf5 file contains <dff> signals preprocessed.
+    """
     if fp is None:
         return False
     if isinstance(methods, str):
@@ -210,6 +215,30 @@ def file_folder_path(f):
         return f[:f.rfind(symbol, 0, -len_sym)]
     else:
         return f[:f.rfind(symbol)]
+
+
+def summarize_sessions(data_root, save_path):
+    # add region of implant, session number, signal quality
+    alles = {'animal': [], 'session':[], 'ftype':[], 'age':[], 'FP': [], 'note': []}
+    for f in os.listdir(data_root):
+        options = decode_from_filename(f)
+        if options is None:
+            pass
+            #print(f, "ALERT")
+        elif ('FP_' in f) and ('FP_' not in options['session']):
+            print(f, options['session'])
+        else:
+            for q in ['animal', 'ftype', 'session']:
+                alles[q].append(options[q])
+            opts = options['session'].split("_FP_")
+            alles['age'].append(opts[0])
+            if len(opts) > 1:
+                alles['FP'].append(opts[1])
+            else:
+                alles['FP'].append("")
+            alles['note'].append(options['DN'] + options['SP'])
+    apdf = pd.DataFrame(alles)
+    apdf.to_csv(os.path.join(save_path, "exper_list.csv"))
 
 
 def decode_from_filename(filename):
