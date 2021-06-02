@@ -167,7 +167,7 @@ typed-ast==1.2.0
 typing==3.6.4
 umap==0.1.1
 umap-learn==0.4.4
-urllib3==1.24.2
+urllib3==1.26.5
 vaex==3.0.0
 vaex-arrow==0.5.1
 vaex-astro==0.7.0
