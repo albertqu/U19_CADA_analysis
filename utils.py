@@ -217,9 +217,30 @@ def file_folder_path(f):
         return f[:f.rfind(symbol)]
 
 
-def summarize_sessions(data_root, save_path):
+def summarize_sessions(data_root, implant_csv, save_path, sort_key='aID'):
+    """
+    implant_csv: pd.DataFrame from implant csv file
+    """
     # add region of implant, session number, signal quality
-    alles = {'animal': [], 'session':[], 'ftype':[], 'age':[], 'FP': [], 'note': []}
+    # input a list of names implant locations
+    # "/A2A-15B-B_RT_20200229_learning-switch-2_p39.mat" supposed to be 139
+    # sorting with p notation mess up if p is less 100\
+    # bug /D1-27H_LT_20200229_ToneSamp_p89.mat read as 022
+    alles = {'animal': [], 'aID':[], 'session': [], 'date': [], 'ftype':[],
+             'age':[], 'FP': [], 'region': [], 'note': []}
+
+    implant_lookup = {}
+    for i in range(len(implant_csv)):
+
+        animal_name = implant_csv.loc[i, 'Name']
+        if animal_name and (str(animal_name) != 'nan'):
+            LH_target = implant_csv.loc[i, 'LH Target']
+            RH_target = implant_csv.loc[i, 'RH Target']
+            print(animal_name)
+            name_first, name_sec = animal_name.split(' ')
+            name_first = "-".join(name_first.split('-')[:2])
+            implant_lookup[name_first+'_'+name_sec] = {'LH': LH_target, 'RH': RH_target}
+
     for f in os.listdir(data_root):
         options = decode_from_filename(f)
         if options is None:
@@ -230,15 +251,36 @@ def summarize_sessions(data_root, save_path):
         else:
             for q in ['animal', 'ftype', 'session']:
                 alles[q].append(options[q])
+
+            name_first2, name_sec2 = options['animal'].split('_')
+            name_first2 = "-".join(name_first2.split('-')[:2])
+            aID = name_first2+"_"+name_sec2
+            alles['aID'].append(aID)
+            alles['date'].append(options['T'])
             opts = options['session'].split("_FP_")
             alles['age'].append(opts[0])
             if len(opts) > 1:
                 alles['FP'].append(opts[1])
+                if aID not in implant_lookup:
+                    print('skipping', options, )
+                    alles['region'].append('')
+                else:
+                    alles['region'].append(implant_lookup[aID][opts[1]])
             else:
                 alles['FP'].append("")
+                alles['region'].append('')
             alles['note'].append(options['DN'] + options['SP'])
+
     apdf = pd.DataFrame(alles)
-    apdf.to_csv(os.path.join(save_path, "exper_list.csv"))
+    sorted_pdf = apdf.sort_values(['date', 'session'], ascending=True)
+    sorted_pdf['S_no'] = 0
+    new_pdfs = []
+    for anim in sorted_pdf[sort_key].unique():
+        tempslice = sorted_pdf[sorted_pdf[sort_key] == anim]
+        sorted_pdf.loc[sorted_pdf[sort_key] == anim, 'S_no'] = np.arange(1, len(tempslice)+1)
+    #final_pdf = pd.concat(new_pdfs, axis=0)
+    final_pdf = sorted_pdf
+    final_pdf.to_csv(os.path.join(save_path, f"exper_list_final_{sort_key}.csv"), index=False)
 
 
 def decode_from_filename(filename):
