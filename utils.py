@@ -9,9 +9,11 @@ import pandas as pd
 from scipy.sparse import diags as spdiags
 from scipy.sparse import linalg as sp_linalg
 from scipy import interpolate, signal
+from packages.photometry_functions import get_dFF
 # Plotting
 import matplotlib.pyplot as plt
 import seaborn as sns
+from packages.photometry_functions import get_f0_Martianova_jove
 # caiman
 try:
     from caiman.source_extraction.cnmf.deconvolution import GetSn
@@ -508,6 +510,7 @@ def raw_fluor_to_dff(rec_time, rec_sig, iso_time, iso_sig, baseline_method='robu
     :param kwargs:
     :return:
     """
+    # TODO: figure out the best policy for removal currently no removal
     # TODO: More in-depth analysis of the best baselining approach with quantitative metrics
     bms = baseline_method.split('_')
     fast = False
@@ -521,7 +524,12 @@ def raw_fluor_to_dff(rec_time, rec_sig, iso_time, iso_sig, baseline_method='robu
     elif baseline_method.startswith('perc'):
         pc = int(baseline_method[4:])
         f0 = percentile_filter(rec_time, rec_sig, perc=pc, **kwargs)
-    elif baseline_method == 'isobestic':
+    elif baseline_method == 'isosbestic':
+        # cite jove paper
+        reference = interpolate.interp1d(iso_time, iso_sig, fill_value='extrapolate')(rec_time)
+        signal = rec_sig
+        f0 = get_f0_Martianova_jove(reference, signal)
+    elif baseline_method == 'isosbestic_old':
         dc_rec, dc_iso = np.mean(rec_sig), np.mean(iso_sig)
         dm_rec_sig, dm_iso_sig = rec_sig - dc_rec, iso_sig - dc_iso
         # TODO: implement impulse based optimization
@@ -531,7 +539,7 @@ def raw_fluor_to_dff(rec_time, rec_sig, iso_time, iso_sig, baseline_method='robu
             f0 = interpolate.interp1d(iso_time, f0_iso, fill_value='extrapolate')(rec_time)
     else:
         raise NotImplementedError(f"Unknown baseline method {baseline_method}")
-    dff = (rec_sig - f0) / (f0 + 1e-16)
+    dff = (rec_sig - f0) / (f0 + np.mean(rec_sig)+1e-16) # arbitrary DC shift to avoid issue
     return (dff - np.mean(dff)) / np.std(dff, ddof=1) if zscore else dff
 
 
@@ -618,7 +626,14 @@ def percentile_filter(xs, ys, window=200, perc=None, **kwargs):
     return scipy.ndimage.percentile_filter(ys, perc, window)
 
 
+def isosbestic_baseline_correct_old(xs, ys, window=200, perc=50, **kwargs):
+    # TODO: this is the greedy method with only the mean estimation
+    #return f0_filter_sig(xs, ys, method=method, window=window)[:, 0]
+    return percentile_filter(xs, ys, window, perc)
+
+
 def isosbestic_baseline_correct(xs, ys, window=200, perc=50, **kwargs):
+    # TODO: current use simplest directly import zdff method but want to rigorously test baselining effect
     # TODO: this is the greedy method with only the mean estimation
     #return f0_filter_sig(xs, ys, method=method, window=window)[:, 0]
     return percentile_filter(xs, ys, window, perc)
@@ -1008,7 +1023,8 @@ class ProgressBar:
     Done with 0, estimated run time left: 0h:0m:2.0s
     Done with 1, estimated run time left: 0h:0m:1.0s
     Done with 2, estimated run time left: 0h:0m:0.0s
-    TODO: implement more detailed progress with subtasks
+    TODO: implement more detailed p
+    rogress with subtasks
     TODO: implement ability to resume interrupted processes
     """
 
