@@ -59,7 +59,10 @@ def get_probswitch_session_by_condition(folder, group='all', region='NAc', signa
         rsel = grouppdf['Region'].isin(regions)
         fpsel = grouppdf['FP'] >= 1
         sigsel = np.logical_and.reduce([grouppdf[f'FP_{s}_zoom'] > 0 for s in signals])
-        animal_sessions = grouppdf[rsel & fpsel & sigsel]
+        if signals[0] == 'none':
+            animal_sessions = grouppdf[rsel]
+        else:
+            animal_sessions = grouppdf[rsel & fpsel & sigsel]
         results[g] = {}
         for animal in animal_sessions['animal'].unique():
             results[g][animal] = sorted(animal_sessions[animal_sessions['animal'] == animal]['session'])
@@ -312,6 +315,8 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
                       r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>FP_[LR]H)_behavior_data.mat", filename)
     mFPMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
                       r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>FP_[LR]H).hdf5", filename)
+    mMDMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
+                      r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>FP_[LR]H)_modeling.hdf5", filename)
     # case binary
     mBIN = None
     options, ftype = None, None
@@ -327,6 +332,10 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
             options["H"] = dn_match.group(1)
         elif sp_match:
             options['H'] = sp_match.group(1)
+    elif mMDMat is not None:
+        options = mMDMat.groupdict()
+        ftype = 'modeling'
+        oS = options['S']
     elif mPBMat is not None:
         options = mPBMat.groupdict()
         ftype = "processed"
@@ -416,7 +425,10 @@ def encode_to_filename(folder, animal, session, ftypes="processed_all"):
                 if opt is not None:
                     ift = opt['ftype']
                     check_mark = opt['animal'] == animal and opt['session'] == session
-                    if ift in ftypes and results[ift] is None and check_mark:
+                    check_mark_mdl = (opt['animal'] == animal) and (opt['session'] in session)
+                    cm_mdl = (ift == 'modeling' and check_mark_mdl)
+                    # TODO: temporary hacky method for modeling
+                    if ift in ftypes and results[ift] is None and (check_mark or cm_mdl):
                         results[ift] = os.path.join(p, f)
                         registers += 1
                         if registers == len(ftypes):
@@ -465,7 +477,7 @@ def access_mat_with_path(mat, p, ravel=False, dtype=None, raw=False):
             value/
                 center_to_side_times/
                 contra/
-                cue_port_side/
+                cue_port_side/ 2=left 1=right
                 execute/
                 initiate/
                 ipsi/
