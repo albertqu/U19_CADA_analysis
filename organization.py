@@ -14,7 +14,7 @@ OUT_PATH = os.path.join(os.getcwd(), "animals")
 decoded_files = []
 decode_failed = []
 
-txt_file_data = ""
+txt_files = []
 
 
 def group_by(data, key_extractor):
@@ -104,40 +104,60 @@ def summarize_sessions(sort_key="aID"):
         data["note"].append(options["DN"] + options["SP"])
 
         data["FP_note"].append("")
-        data["trigger_mode"].append("")
         data["LED_power_415"].append("")
         data["LED_power_470"].append("")
         data["LED_power_560"].append("")
 
         # parse text files for information
+
         #                        replace underscores with underscore or variable whitespace
         name_search = options["animal"].replace("_", r"(?:_|\s+)")
-        # get line containing animal session and two following
-        lines = re.search(
-            r"^\s*" + name_search + r"[^\n]*\n[^\n]*\n", txt_file_data, re.MULTILINE
-        )
-        if lines:
-            lines = lines.group(0)
+        # try each file and use first found
+        found = False
+        trigger_mode = ""
+        for txt_file in txt_files:
+            # get line containing animal session and two following
+            matched_lines = re.search(
+                r"^\s*" + name_search + r"[^\n]*\n[^\n]*\n",
+                txt_file["data"],
+                re.MULTILINE,
+            )
+            if not matched_lines:
+                continue
+
+            found = True
+            lines = matched_lines.group(0)
+
+            matched_trigger_mode = re.search(r"(BSC|Trg)\s*\d", lines, re.I)
+            if matched_trigger_mode:
+                trigger_mode = matched_trigger_mode.group(0)
+
+            break
+
+        data["trigger_mode"].append(trigger_mode)
+
+        if found:
             txt_matches += 1
         else:
             txt_misses += 1
-            print(options["animal"])
+            # print("missed txt data", options["animal"])
+
     print(f"{txt_matches} matches, {txt_misses} misses")
 
-    # apdf = pd.DataFrame(data)
-    # sorted_pdf = apdf.sort_values(["date", "session"], ascending=True)
-    # sorted_pdf["S_no"] = 0
-    # for anim in sorted_pdf[sort_key].unique():
-    #     tempslice = sorted_pdf[sorted_pdf[sort_key] == anim]
-    #     sorted_pdf.loc[sorted_pdf[sort_key] == anim, "S_no"] = np.arange(
-    #         1, len(tempslice) + 1
-    #     )
+    apdf = pd.DataFrame(data)
+    sorted_pdf = apdf.sort_values(["date", "session"], ascending=True)
+    sorted_pdf["S_no"] = 0
+    for anim in sorted_pdf[sort_key].unique():
+        tempslice = sorted_pdf[sorted_pdf[sort_key] == anim]
+        sorted_pdf.loc[sorted_pdf[sort_key] == anim, "S_no"] = np.arange(
+            1, len(tempslice) + 1
+        )
 
-    # if not os.path.exists(OUT_PATH):
-    #     os.makedirs(OUT_PATH)
-    # sorted_pdf.to_csv(
-    #     os.path.join(OUT_PATH, f"exper_list_final_{sort_key}.csv"), index=False
-    # )
+    if not os.path.exists(OUT_PATH):
+        os.makedirs(OUT_PATH)
+    sorted_pdf.to_csv(
+        os.path.join(OUT_PATH, f"exper_list_final_{sort_key}.csv"), index=False
+    )
 
 
 def copy_files():
@@ -174,7 +194,7 @@ def copy_files():
 
 
 def decode_files_in_folder(root):
-    global txt_file_data
+    global txt_files
     for filename in os.listdir(root):
         # gross
         if filename == ".DS_Store":
@@ -185,7 +205,12 @@ def decode_files_in_folder(root):
         # store for later parsing
         if ".txt" in filename:
             with open(filepath, "r") as f:
-                txt_file_data += "\n".join(f.readlines()) + "\n"
+                txt_data = f.read()
+
+                # txt files either have BSC or Trg notation, but not both
+                dtm = "BSC1" if "BSC" in txt_data else "Trg1"
+
+                txt_files.append({"default_trigger_mode": dtm, "data": txt_data})
             continue
 
         # recurse on folders
