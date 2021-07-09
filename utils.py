@@ -57,11 +57,11 @@ def get_probswitch_session_by_condition(folder, group='all', region='NAc', signa
     for g in groups:
         grouppdf = pd.read_csv(os.path.join(folder, f"ProbSwitch_FP_Mice_{g}.csv"))
         rsel = grouppdf['Region'].isin(regions)
-        fpsel = grouppdf['FP'] >= 1
-        sigsel = np.logical_and.reduce([grouppdf[f'FP_{s}_zoom'] > 0 for s in signals])
         if signals[0] == 'none':
             animal_sessions = grouppdf[rsel]
         else:
+            fpsel = grouppdf['FP'] >= 1
+            sigsel = np.logical_and.reduce([grouppdf[f'FP_{s}_zoom'] > 0 for s in signals])
             animal_sessions = grouppdf[rsel & fpsel & sigsel]
         results[g] = {}
         for animal in animal_sessions['animal'].unique():
