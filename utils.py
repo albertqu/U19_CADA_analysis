@@ -9,9 +9,11 @@ import pandas as pd
 from scipy.sparse import diags as spdiags
 from scipy.sparse import linalg as sp_linalg
 from scipy import interpolate, signal
+from packages.photometry_functions import get_dFF
 # Plotting
 import matplotlib.pyplot as plt
 import seaborn as sns
+from packages.photometry_functions import get_f0_Martianova_jove
 # caiman
 try:
     from caiman.source_extraction.cnmf.deconvolution import GetSn
@@ -217,9 +219,30 @@ def file_folder_path(f):
         return f[:f.rfind(symbol)]
 
 
-def summarize_sessions(data_root, save_path):
+def summarize_sessions(data_root, implant_csv, save_path, sort_key='aID'):
+    """
+    implant_csv: pd.DataFrame from implant csv file
+    """
     # add region of implant, session number, signal quality
-    alles = {'animal': [], 'session':[], 'ftype':[], 'age':[], 'FP': [], 'note': []}
+    # input a list of names implant locations
+    # "/A2A-15B-B_RT_20200229_learning-switch-2_p39.mat" supposed to be 139
+    # sorting with p notation mess up if p is less 100\
+    # bug /D1-27H_LT_20200229_ToneSamp_p89.mat read as 022
+    alles = {'animal': [], 'aID':[], 'session': [], 'date': [], 'ftype':[],
+             'age':[], 'FP': [], 'region': [], 'note': []}
+
+    implant_lookup = {}
+    for i in range(len(implant_csv)):
+
+        animal_name = implant_csv.loc[i, 'Name']
+        if animal_name and (str(animal_name) != 'nan'):
+            LH_target = implant_csv.loc[i, 'LH Target']
+            RH_target = implant_csv.loc[i, 'RH Target']
+            print(animal_name)
+            name_first, name_sec = animal_name.split(' ')
+            name_first = "-".join(name_first.split('-')[:2])
+            implant_lookup[name_first+'_'+name_sec] = {'LH': LH_target, 'RH': RH_target}
+
     for f in os.listdir(data_root):
         options = decode_from_filename(f)
         if options is None:
@@ -230,15 +253,36 @@ def summarize_sessions(data_root, save_path):
         else:
             for q in ['animal', 'ftype', 'session']:
                 alles[q].append(options[q])
+
+            name_first2, name_sec2 = options['animal'].split('_')
+            name_first2 = "-".join(name_first2.split('-')[:2])
+            aID = name_first2+"_"+name_sec2
+            alles['aID'].append(aID)
+            alles['date'].append(options['T'])
             opts = options['session'].split("_FP_")
             alles['age'].append(opts[0])
             if len(opts) > 1:
                 alles['FP'].append(opts[1])
+                if aID not in implant_lookup:
+                    print('skipping', options, )
+                    alles['region'].append('')
+                else:
+                    alles['region'].append(implant_lookup[aID][opts[1]])
             else:
                 alles['FP'].append("")
+                alles['region'].append('')
             alles['note'].append(options['DN'] + options['SP'])
+
     apdf = pd.DataFrame(alles)
-    apdf.to_csv(os.path.join(save_path, "exper_list.csv"))
+    sorted_pdf = apdf.sort_values(['date', 'session'], ascending=True)
+    sorted_pdf['S_no'] = 0
+    new_pdfs = []
+    for anim in sorted_pdf[sort_key].unique():
+        tempslice = sorted_pdf[sorted_pdf[sort_key] == anim]
+        sorted_pdf.loc[sorted_pdf[sort_key] == anim, 'S_no'] = np.arange(1, len(tempslice)+1)
+    #final_pdf = pd.concat(new_pdfs, axis=0)
+    final_pdf = sorted_pdf
+    final_pdf.to_csv(os.path.join(save_path, f"exper_list_final_{sort_key}.csv"), index=False)
 
 
 def decode_from_filename(filename):
@@ -466,6 +510,7 @@ def raw_fluor_to_dff(rec_time, rec_sig, iso_time, iso_sig, baseline_method='robu
     :param kwargs:
     :return:
     """
+    # TODO: figure out the best policy for removal currently no removal
     # TODO: More in-depth analysis of the best baselining approach with quantitative metrics
     bms = baseline_method.split('_')
     fast = False
@@ -479,7 +524,12 @@ def raw_fluor_to_dff(rec_time, rec_sig, iso_time, iso_sig, baseline_method='robu
     elif baseline_method.startswith('perc'):
         pc = int(baseline_method[4:])
         f0 = percentile_filter(rec_time, rec_sig, perc=pc, **kwargs)
-    elif baseline_method == 'isobestic':
+    elif baseline_method == 'isosbestic':
+        # cite jove paper
+        reference = interpolate.interp1d(iso_time, iso_sig, fill_value='extrapolate')(rec_time)
+        signal = rec_sig
+        f0 = get_f0_Martianova_jove(reference, signal)
+    elif baseline_method == 'isosbestic_old':
         dc_rec, dc_iso = np.mean(rec_sig), np.mean(iso_sig)
         dm_rec_sig, dm_iso_sig = rec_sig - dc_rec, iso_sig - dc_iso
         # TODO: implement impulse based optimization
@@ -489,7 +539,7 @@ def raw_fluor_to_dff(rec_time, rec_sig, iso_time, iso_sig, baseline_method='robu
             f0 = interpolate.interp1d(iso_time, f0_iso, fill_value='extrapolate')(rec_time)
     else:
         raise NotImplementedError(f"Unknown baseline method {baseline_method}")
-    dff = (rec_sig - f0) / (f0 + 1e-16)
+    dff = (rec_sig - f0) / (f0 + np.mean(rec_sig)+1e-16) # arbitrary DC shift to avoid issue
     return (dff - np.mean(dff)) / np.std(dff, ddof=1) if zscore else dff
 
 
@@ -576,7 +626,14 @@ def percentile_filter(xs, ys, window=200, perc=None, **kwargs):
     return scipy.ndimage.percentile_filter(ys, perc, window)
 
 
+def isosbestic_baseline_correct_old(xs, ys, window=200, perc=50, **kwargs):
+    # TODO: this is the greedy method with only the mean estimation
+    #return f0_filter_sig(xs, ys, method=method, window=window)[:, 0]
+    return percentile_filter(xs, ys, window, perc)
+
+
 def isosbestic_baseline_correct(xs, ys, window=200, perc=50, **kwargs):
+    # TODO: current use simplest directly import zdff method but want to rigorously test baselining effect
     # TODO: this is the greedy method with only the mean estimation
     #return f0_filter_sig(xs, ys, method=method, window=window)[:, 0]
     return percentile_filter(xs, ys, window, perc)
@@ -966,7 +1023,8 @@ class ProgressBar:
     Done with 0, estimated run time left: 0h:0m:2.0s
     Done with 1, estimated run time left: 0h:0m:1.0s
     Done with 2, estimated run time left: 0h:0m:0.0s
-    TODO: implement more detailed progress with subtasks
+    TODO: implement more detailed p
+    rogress with subtasks
     TODO: implement ability to resume interrupted processes
     """
 
