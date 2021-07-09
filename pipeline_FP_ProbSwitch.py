@@ -708,3 +708,7 @@ def postUU_switch(animal, session, pre, post, beh_arg, cond_arg, signal, ylims=N
     # plt.savefig(os.path.join(plot_out, f'{sig_arg}_{event_arg}_Periswitch_{plot_type}_{cond_arg}{switchN}_{animal}_{session}.png'))
     # TODO: compare the movement time differences across stay vs switch
     # TODO: different event FP comparison
+
+#######################################################
+#################### Belief State #####################
+#######################################################

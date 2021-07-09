@@ -578,7 +578,7 @@ class BehaviorMat:
             # And use selectors on np.array of event nodes
             ```
         3. saliency = False, simple = False (superset of prev):
-            Returns all events regardless of saliency or simplicty
+            Returns all events regardless of saliency or simplicity
             To obtain just non salient events in all trials, use similar code to above
         :param event:
         :param simple:
