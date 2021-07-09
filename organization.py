@@ -5,11 +5,16 @@ import os
 import shutil
 import pandas as pd
 import numpy as np
+import re
 
 IN_PATH = "/Volumes/Wilbrecht_file_server/2ABT/ProbSwitch/ProbSwitch_Raw"
+IMPLANT_CSV_PATH = "/Volumes/Wilbrecht_file_server/Albert/CADA_data/ProbSwitch_FP_data/ImplantedMice_ProbSwitch.csv"
 OUT_PATH = os.path.join(os.getcwd(), "animals")
 
 decoded_files = []
+decode_failed = []
+
+txt_file_data = ""
 
 
 def group_by(data, key_extractor):
@@ -27,7 +32,7 @@ def group_by(data, key_extractor):
     return groups
 
 
-def summarize_sessions(implant_csv_path=None, sort_key="aID"):
+def summarize_sessions(sort_key="aID"):
     """
     implant_csv: pd.DataFrame from implant csv file
     """
@@ -41,17 +46,22 @@ def summarize_sessions(implant_csv_path=None, sort_key="aID"):
         "FP": [],
         "region": [],
         "note": [],
+        "FP_note": [],
+        "trigger_mode": [],
+        "LED_power_415": [],
+        "LED_power_470": [],
+        "LED_power_560": [],
     }
 
     implant_lookup = {}
-    if implant_csv_path:
-        implant_df = pd.read_csv(implant_csv_path)
+    if IMPLANT_CSV_PATH:
+        implant_df = pd.read_csv(IMPLANT_CSV_PATH)
         for i in range(len(implant_df)):
             animal_name = implant_df.loc[i, "Name"]
             if animal_name and (str(animal_name) != "nan"):
                 LH_target = implant_df.loc[i, "LH Target"]
                 RH_target = implant_df.loc[i, "RH Target"]
-                print(animal_name)
+                # print(animal_name)
                 name_first, name_sec = animal_name.split(" ")
                 name_first = "-".join(name_first.split("-")[:2])
                 implant_lookup[name_first + "_" + name_sec] = {
@@ -59,50 +69,75 @@ def summarize_sessions(implant_csv_path=None, sort_key="aID"):
                     "RH": RH_target,
                 }
 
+    txt_matches = 0
+    txt_misses = 0
     for decoded_file in decoded_files:
         f = decoded_file["name"]
+
         options = decoded_file["decoded"]
         if options is None:
-            pass
+            continue
         elif ("FP_" in f) and ("FP_" not in options["session"]):
             print(f, options["session"])
-        else:
-            for q in ["animal", "ftype", "session"]:
-                data[q].append(options[q])
+            continue
 
-            name_first2, name_sec2 = options["animal"].split("_")
-            name_first2 = "-".join(name_first2.split("-")[:2])
-            aID = name_first2 + "_" + name_sec2
-            data["aID"].append(aID)
-            data["date"].append(options["T"])
-            opts = options["session"].split("_FP_")
-            data["age"].append(opts[0])
-            if len(opts) > 1:
-                data["FP"].append(opts[1])
-                if aID not in implant_lookup:
-                    # print('skipping', options['animal'], options['session'])
-                    data["region"].append("")
-                else:
-                    data["region"].append(implant_lookup[aID][opts[1]])
-            else:
-                data["FP"].append("")
+        for q in ["animal", "ftype", "session"]:
+            data[q].append(options[q])
+
+        name_first2, name_sec2 = options["animal"].split("_")
+        name_first2 = "-".join(name_first2.split("-")[:2])
+        aID = name_first2 + "_" + name_sec2
+        data["aID"].append(aID)
+        data["date"].append(options["T"])
+        opts = options["session"].split("_FP_")
+        data["age"].append(opts[0])
+        if len(opts) > 1:
+            data["FP"].append(opts[1])
+            if aID not in implant_lookup:
+                # print('skipping', options['animal'], options['session'])
                 data["region"].append("")
-            data["note"].append(options["DN"] + options["SP"])
+            else:
+                data["region"].append(implant_lookup[aID][opts[1]])
+        else:
+            data["FP"].append("")
+            data["region"].append("")
+        data["note"].append(options["DN"] + options["SP"])
 
-    apdf = pd.DataFrame(data)
-    sorted_pdf = apdf.sort_values(["date", "session"], ascending=True)
-    sorted_pdf["S_no"] = 0
-    for anim in sorted_pdf[sort_key].unique():
-        tempslice = sorted_pdf[sorted_pdf[sort_key] == anim]
-        sorted_pdf.loc[sorted_pdf[sort_key] == anim, "S_no"] = np.arange(
-            1, len(tempslice) + 1
+        data["FP_note"].append("")
+        data["trigger_mode"].append("")
+        data["LED_power_415"].append("")
+        data["LED_power_470"].append("")
+        data["LED_power_560"].append("")
+
+        # parse text files for information
+        #                        replace underscores with underscore or variable whitespace
+        name_search = options["animal"].replace("_", r"(?:_|\s+)")
+        # get line containing animal session and two following
+        lines = re.search(
+            r"^\s*" + name_search + r"[^\n]*\n[^\n]*\n", txt_file_data, re.MULTILINE
         )
+        if lines:
+            lines = lines.group(0)
+            txt_matches += 1
+        else:
+            txt_misses += 1
+            print(options["animal"])
+    print(f"{txt_matches} matches, {txt_misses} misses")
 
-    if not os.path.exists(OUT_PATH):
-        os.makedirs(OUT_PATH)
-    sorted_pdf.to_csv(
-        os.path.join(OUT_PATH, f"exper_list_final_{sort_key}.csv"), index=False
-    )
+    # apdf = pd.DataFrame(data)
+    # sorted_pdf = apdf.sort_values(["date", "session"], ascending=True)
+    # sorted_pdf["S_no"] = 0
+    # for anim in sorted_pdf[sort_key].unique():
+    #     tempslice = sorted_pdf[sorted_pdf[sort_key] == anim]
+    #     sorted_pdf.loc[sorted_pdf[sort_key] == anim, "S_no"] = np.arange(
+    #         1, len(tempslice) + 1
+    #     )
+
+    # if not os.path.exists(OUT_PATH):
+    #     os.makedirs(OUT_PATH)
+    # sorted_pdf.to_csv(
+    #     os.path.join(OUT_PATH, f"exper_list_final_{sort_key}.csv"), index=False
+    # )
 
 
 def copy_files():
@@ -139,6 +174,7 @@ def copy_files():
 
 
 def decode_files_in_folder(root):
+    global txt_file_data
     for filename in os.listdir(root):
         # gross
         if filename == ".DS_Store":
@@ -146,18 +182,30 @@ def decode_files_in_folder(root):
 
         filepath = os.path.join(root, filename)
 
+        # store for later parsing
+        if ".txt" in filename:
+            with open(filepath, "r") as f:
+                txt_file_data += "\n".join(f.readlines()) + "\n"
+            continue
+
         # recurse on folders
         if os.path.isdir(filepath):
             decode_files_in_folder(filepath)
             continue
 
-        decoded_files.append(
-            {
-                "name": filename,
-                "path": filepath,
-                "decoded": decode_from_filename(filepath),
-            }
-        )
+        decoded = decode_from_filename(filepath)
+
+        if decoded:
+            if decoded["ftype"] == "exper":
+                decoded_files.append(
+                    {
+                        "name": filename,
+                        "path": filepath,
+                        "decoded": decoded,
+                    }
+                )
+        else:
+            decode_failed.append(filepath)
 
 
 # prepare files
