@@ -7,11 +7,13 @@ def archive_by_date(src_folder, dest_folder, archive_date):
     assert os.path.exists(dest_folder)
     os.chdir(src_folder)
     tomoves = []
+    exceptions = ['_MouseBrain_Atlas3', 'Lab 4CR Digging Masterfile', 'Talks']
     for name in os.listdir(src_folder):
         if (name[0] != '_') and (datetime.datetime.fromtimestamp(os.path.getatime(name)) < archive_date):
             #atime: access time, mtime: modify time
             # print(name, datetime.datetime.fromtimestamp(os.path.getmtime(name)))
-            tomoves.append(name)
+            if name not in exceptions:
+                tomoves.append(name)
     for name in tomoves:
         try:
             print("moving", name)
@@ -40,7 +42,7 @@ def chunk_video_sample_from_file(filename, out_folder, fps, duration):
 if __name__ == '__main__':
     archive_date = datetime.datetime.strptime("2019/05/31", "%Y/%m/%d")
     src_folder = "/Volumes/Wilbrecht_file_server"
-    archive = os.path.join(src_folder, '_Archive')
+    archive = os.path.join(src_folder, '_ARCHIVE')
     if not os.path.exists(archive):
         os.makedirs(archive)
     archive_by_date(src_folder, archive, archive_date)
