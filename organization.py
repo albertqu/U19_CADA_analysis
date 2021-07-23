@@ -17,6 +17,42 @@ decode_failed = []
 txt_files = []
 
 
+def decode_text_files():
+    for txt_file in txt_files:
+        txt_file_date_entry_map = {}
+        curr_date = ""
+        curr_lines = []
+
+        for line in txt_file["lines"]:
+            date_match = re.search(
+                r"\s*([0-9]{1,2})/([0-9]{1,2})/([0-9]{1,2})\s*", line
+            )
+            if date_match:
+                if len(date_match.groups()) == 3:
+                    # save current state and reset
+                    if len(curr_lines):
+                        txt_file_date_entry_map[curr_date] = "\n".join(
+                            curr_lines
+                        ).strip()
+                        curr_lines = []
+
+                    month = date_match.group(1).zfill(2)
+                    day = date_match.group(2).zfill(2)
+                    year = "20" + date_match.group(3)
+                    curr_date = f"{year}{month}{day}"
+                else:
+                    print("Invalid date match:", line, date_match.groups())
+            else:
+                curr_lines.append(line)
+
+        # save current state
+        if len(curr_lines):
+            txt_file_date_entry_map[curr_date] = "\n".join(curr_lines).strip()
+
+        # save to file dict
+        txt_file["entries"] = txt_file_date_entry_map
+
+
 def group_by(data, key_extractor):
     groups = {}
     for d in data:
@@ -103,23 +139,31 @@ def summarize_sessions(sort_key="aID"):
             data["region"].append("")
         data["note"].append(options["DN"] + options["SP"])
 
-        data["FP_note"].append("")
-        data["LED_power_415"].append("")
-        data["LED_power_470"].append("")
-        data["LED_power_560"].append("")
-
         # parse text files for information
 
-        #                        replace underscores with underscore or variable whitespace
-        name_search = options["animal"].replace("_", r"(?:_|\s+)")
+        name_search = options["animal"]
+        # replace underscores with underscore or variable whitespace
+        name_search = name_search.replace("_", r"(?:_|\s+)")
+        # -B and -1 are optional in animal name
+        name_search = re.sub(r"(-(?:B|1))\b", r"(?:\1)?", name_search)
+
         # try each file and use first found
         found = False
+        fp_note = ""
         trigger_mode = ""
+        power415 = ""
+        power470 = ""
+        power560 = ""
         for txt_file in txt_files:
+            # find sessions for date
+            entry_data = txt_file["entries"].get(options["T"])
+            if not entry_data:
+                continue
+
             # get line containing animal session and two following
             matched_lines = re.search(
-                r"^\s*" + name_search + r"[^\n]*\n[^\n]*\n",
-                txt_file["data"],
+                r"^\s*" + name_search + r"[^\n]*(?:\n[^\n]*)?",
+                entry_data,
                 re.MULTILINE,
             )
             if not matched_lines:
@@ -131,16 +175,87 @@ def summarize_sessions(sort_key="aID"):
             matched_trigger_mode = re.search(r"(BSC|Trg)\s*\d", lines, re.I)
             if matched_trigger_mode:
                 trigger_mode = matched_trigger_mode.group(0)
+            else:
+                trigger_mode = txt_file["default_trigger_mode"]
+
+            # powers
+            power_regex = (
+                r"[^;,0-9a-zA-Z\.]*([0-9a-zA-Z=\.\t ]+)[^;,\.]*[;,\.]?[^\S\n]*"
+            )
+            matched_power = re.search(
+                fr"^[^\n]*415{power_regex}470{power_regex}560{power_regex}[^\n]*$",
+                entry_data,
+                re.MULTILINE,
+            )
+            if matched_power:
+                clean_match = (
+                    lambda s: re.sub(r"(?:green|top|red|bottom)", "", s)
+                    .strip()
+                    .replace(" ", "")
+                )
+
+                power415 = clean_match(matched_power.group(1))
+                power470 = clean_match(matched_power.group(2))
+                power560 = clean_match(matched_power.group(3))
+            else:
+                print("missed power match", entry_data)
+
+            # FP note
+
+            fp_note_regex1 = r"([0-9]{3}=[a-zA-Z]+,[0-9]{3}=[a-zA-Z]+)"
+
+            matched_fp_note = re.search(fp_note_regex1, entry_data)
+            if matched_fp_note:
+                txt_matches += 1
+
+                fp_note = matched_fp_note.group(0)
+            else:
+
+                def get_fp_note_keywords(inner):
+                    matched = re.search(
+                        r"(?:(?:top|bottom|green|red)(?: |\/)?)+",
+                        inner,
+                    )
+                    if matched:
+                        return matched.group(0)
+
+                fp_note_items = []
+                try:
+                    after_415 = entry_data.split("415")[1].split("470")[0]
+                    after_470 = entry_data.split("470")[1].split("560")[0]
+                    after_560 = entry_data.split("560")[1].split("\n")[0]
+
+                    fp_note_415 = get_fp_note_keywords(after_415)
+                    fp_note_470 = get_fp_note_keywords(after_470)
+                    fp_note_560 = get_fp_note_keywords(after_560)
+
+                    if fp_note_415:
+                        fp_note_items.append(f"415={fp_note_415}")
+                    if fp_note_470:
+                        fp_note_items.append(f"470={fp_note_470}")
+                    if fp_note_560:
+                        fp_note_items.append(f"560={fp_note_560}")
+                except:
+                    pass
+
+                if len(fp_note_items):
+                    fp_note = ",".join(fp_note_items)
+                else:
+                    print("missed fp note match", entry_data)
 
             break
 
+        data["FP_note"].append(fp_note)
         data["trigger_mode"].append(trigger_mode)
+        data["LED_power_415"].append(power415)
+        data["LED_power_470"].append(power470)
+        data["LED_power_560"].append(power560)
 
         if found:
             txt_matches += 1
         else:
             txt_misses += 1
-            # print("missed txt data", options["animal"])
+            # print('missed animal', options["animal"], options["session"], options["T"])
 
     print(f"{txt_matches} matches, {txt_misses} misses")
 
@@ -205,12 +320,12 @@ def decode_files_in_folder(root):
         # store for later parsing
         if ".txt" in filename:
             with open(filepath, "r") as f:
-                txt_data = f.read()
+                lines = f.readlines()
 
                 # txt files either have BSC or Trg notation, but not both
-                dtm = "BSC1" if "BSC" in txt_data else "Trg1"
+                dtm = "BSC1" if "BSC" in "\n".join(lines) else "Trg1"
 
-                txt_files.append({"default_trigger_mode": dtm, "data": txt_data})
+                txt_files.append({"default_trigger_mode": dtm, "lines": lines})
             continue
 
         # recurse on folders
@@ -237,6 +352,7 @@ def decode_files_in_folder(root):
 
 print("Decoding files...")
 decode_files_in_folder(IN_PATH)
+decode_text_files()
 
 # do stuff
 
