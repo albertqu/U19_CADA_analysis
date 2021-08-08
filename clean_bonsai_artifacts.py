@@ -10,6 +10,7 @@ def clean_file_with_keywords(keyword, filepaths=None):
             targetf = os.path.join(fpath, f)
             tdelta = datetime.now() - datetime.fromtimestamp(os.path.getctime())
             if (keyword in f) and (tdelta.seconds < 300):
+                print("Deleting", targetf)
                 os.remove(targetf)
 
                 
