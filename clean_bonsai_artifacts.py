@@ -8,7 +8,7 @@ def clean_file_with_keywords(keyword, filepaths=None):
     for fpath in filepaths:
         for f in os.listdir(fpath):
             targetf = os.path.join(fpath, f)
-            tdelta = datetime.now() - datetime.fromtimestamp(os.path.getctime())
+            tdelta = datetime.now() - datetime.fromtimestamp(os.path.getctime(targetf))
             if (keyword in f) and (tdelta.seconds < 300):
                 print("Deleting", targetf)
                 os.remove(targetf)
