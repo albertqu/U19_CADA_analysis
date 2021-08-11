@@ -380,6 +380,56 @@ def get_behavior_times(mat, behavior, simple=True, saliency=True, as_df=False):
     return behavior_times, behavior_trials
 
 
+def map_feature_to_alias(features, maps, old_header):
+    features[old_header+'_old'] = features[old_header]
+    new_header = old_header
+    old_header = old_header+'_old'
+    #print(new_header, old_header)
+    for mm in maps:
+        features[new_header][features[old_header] == mm] = maps[mm]
+    return features
+
+
+def get_correct_port_side_feature(mat):
+    portside = np.array(mat['glml/value/cue_port_side'])[:, 0]
+    hemi = np.array(mat['glml/notes/hemisphere']).item()
+    portside[portside == 2] = 0
+    res = np.full(len(portside), 'contra')
+    res[portside == hemi] = 'ipsi'
+    return res
+
+
+def get_animal_session_behavior_dataframe(folder, animal, session):
+    files = encode_to_filename(folder, animal, session, ['green', 'red', 'FP', 'behavior_old', 'processed'])
+    mat = h5py.File(files['behavior_old'], 'r')
+    behaviors = ('center_in', 'center_out', 'choice', 'outcome', 'side_out')
+    behavior_times = {b: get_behavior_times_old(mat, b)[0] for b in behaviors}
+    behavior_pdf = pd.DataFrame(behavior_times)
+    fmaps = {'R': {'Rewarded': 'R', 'Unrewarded': 'U', '': ''}}
+    rew_feature = get_trial_features_old(mat, 'R', as_array=True)
+    side_feature = get_trial_features_old(mat, 'A', as_array=True)
+    #     data = np.vstack([trial_vector_time_lag(rew_feature, -2), trial_vector_time_lag(rew_feature, -1),
+    #                       trial_vector_time_lag(side_feature, -2), trial_vector_time_lag(side_feature, -1)]).T
+    feature_mat = pd.DataFrame(np.vstack([rew_feature, side_feature]).T, columns=['R', 'A'])
+    feature_mat['R'] = rew_feature
+    feature_mat['A'] = side_feature
+    feature_mat = map_feature_to_alias(feature_mat, fmaps['R'], 'R')
+    cps = get_correct_port_side_feature(mat)
+    feature_mat['C'] = cps
+    switch_inds = np.full(len(feature_mat), False)
+    switch_inds[1:] = cps[1:] != cps[:-1]
+    block_number = np.full(len(feature_mat), 0)
+    for i in range(1, len(switch_inds)):
+        if not switch_inds[i]:
+            block_number[i] = block_number[i-1]+1
+    feature_mat['block_num'] = block_number
+    header_mat = pd.DataFrame({'trial': np.arange(get_trial_num(mat))})
+    header_mat['animal'], header_mat['session'] = animal, session
+    header_mat['hemi'] = 'right' if np.array(mat["glml/notes/hemisphere"]).item() else 'left'
+    header_mat['region'] = 'NAc' if np.array(mat['glml/notes/region']) else 'DMS'
+    return pd.concat([header_mat, behavior_pdf, feature_mat], axis=1)
+
+
 #######################################################
 ################### Data Structure ####################
 #######################################################
