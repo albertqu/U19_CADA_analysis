@@ -289,6 +289,58 @@ def summarize_sessions(data_root, implant_csv, save_path, sort_key='aID'):
     final_pdf.to_csv(os.path.join(save_path, f"exper_list_final_{sort_key}.csv"), index=False)
 
 
+def encode_to_filename(folder, animal, session, ftypes="processed_all"):
+    """
+    :param folder: str
+            folder for data storage
+    :param animal: str
+            animal name: e.g. A2A-15B-B_RT
+    :param session: str
+            session name: e.g. p151_session1_FP_RH
+    :param ftype: list or str:
+            list (or a single str) of typed files to return
+            'exper': .mat files
+            'bin_mat': binary file
+            'green': green fluorescence
+            'red': red FP
+            'behavior': .mat behavior file
+            'FP': processed dff hdf5 file
+            if ftypes=="all"
+    :return:
+            returns all 5 files in a dictionary; otherwise return all file types
+            in a dictionary, None if not found
+    """
+    # TODO: enable aliasing
+    paths = [os.path.join(folder, animal, session), os.path.join(folder, animal+'_'+session),
+             os.path.join(folder, animal), folder]
+    if ftypes == "raw all":
+        ftypes = ["exper", "bin_mat", "green", "red"]
+    elif ftypes == "processed_all":
+        ftypes = ["processed", "green", "red", "FP"]
+    elif isinstance(ftypes, str):
+        ftypes = [ftypes]
+    results = {ft: None for ft in ftypes}
+    registers = 0
+    for p in paths:
+        if os.path.exists(p):
+            for f in os.listdir(p):
+                opt = decode_from_filename(f)
+                if opt is not None:
+                    ift = opt['ftype']
+                    check_mark = opt['animal'] == animal and opt['session'] == session
+                    print(opt['session'], animal, session)
+                    check_mark_mdl = (opt['animal'] == animal) and (opt['session'] in session)
+                    cm_mdl = (ift == 'modeling' and check_mark_mdl)
+                    # TODO: temporary hacky method for modeling
+                    print(opt['session'], animal, session, check_mark_mdl, ift, cm_mdl)
+                    if ift in ftypes and results[ift] is None and (check_mark or cm_mdl):
+                        results[ift] = os.path.join(p, f)
+                        registers += 1
+                        if registers == len(ftypes):
+                            return results if len(results) > 1 else results[ift]
+    return results if len(results) > 1 else list(results.values())[0]
+
+
 def decode_from_filename(filename):
     """
     Takes in filenames of the following formats and returns the corresponding file options
@@ -317,7 +369,7 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
     mFPMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
                       r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>FP_[LR]H).hdf5", filename)
     mMDMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
-                      r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>FP_[LR]H)_modeling.hdf5", filename)
+                      r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>(FP_[LR]H)?)_modeling.hdf5", filename)
     # case binary
     mBIN = None
     options, ftype = None, None
@@ -385,56 +437,6 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
     options["animal"] = options['GEN'] + "-" + options["ID"] + "_" + options["EP"]
     options["session"] = options['A'] + fS + (("_"+options['H']) if options['H'] else "")
     return options
-
-
-def encode_to_filename(folder, animal, session, ftypes="processed_all"):
-    """
-    :param folder: str
-            folder for data storage
-    :param animal: str
-            animal name: e.g. A2A-15B-B_RT
-    :param session: str
-            session name: e.g. p151_session1_FP_RH
-    :param ftype: list or str:
-            list (or a single str) of typed files to return
-            'exper': .mat files
-            'bin_mat': binary file
-            'green': green fluorescence
-            'red': red FP
-            'behavior': .mat behavior file
-            'FP': processed dff hdf5 file
-            if ftypes=="all"
-    :return:
-            returns all 5 files in a dictionary; otherwise return all file types
-            in a dictionary, None if not found
-    """
-    # TODO: enable aliasing
-    paths = [os.path.join(folder, animal, session), os.path.join(folder, animal+'_'+session),
-             os.path.join(folder, animal), folder]
-    if ftypes == "raw all":
-        ftypes = ["exper", "bin_mat", "green", "red"]
-    elif ftypes == "processed_all":
-        ftypes = ["processed", "green", "red", "FP"]
-    elif isinstance(ftypes, str):
-        ftypes = [ftypes]
-    results = {ft: None for ft in ftypes}
-    registers = 0
-    for p in paths:
-        if os.path.exists(p):
-            for f in os.listdir(p):
-                opt = decode_from_filename(f)
-                if opt is not None:
-                    ift = opt['ftype']
-                    check_mark = opt['animal'] == animal and opt['session'] == session
-                    check_mark_mdl = (opt['animal'] == animal) and (opt['session'] in session)
-                    cm_mdl = (ift == 'modeling' and check_mark_mdl)
-                    # TODO: temporary hacky method for modeling
-                    if ift in ftypes and results[ift] is None and (check_mark or cm_mdl):
-                        results[ift] = os.path.join(p, f)
-                        registers += 1
-                        if registers == len(ftypes):
-                            return results if len(results) > 1 else results[ift]
-    return results if len(results) > 1 else list(results.values())[0]
 
 
 def access_mat_with_path(mat, p, ravel=False, dtype=None, raw=False):
