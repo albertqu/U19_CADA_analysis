@@ -968,7 +968,13 @@ class BehaviorMatChris(BehaviorMat):
             curr_node = curr_node.next
 
     def todf(self):
-        return pd.DataFrame({})
+        elist = self.event_list
+        if elist.is_empty():
+            return None
+        fields = ['trial', 'center_in', 'center_out', 'side_in', 'outcome',
+                  'side_out', 'ITI', 'A', 'R', 'BLKNo', 'CPort']
+
+
 
     def get_event_nodes(self, event, simple=True, saliency=True):
         # TODO: replace maybe with a DataFrame implementation
