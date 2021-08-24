@@ -48,3 +48,22 @@ def get_file_path_by_experiment(expr, root):
         folder = os.path.join(root, 'ProbSwitch/ProbSwitch_FP_data')
     elif expr == 'restaurant_row':
         folder = os.path.join(root, 'rr_data/ProbSwitch_FP_data')
+
+
+def pseudo_pipeline():
+    experiment = 'ProbSwitch'
+    root = "/content/drive/MyDrive/WilbrechtLab/U19_project/analysis/"
+    folder = get_file_path_by_experiment(experiment, root)
+    plot_out = "/Users/albertqu/Documents/7.Research/Wilbrecht_Lab/CADA_plots/FP_NAc_D1D2_CADA/belief_state"
+    time_window_dict = {'center_in': np.arange(-500, 501, 50),
+                        'center_out': np.arange(-500, 501, 50),
+                        'outcome': np.arange(-500, 2001, 50),
+                        'side_out': np.arange(-500, 1001, 50)}
+    animal, session = 'A2A-16B-1_RT', 'p147_FP_LH'
+    asession_data = get_animal_session_data()
+    bmat = BehaviorMat(animal, session)
+    FP_df = load_fp_df()  # refer to Laura code
+    FP_df = resync_timestamp(FP_df, ts_from, ts_to)
+
+def get_animal_session_data():
+

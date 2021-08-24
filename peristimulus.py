@@ -462,5 +462,3 @@ def behavior_aligned_FP_plots(folder, plots, behaviors, choices, options, zscore
                         fig.savefig(fname + '.png')
                         fig.savefig(fname + '.eps')
                         plt.close(fig)
-
-
