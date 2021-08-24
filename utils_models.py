@@ -633,7 +633,7 @@ def visualize_3D(X_HD, labels, dims, tag, show=True, out=None, label_alias=None,
                 plt.close()
 
 
-def visualize_3d_multiple_surface():
+def visualize_3d_multiple_surface_umap():
     import plotly.graph_objects as go
     for m in umap_accus:
         if len(umap_accus[m].shape) == 1:
@@ -642,6 +642,16 @@ def visualize_3d_multiple_surface():
         data=[go.Surface(x=umap_min_dists_seqs, y=umap_neighbor_seqs, z=umap_accus[m], showscale=False) for m
               in umap_accus])
     fig.update_layout({'title': 'UMAP', 'xaxis_title': 'min_dist', 'yaxis_title': 'neighbor'})
+    fig.show()
+
+
+def visualize_3d_multiple_surface(data, title='3D surface'):
+    import plotly.graph_objects as go
+    fig = go.Figure(
+        data=[go.Surface(x=data['x']['data'], y=data['y']['data'], z=data['z']['data'], showscale=False)])
+    fig.update_layout({'title': title, 'xaxis_title': data['x']['name'],
+                       'yaxis_title': data['y']['name'],
+                       'zaxis_title': data['z']['name']})
     fig.show()
 
 

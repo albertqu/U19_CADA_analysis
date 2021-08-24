@@ -58,7 +58,6 @@ def get_probswitch_session_by_condition(folder, group='all', region='NAc', signa
         grouppdf = pd.read_csv(os.path.join(folder, f"ProbSwitch_FP_Mice_{g}.csv"))
         rsel = grouppdf['Region'].isin(regions)
         if signals[0] == 'none':
-            print('none')
             animal_sessions = grouppdf[rsel]
         else:
             fpsel = grouppdf['FP'] >= 1

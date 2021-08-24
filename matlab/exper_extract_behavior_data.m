@@ -1,4 +1,75 @@
-function [out] = exper_extract_behavior_data(folder,)
+function [out] = exper_extract_behavior_data(folder, fnames, mode)
+    if contains(mode, 'bonsai')
+        experf = char(fnames{1});
+        lvttlf = char(fnames{2});
+        lvtsf = char(fnames{3});
+        out = exper_extract_beh_data_bonsai(folder, experf, lvttlf, lvtsf);
+    else
+        out = exper_extract_behavior_data_chris(folder, fnames);
+    end
+end
+    
+
+function [out] = exper_extract_beh_data_bonsai(folder, experf, lvttlf, lvtsf)
+    % objective: Take in exper data, LV timestamps, Analog_LV, save in hdf5
+    % file exper file extracted behavioral events, and additionally save
+    % digital_LV_on_time and exper_LV_on_time. 
+    % fill in automatic filepath filling
+    behavior = load(experf);
+    exper = behavior.exper;
+    lvttl = fopen(lvttlf);
+    lvts = readmatrix(lvtsf);
+    
+    %% Obtain behavior times from exper structure
+    trial_event_mat = get_2AFC_ITI_EventTimes(behavior);
+    
+    %% Using Analog_LV and Analog_LV_time to align with exper timestamps
+    %% Correct Computer Times (Analog & FP)
+    Analog_LV_time = correct_LV_timestamps(Analog_LV_timestamp);
+    
+    
+    %% Sync trial_event time & FP time
+    % Analog LV
+    %%figure(783);clf
+    LV_threshold=2;    % volt (0~5 V)
+    Digital_LV=Analog_LV>LV_threshold;
+    Digital_LV_on_time=Analog_LV_time(find([0;diff(Digital_LV)]>0));
+    Digital_LV_off_time=Analog_LV_time(find([0;diff(Digital_LV)]<0));
+    % sanity check LV duration=24ms
+    % plot(LV_off_time-LV_on_time);shg
+
+    % find LV time in exper
+    n_trial_events=length(exper.rpbox.param.trial_events.value);
+    valid_LV_event=find(prod((exper.rpbox.param.trial_events.value(:,3:5)-repmat([17 8 44],n_trial_events,1))==0,2));
+    Von_event=find(prod((exper.rpbox.param.trial_events.value(:,3:5)-repmat([44 8 48],n_trial_events,1))==0,2));
+    LVon_event=valid_LV_event.*NaN;
+    for k=1:length(LVon_event)
+        LVon_event(k)=Von_event(find(Von_event>valid_LV_event(k),1,'first'));
+    end
+    Expert_LV_on_time=exper.rpbox.param.trial_events.value(LVon_event,2);
+
+
+    % sanity check Expert_LV_on (in ms) is close to LV_on_time (in ms)
+    LV1_on_time=Digital_LV_on_time(1:2:end);
+    if length(LV1_on_time)~=length(Expert_LV_on_time) %need to go back and fix
+        mod_LV1_on_time = LV1_on_time;
+        mod_LV1_on_time = mod_LV1_on_time(length(mod_LV1_on_time)-length(Expert_LV_on_time)+1:end);
+        disp('Extra LV_on_time detected. Assuming these are valve test before the behavior session. Please double check!!!');
+        LV1_on_time = mod_LV1_on_time;
+    end
+    
+    %interF = griddedInterpolant(LV1_on_time, Expert_LV_on_time, 'linear');
+    out.trial_event_mat = trial_event_mat;
+    counted_trial=exper.odor_2afc.param.countedtrial.value;
+    out.outcome = exper.odor_2afc.param.result.value(1:counted_trial);
+    out.port_side = exper.odor_2afc.param.port_side.value(1:counted_trial);
+    out.cue_port_side = exper.odor_2afc.param.cue_port_side.value(1:counted_trial);
+    out.exper_LV_time = Expert_LV_on_time;
+    out.digital_LV_time = LV1_on_time; 
+end
+
+
+function [out] = exper_extract_behavior_data_chris(folder, FP_Data)
     green = FP_Data{i}{j}{1};
     red = FP_Data{i}{j}{2};
     fileID = FP_Data{i}{j}{3};
@@ -54,7 +125,8 @@ function [out] = exper_extract_behavior_data(folder,)
         LVon_event(k)=Von_event(find(Von_event>valid_LV_event(k),1,'first'));
     end
     Expert_LV_on_time=exper.rpbox.param.trial_events.value(LVon_event,2);
-
+    
+    % TODO: verify that RV irrelevant for the sake of argument here 
     valid_RV_event=find(prod((exper.rpbox.param.trial_events.value(:,3:5)-repmat([7 8 44],n_trial_events,1))==0,2));
     RVon_event=valid_RV_event.*NaN;
     for k=1:length(RVon_event)
@@ -153,7 +225,7 @@ function [out] = exper_extract_behavior_data(folder,)
     %if isfield(modeling_var{i}(j).latents,'rpe')
     %    GLM{i}(j).value.rpe = rpe;
     %end
-    save(fullfile(pathname, strcat(day_folder, '_', 'processed_data.mat')), '-v7.3', 'out');
+    save(fullfile(pathname, strcat(day_folder, '_', 'p  rocessed_data.mat')), '-v7.3', 'out');
 
     
 end
