@@ -328,11 +328,11 @@ def encode_to_filename(folder, animal, session, ftypes="processed_all"):
                 if opt is not None:
                     ift = opt['ftype']
                     check_mark = opt['animal'] == animal and opt['session'] == session
-                    print(opt['session'], animal, session)
+                    #print(opt['session'], animal, session)
                     check_mark_mdl = (opt['animal'] == animal) and (opt['session'] in session)
                     cm_mdl = (ift == 'modeling' and check_mark_mdl)
                     # TODO: temporary hacky method for modeling
-                    print(opt['session'], animal, session, check_mark_mdl, ift, cm_mdl)
+                    #print(opt['session'], animal, session, check_mark_mdl, ift, cm_mdl)
                     if ift in ftypes and results[ift] is None and (check_mark or cm_mdl):
                         results[ift] = os.path.join(p, f)
                         registers += 1
