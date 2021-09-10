@@ -974,8 +974,6 @@ class BehaviorMatChris(BehaviorMat):
         fields = ['trial', 'center_in', 'center_out', 'side_in', 'outcome',
                   'side_out', 'ITI', 'A', 'R', 'BLKNo', 'CPort']
 
-
-
     def get_event_nodes(self, event, simple=True, saliency=True):
         # TODO: replace maybe with a DataFrame implementation
         """ Takes in event and returns the requested event nodes
@@ -1172,16 +1170,6 @@ class EventNode:
     }
 
     def __init__(self, event, etime, trial, ecode):
-        self.event = event
-        self.trial = trial # trial starts at 1 instead of 0
-        self.etime = etime
-        self.ecode = ecode # For debug purpose
-        # Use "" for Null
-        self.MLAT = ""
-        self.saliency = ""
-        self.merged = False
-        self.next = None
-        self.prev = None
         if event is None:
             # Implements a circular LinkedList
             self.sentinel = True
