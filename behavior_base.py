@@ -15,7 +15,8 @@ class EventNode:
     trial_event_mat = np.array(hfile['out/trial_event_mat'])
     for i in range(len(trial_event_mat)):
         eventcode, etime, trial = trial_event_mat[i, :]
-        eventlist.append(PSENode(code_map[eventcode][0], etime, trial, eventcode))
+        eventlist.append(PSENode(code_map[eventcode][0] + '|' code_map[eventcode][1], etime, trial,
+        eventcode))
     ----
     Now you have a eventlist full of nodes
     call: eventlist.as_df() to get the dataframe
