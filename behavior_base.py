@@ -15,7 +15,7 @@ class EventNode:
     trial_event_mat = np.array(hfile['out/trial_event_mat'])
     for i in range(len(trial_event_mat)):
         eventcode, etime, trial = trial_event_mat[i, :]
-        eventlist.append(PSENode(code_map[eventcode][0] + '|' code_map[eventcode][1], etime, trial,
+        eventlist.append(PSENode(code_map[eventcode][0] + '|' + code_map[eventcode][1], etime, trial,
         eventcode))
     eventlist.as_df()
     ----
@@ -62,6 +62,7 @@ class EventNode:
     def as_df(self, use_abbr=False):
         # Returns an dataframe representation of the information
         assert self.is_sentinel, 'must be sentinel node to do this'
+        print(self.serializable)
         if use_abbr:
             results = [None] * len(self)
             node_list = self.tolist()
@@ -71,11 +72,16 @@ class EventNode:
                     field = self.serializable[j]
                     attr = getattr(node_list[i], field)
                     results[i][j] = self.ABBR[attr] if attr in self.ABBR else attr
-            return pd.DataFrame([[getattr(enode, field)  for field in self.serializable] for
+            return pd.DataFrame([[getattr(enode, field) for field in self.serializable] for
                                  enode in self],
                          columns=self.serializable)
         else:
             return pd.DataFrame([[getattr(enode, field) for field in self.serializable] for enode in self],
+                                columns=self.serializable)
+
+    def nodelist_asdf(self, nodelist):
+        # a method that looks at a restricted view of eventlist
+        return pd.DataFrame([[getattr(enode, field) for field in self.serializable] for enode in nodelist],
                                 columns=self.serializable)
 
     # ideally add iter method but not necessary

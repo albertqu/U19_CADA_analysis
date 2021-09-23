@@ -450,7 +450,7 @@ class BehaviorMat:
                 71.2: ('outcome', 'correct_rewarded'),
                 72: ('outcome', 'incorrect_unrewarded'),
                 73: ('outcome', 'missed'),  # saliency questionable
-                74: ('outcome', 'abort')}  # saliency questionable
+                74: ('outcome', 'abort')}  # saliency questionable did not poke enough time?
 
     fields = ['center_in', 'center_out', 'side_in', 'outcome' 'zeroth_side_out', 'first_side_out',
               'last_side_out', 'reward', 'action']
@@ -636,10 +636,8 @@ class BehaviorMat:
                     if node.saliency in ['missed', 'abort']:
                         result_df.loc[node.trial_index(), 'quality'] = node.saliency
                 elif node.event == 'side_out':
-                    if node.etime % 1 == 0.5:
-                        trial_ind = np.floor(node.trial)
-                    else:
-                        trial_ind = node.trial_index()
+                    assert node.etime % 1 == 0.5, str(node) + 'weird behavior'
+                    trial_ind = np.floor(node.trial)
                     sals = node.saliency.split("_")
 
                     for sal in sals[:-1]:
