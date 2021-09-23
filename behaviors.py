@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 
 # Utils
 from utils import *
+from behavior_base import PSENode
 
 
 #######################################################
@@ -451,6 +452,9 @@ class BehaviorMat:
                 73: ('outcome', 'missed'),  # saliency questionable
                 74: ('outcome', 'abort')}  # saliency questionable
 
+    fields = ['center_in', 'center_out', 'side_in', 'outcome' 'zeroth_side_out', 'first_side_out',
+              'last_side_out', 'reward', 'action']
+
     # Always use efficient coding
     def __init__(self, animal, session, hfile, tau=np.inf):
         self.tau = tau
@@ -463,7 +467,7 @@ class BehaviorMat:
         self.exp_complexity = None  # Whether the ITI is complex (first round only analysis simple trials)
         self.struct_complexity = None
         self.trialN = 0
-        self.event_list = EventNode(None, None, None, None)
+        self.event_list = PSENode(None, None, None, None)
         self.initialize(hfile)
 
     def __str__(self):
@@ -611,7 +615,41 @@ class BehaviorMat:
             curr_node = curr_node.next
 
     def todf(self):
-        return pd.DataFrame({})
+        elist = self.event_list
+        # reward and action
+        result_df = pd.DataFrame(np.zeros((self.trialN, 7)), columns=self.fields)
+        result_df['action'] = pd.Categorical([""] * self.trialN, ['left', 'right'], ordered=False)
+        result_df['rewarded'] = np.zeros(self.trialN, dtype=bool)
+        result_df['quality'] = pd.Categorical(["normal"] * self.trialN, ['missed', 'abort', 'normal'],
+                                              ordered=False)
+        result_df['last_side_out_side'] = pd.Categorical([""] * self.trialN, ['left', 'right'], ordered=False)
+        for node in elist:
+            if node.saliency:
+                if node.event in ['center_in', 'center_out']:
+                    result_df.loc[node.trial_index(), node.event] = node.etime
+                elif node.event == 'side_in':
+                    result_df.loc[node.trial_index(), node.event] = node.etime
+                    result_df.loc[node.trial_index(), 'action'] = node.saliency
+                elif node.event == 'outcome':
+                    result_df.loc[node.trial_index(), node.event] = node.etime
+                    result_df.loc[node.trial_index(), 'rewarded'] = ('_rewarded' in node.saliency)
+                    if node.saliency in ['missed', 'abort']:
+                        result_df.loc[node.trial_index(), 'quality'] = node.saliency
+                elif node.event == 'side_out':
+                    if node.etime % 1 == 0.5:
+                        trial_ind = np.floor(node.trial)
+                    else:
+                        trial_ind = node.trial_index()
+                    sals = node.saliency.split("_")
+
+                    for sal in sals[:-1]:
+                        result_df[trial_ind, sal + '_side_out'] = node.etime
+                        if sal == 'last':
+                            result_df[trial_ind, 'last_side_out_side'] = sals[-1]
+
+        result_df['struct_complex'] = self.struct_complexity
+        result_df['explore_complex'] = self.exp_complexity
+        return result_df
 
     def get_event_nodes(self, event, simple=True, saliency=True):
         # TODO: replace maybe with a DataFrame implementation
@@ -1160,7 +1198,7 @@ class BehaviorMatChris(BehaviorMat):
         return results
 
 
-class EventNode:
+class EventNodeDeprecated:
     ABBR = {
         'right': 'RT',
         'left': 'LT',

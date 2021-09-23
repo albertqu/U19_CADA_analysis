@@ -17,6 +17,7 @@ class EventNode:
         eventcode, etime, trial = trial_event_mat[i, :]
         eventlist.append(PSENode(code_map[eventcode][0] + '|' code_map[eventcode][1], etime, trial,
         eventcode))
+    eventlist.as_df()
     ----
     Now you have a eventlist full of nodes
     call: eventlist.as_df() to get the dataframe
@@ -140,4 +141,6 @@ class PSENode(EventNode):
 
     def __init__(self, event, etime, trial, ecode):
         super().__init__(event, etime, trial, ecode)
-        self.serializable = self.serializable + []
+        self.serializable = self.serializable + ['saliency']
+        self.saliency = None
+
