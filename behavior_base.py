@@ -41,11 +41,16 @@ class EventNode:
         # self.trial_start = False # Uncomment this if needed
 
     def __str__(self):
+        if self.is_sentinel:
+            return 'Sentinel'
         return f"{type(self).__name__}({self.event}, {self.trial}, {self.etime:.1f}ms, {self.ecode})"
 
     def trial_index(self):
         # 0.5 is ITI but considered in trial 0
-        return int(np.ceil(self.trial)) - 1
+        if self.is_sentinel:
+            return None
+        else:
+            return int(np.ceil(self.trial)) - 1
 
     # Methods Reserved For Sentinel Node
     def __len__(self):
@@ -62,7 +67,6 @@ class EventNode:
     def as_df(self, use_abbr=False):
         # Returns an dataframe representation of the information
         assert self.is_sentinel, 'must be sentinel node to do this'
-        print(self.serializable)
         if use_abbr:
             results = [None] * len(self)
             node_list = self.tolist()
