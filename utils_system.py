@@ -1,6 +1,10 @@
 import os, shutil, stat, errno, time, datetime
+
+import pandas as pd
+import numpy as np
+
 from utils import path_prefix_free
-import imageio
+import imageio, cv2
 
 
 def archive_by_date(src_folder, dest_folder, archive_date):
@@ -37,6 +41,58 @@ def chunk_video_sample_from_file(filename, out_folder, fps, duration):
             print('all done')
             break
     w.close()
+
+
+def chunk_four_vids_and_stitch(filenames, ts_names, out_folder, fps, duration, time_zero=0):
+    vids = [imageio.get_reader(fname) for fname in filenames]
+    tss = [(pd.read_csv(tsn, names=['time']) - time_zero) / 1000 for tsn in ts_names]
+    file_code = path_prefix_free(filenames[0]).split('.')[0][3:]
+    suffix = path_prefix_free(filenames[0]).split('.')[1]
+    w = imageio.get_writer(os.path.join(out_folder, f'{file_code}_sample.{suffix}'), format='FFMPEG',
+                           mode='I', fps=fps)  # figure out what mode means
+
+    alt_order = {2: 0, 1: 1, 3: 2, 0: 3}
+    total_frames = min(duration * fps, min(len(tsdf) for tsdf in tss))
+    for i in range(total_frames):
+        frames = [[None, None], [None, None]]
+        for j in range(4):
+            jframe = vids[j].get_data(i)
+            jtime = np.around(tss[j].time[i], 2)
+            pjframe = cv2.putText(jframe, f'R{j+1}: {jtime}', (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 2)
+            r, c = alt_order[j] // 2, alt_order[j] % 2
+            frames[r][c] = pjframe
+
+        frames[0] = np.concatenate(frames[0], axis=1)
+        frames[1] = np.concatenate(frames[1], axis=1)
+        final_frame = np.concatenate(frames, axis=0)
+        w.append_data(final_frame)
+        print(f'writing {i}th')
+    w.close()
+
+
+def chunk_helper_session(animal, session, folder, out_folder, duration=20*60):
+    fps = 30
+    vid_files = [None] * 4
+    vid_times = [None] * 4
+    for f in os.listdir(os.path.join(folder, animal)):
+        if (animal in f) and (session in f) and (f.startswith('RR_')):
+            bfile = os.path.join(folder, animal, f)
+            bdf = pd.read_csv(bfile, sep = ' ', header = None, names = ['time', 'b_code', 'none'])
+            df_zero = bdf.loc[0, 'time']
+            break
+
+    for f in os.listdir(os.path.join(folder, animal, 'video')):
+        for i in range(1, 5):
+            vidf = f'R{i}_cam'
+            vtsf = f'R{i}_vidTS'
+            if (animal in f) and (session in f) and (f.startswith(vidf)):
+                vid_files[i-1] = os.path.join(folder, animal, 'video', f)
+            elif (animal in f) and (session in f) and (f.startswith(vtsf)):
+                vid_times[i-1] = os.path.join(folder, animal, 'video', f)
+    chunk_four_vids_and_stitch(vid_files, vid_times, out_folder, fps, duration, time_zero=df_zero)
+
+
+
 
 
 if __name__ == '__main__':

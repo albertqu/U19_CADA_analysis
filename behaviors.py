@@ -611,7 +611,20 @@ class BehaviorMat:
             curr_node = curr_node.next
 
     def todf(self):
-        return pd.DataFrame({})
+        elist = self.event_list
+        if elist.is_empty():
+            return None
+        fields = ['trial', 'center_in', 'center_out', 'side_in', 'outcome',
+                  'side_out', 'ITI', 'A', 'R', 'BLKNo', 'CPort']
+        curr = elist.next
+
+        results = {'trial': np.arange(1, self.trialN+1),
+                   'center_in': self.get_event_times('center_in', simple=False, saliency=True),
+                   'center_out': self.get_event_times('center_out', simple=False, saliency=True),
+                   'side_in': self.get_event_times('side_in', simple=False, saliency=True),
+                   'outcome': self.get_event_times('outcome', simple=False, saliency=True),
+                   'side_out__first': self.get_event_times('outcome', simple=False, saliency=True)}
+
 
     def get_event_nodes(self, event, simple=True, saliency=True):
         # TODO: replace maybe with a DataFrame implementation
@@ -651,7 +664,11 @@ class BehaviorMat:
         if simple:
             assert saliency, "no use to ensure simplicity with non-salient events"
         if saliency and 'side_out' in event:
-            event, sals = event.split("__")
+            event_opts = event.split("__")
+            if len(event_opts) > 1:
+                event, sals = event_opts
+            else:
+                event, sals = event, ''
             if sals == '':
                 sals = ['first_last']
                 assert simple, "no specific saliency specified for side_out, assume simple trial"
@@ -966,15 +983,6 @@ class BehaviorMatChris(BehaviorMat):
                     if len(sals) == 2:
                         self.exp_complexity[int(curr_node.trial)] = False
             curr_node = curr_node.next
-
-    def todf(self):
-        elist = self.event_list
-        if elist.is_empty():
-            return None
-        fields = ['trial', 'center_in', 'center_out', 'side_in', 'outcome',
-                  'side_out', 'ITI', 'A', 'R', 'BLKNo', 'CPort']
-
-
 
     def get_event_nodes(self, event, simple=True, saliency=True):
         # TODO: replace maybe with a DataFrame implementation

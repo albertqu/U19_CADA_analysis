@@ -59,11 +59,30 @@ def pseudo_pipeline():
                         'center_out': np.arange(-500, 501, 50),
                         'outcome': np.arange(-500, 2001, 50),
                         'side_out': np.arange(-500, 1001, 50)}
+
+    data = pd.read_csv(fp_file, skiprows=1, names=[
+                       'frame', 'cam_time_stamp', 'flag', 'right_red', 'left_red', 'right_green', 'left_green'])
+    data_time_stamps = pd.read_csv(
+        fp_time_stamps, names=['time_stamps'])
+
+    data_fp = pd.concat([data, data_time_stamps.time_stamps], axis=1)
+
+    fp_flag = {'BSC1': {'control':1, 'green':6},
+               'BSC3': {'control':1, 'green':2, 'red':4}}
+    fp_flag = fp_flag[trigger_mode]
+
     animal, session = 'A2A-16B-1_RT', 'p147_FP_LH'
     asession_data = get_animal_session_data()
     bmat = BehaviorMat(animal, session)
     FP_df = load_fp_df()  # refer to Laura code
     FP_df = resync_timestamp(FP_df, ts_from, ts_to)
 
+
 def get_animal_session_data():
     pass
+
+
+class BSDML_Expr:
+    # EXPERIMENT specific loading
+    file_template = {}
+
