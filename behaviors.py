@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 
 # Utils
 from utils import *
+from behavior_base import PSENode, EventNode
 
 
 #######################################################
@@ -449,7 +450,10 @@ class BehaviorMat:
                 71.2: ('outcome', 'correct_rewarded'),
                 72: ('outcome', 'incorrect_unrewarded'),
                 73: ('outcome', 'missed'),  # saliency questionable
-                74: ('outcome', 'abort')}  # saliency questionable
+                74: ('outcome', 'abort')}  # saliency questionable did not poke enough time?
+
+    fields = ['center_in', 'center_out', 'side_in', 'outcome' 'zeroth_side_out', 'first_side_out',
+              'last_side_out', 'reward', 'action']
 
     # Always use efficient coding
     def __init__(self, animal, session, hfile, tau=np.inf):
@@ -463,7 +467,7 @@ class BehaviorMat:
         self.exp_complexity = None  # Whether the ITI is complex (first round only analysis simple trials)
         self.struct_complexity = None
         self.trialN = 0
-        self.event_list = EventNode(None, None, None, None)
+        self.event_list = PSENode(None, None, None, None)
         self.initialize(hfile)
 
     def __str__(self):
@@ -612,19 +616,50 @@ class BehaviorMat:
 
     def todf(self):
         elist = self.event_list
-        if elist.is_empty():
-            return None
-        fields = ['trial', 'center_in', 'center_out', 'side_in', 'outcome',
-                  'side_out', 'ITI', 'A', 'R', 'BLKNo', 'CPort']
-        curr = elist.next
+        # if elist.is_empty():
+        #     return None
+        # fields = ['trial', 'center_in', 'center_out', 'side_in', 'outcome',
+        #           'side_out', 'ITI', 'A', 'R', 'BLKNo', 'CPort']
+        # curr = elist.next
+        #
+        # results = {'trial': np.arange(1, self.trialN+1),
+        #            'center_in': self.get_event_times('center_in', simple=False, saliency=True),
+        #            'center_out': self.get_event_times('center_out', simple=False, saliency=True),
+        #            'side_in': self.get_event_times('side_in', simple=False, saliency=True),
+        #            'outcome': self.get_event_times('outcome', simple=False, saliency=True),
+        #            'side_out__first': self.get_event_times('outcome', simple=False, saliency=True)}
+        # reward and action
+        result_df = pd.DataFrame(np.zeros((self.trialN, 7)), columns=self.fields)
+        result_df['action'] = pd.Categorical([""] * self.trialN, ['left', 'right'], ordered=False)
+        result_df['rewarded'] = np.zeros(self.trialN, dtype=bool)
+        result_df['quality'] = pd.Categorical(["normal"] * self.trialN, ['missed', 'abort', 'normal'],
+                                              ordered=False)
+        result_df['last_side_out_side'] = pd.Categorical([""] * self.trialN, ['left', 'right'], ordered=False)
+        for node in elist:
+            if node.saliency:
+                if node.event in ['center_in', 'center_out']:
+                    result_df.loc[node.trial_index(), node.event] = node.etime
+                elif node.event == 'side_in':
+                    result_df.loc[node.trial_index(), node.event] = node.etime
+                    result_df.loc[node.trial_index(), 'action'] = node.saliency
+                elif node.event == 'outcome':
+                    result_df.loc[node.trial_index(), node.event] = node.etime
+                    result_df.loc[node.trial_index(), 'rewarded'] = ('_rewarded' in node.saliency)
+                    if node.saliency in ['missed', 'abort']:
+                        result_df.loc[node.trial_index(), 'quality'] = node.saliency
+                elif node.event == 'side_out':
+                    assert node.etime % 1 == 0.5, str(node) + 'weird behavior'
+                    trial_ind = np.floor(node.trial)
+                    sals = node.saliency.split("_")
 
-        results = {'trial': np.arange(1, self.trialN+1),
-                   'center_in': self.get_event_times('center_in', simple=False, saliency=True),
-                   'center_out': self.get_event_times('center_out', simple=False, saliency=True),
-                   'side_in': self.get_event_times('side_in', simple=False, saliency=True),
-                   'outcome': self.get_event_times('outcome', simple=False, saliency=True),
-                   'side_out__first': self.get_event_times('outcome', simple=False, saliency=True)}
+                    for sal in sals[:-1]:
+                        result_df[trial_ind, sal + '_side_out'] = node.etime
+                        if sal == 'last':
+                            result_df[trial_ind, 'last_side_out_side'] = sals[-1]
 
+        result_df['struct_complex'] = self.struct_complexity
+        result_df['explore_complex'] = self.exp_complexity
+        return result_df
 
     def get_event_nodes(self, event, simple=True, saliency=True):
         # TODO: replace maybe with a DataFrame implementation
@@ -849,6 +884,7 @@ class BehaviorMatChris(BehaviorMat):
         self.hemisphere, self.region = None, None
         self.event_list = EventNode(None, None, None, None)
         self.initialize(hfile)
+        super().__init__(animal, session, hfile, tau)
 
     def __str__(self):
         return f"BehaviorMat({self.animal}_{self.session}, tau={self.tau})"
@@ -983,6 +1019,13 @@ class BehaviorMatChris(BehaviorMat):
                     if len(sals) == 2:
                         self.exp_complexity[int(curr_node.trial)] = False
             curr_node = curr_node.next
+
+    def todf(self):
+        elist = self.event_list
+        if elist.is_empty():
+            return None
+        fields = ['trial', 'center_in', 'center_out', 'side_in', 'outcome',
+                  'side_out', 'ITI', 'A', 'R', 'BLKNo', 'CPort']
 
     def get_event_nodes(self, event, simple=True, saliency=True):
         # TODO: replace maybe with a DataFrame implementation
@@ -1170,7 +1213,7 @@ class BehaviorMatChris(BehaviorMat):
         return results
 
 
-class EventNode:
+class EventNodeDeprecated:
     ABBR = {
         'right': 'RT',
         'left': 'LT',
@@ -1180,16 +1223,6 @@ class EventNode:
     }
 
     def __init__(self, event, etime, trial, ecode):
-        self.event = event
-        self.trial = trial # trial starts at 1 instead of 0
-        self.etime = etime
-        self.ecode = ecode # For debug purpose
-        # Use "" for Null
-        self.MLAT = ""
-        self.saliency = ""
-        self.merged = False
-        self.next = None
-        self.prev = None
         if event is None:
             # Implements a circular LinkedList
             self.sentinel = True

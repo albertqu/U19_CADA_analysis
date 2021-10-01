@@ -1,24 +1,35 @@
-function [out] = exper_extract_behavior_data(folder, fnames, mode)
+function [out] = exper_extract_behavior_data(folder, animal, session, mode)
     if contains(mode, 'bonsai')
-        experf = char(fnames{1});
-        lvttlf = char(fnames{2});
-        lvtsf = char(fnames{3});
-        out = exper_extract_beh_data_bonsai(folder, experf, lvttlf, lvtsf);
+        FP_path = fullfile(folder, 'BSDML_FP');
+        beh_path = fullfile(folder, 'TempNew');
+        % change and fix later
+        split_animal = split(animal, '_');
+        alt_animal = [split_animal{1} '-' split_animal{2}];
+        fnamesFP = get_session_files(FP_path, alt_animal, session, {'LVTTL', 'LVTS'}, 'animal');
+        fnamesEXP = get_session_files(beh_path, animal, session, {'exper'}, 'root');
+        experf = char(fnamesEXP{1});
+        lvttlf = char(fnamesFP{1});
+        lvtsf = char(fnamesFP{2});
+        out = exper_extract_beh_data_bonsai(folder, experf, lvttlf, lvtsf, [animal '_' session]);
+        % TODO: change this later
+        save(fullfile(FP_path, alt_animal, [alt_animal, '_', session, '_', 'raw_behavior.mat']), '-v7.3', 'out');
     else
         out = exper_extract_behavior_data_chris(folder, fnames);
     end
 end
     
 
-function [out] = exper_extract_beh_data_bonsai(folder, experf, lvttlf, lvtsf)
+function [out] = exper_extract_beh_data_bonsai(folder, experf, lvttlf, lvtsf, session_arg)
     % objective: Take in exper data, LV timestamps, Analog_LV, save in hdf5
     % file exper file extracted behavioral events, and additionally save
     % digital_LV_on_time and exper_LV_on_time. 
     % fill in automatic filepath filling
     behavior = load(experf);
     exper = behavior.exper;
-    lvttl = fopen(lvttlf);
-    lvts = readmatrix(lvtsf);
+    Analog_LV_fileID = fopen(lvttlf);
+    Analog_LV = fread(Analog_LV_fileID,'double');
+    Analog_LV_timestamp = readmatrix(lvtsf);
+    Analog_LV_timestamp = Analog_LV_timestamp(:,1);
     
     %% Obtain behavior times from exper structure
     trial_event_mat = get_2AFC_ITI_EventTimes(behavior);
@@ -31,7 +42,7 @@ function [out] = exper_extract_beh_data_bonsai(folder, experf, lvttlf, lvtsf)
     %% Sync trial_event time & FP time
     % Analog LV
     %%figure(783);clf
-    LV_threshold=2;    % volt (0~5 V)
+    LV_threshold=(max(Analog_LV) + min(Analog_LV)) / 2;    % volt (0~5 V)
     Digital_LV=Analog_LV>LV_threshold;
     Digital_LV_on_time=Analog_LV_time(find([0;diff(Digital_LV)]>0));
     Digital_LV_off_time=Analog_LV_time(find([0;diff(Digital_LV)]<0));
@@ -66,6 +77,7 @@ function [out] = exper_extract_beh_data_bonsai(folder, experf, lvttlf, lvtsf)
     out.cue_port_side = exper.odor_2afc.param.cue_port_side.value(1:counted_trial);
     out.exper_LV_time = Expert_LV_on_time;
     out.digital_LV_time = LV1_on_time; 
+    
 end
 
 
