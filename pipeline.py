@@ -78,6 +78,11 @@ def pseudo_pipeline():
     FP_df = resync_timestamp(FP_df, ts_from, ts_to)
 
 
+def get_animal_session_data():
+    pass
+
+
 class BSDML_Expr:
     # EXPERIMENT specific loading
     file_template = {}
+

@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 # Utils
 from utils import *
-from behavior_base import PSENode
+from behavior_base import PSENode, EventNode
 
 
 #######################################################
@@ -835,6 +835,18 @@ class BehaviorMatOld(BehaviorMat):
 
     def todf(self):
         elist = self.event_list
+        # if elist.is_empty():
+        #     return None
+        # fields = ['trial', 'center_in', 'center_out', 'side_in', 'outcome',
+        #           'side_out', 'ITI', 'A', 'R', 'BLKNo', 'CPort']
+        # curr = elist.next
+        #
+        # results = {'trial': np.arange(1, self.trialN+1),
+        #            'center_in': self.get_event_times('center_in', simple=False, saliency=True),
+        #            'center_out': self.get_event_times('center_out', simple=False, saliency=True),
+        #            'side_in': self.get_event_times('side_in', simple=False, saliency=True),
+        #            'outcome': self.get_event_times('outcome', simple=False, saliency=True),
+        #            'side_out__first': self.get_event_times('outcome', simple=False, saliency=True)}
         # reward and action
         result_df = pd.DataFrame(np.zeros((self.trialN, 7)), columns=self.fields)
         result_df['action'] = pd.Categorical([""] * self.trialN, ['left', 'right'], ordered=False)
@@ -906,7 +918,11 @@ class BehaviorMatOld(BehaviorMat):
         if simple:
             assert saliency, "no use to ensure simplicity with non-salient events"
         if saliency and 'side_out' in event:
-            event, sals = event.split("__")
+            event_opts = event.split("__")
+            if len(event_opts) > 1:
+                event, sals = event_opts
+            else:
+                event, sals = event, ''
             if sals == '':
                 sals = ['first_last']
                 assert simple, "no specific saliency specified for side_out, assume simple trial"
@@ -1087,6 +1103,7 @@ class BehaviorMatChris(BehaviorMat):
         self.hemisphere, self.region = None, None
         self.event_list = EventNode(None, None, None, None)
         self.initialize(hfile)
+        super().__init__(animal, session, hfile, tau)
 
     def __str__(self):
         return f"BehaviorMat({self.animal}_{self.session}, tau={self.tau})"
