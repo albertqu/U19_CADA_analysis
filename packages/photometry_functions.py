@@ -14,55 +14,62 @@ Reference:
 import numpy as np
 from sklearn.linear_model import Lasso
 
-def get_zdFF(reference,signal,smooth_win=10,remove=200,lambd=5e4,porder=1,itermax=50): 
-  '''
-  Calculates z-score dF/F signal based on fiber photometry calcium-idependent 
-  and calcium-dependent signals
-  
-  Input
+def get_zdFF(reference,signal,smooth_win=10,remove=200,lambd=5e4,porder=1,itermax=50, raw=False):
+    '''
+    Calculates z-score dF/F signal based on fiber photometry calcium-idependent
+    and calcium-dependent signals
+
+    Input
       reference: calcium-independent signal (usually 405-420 nm excitation), 1D array
-      signal: calcium-dependent signal (usually 465-490 nm excitation for 
+      signal: calcium-dependent signal (usually 465-490 nm excitation for
                    green fluorescent proteins, or ~560 nm for red), 1D array
       smooth_win: window for moving average smooth, integer
       remove: the beginning of the traces with a big slope one would like to remove, integer
       Inputs for airPLS:
-      lambd: parameter that can be adjusted by user. The larger lambda is,  
+      lambd: parameter that can be adjusted by user. The larger lambda is,
               the smoother the resulting background, z
       porder: adaptive iteratively reweighted penalized least squares for baseline fitting
       itermax: maximum iteration times
-  Output
+    Output
       zdFF - z-score dF/F, 1D numpy array
-  '''
+    Albert: modifed by adding raw version without using dff
+    '''
 
 
- # Smooth signal
-  reference = smooth_signal(reference, smooth_win)
-  signal = smooth_signal(signal, smooth_win)
-  
- # Remove slope using airPLS algorithm
-  r_base=airPLS(reference,lambda_=lambd,porder=porder,itermax=itermax)
-  s_base=airPLS(signal,lambda_=lambd,porder=porder,itermax=itermax) 
+    # Smooth signal
+    reference = smooth_signal(reference, smooth_win)
+    signal = smooth_signal(signal, smooth_win)
 
- # Remove baseline and the begining of recording
-  reference = (reference[remove:] - r_base[remove:])
-  signal = (signal[remove:] - s_base[remove:])   
+    # Remove slope using airPLS algorithm
+    r_base=airPLS(reference, lambda_=lambd, porder=porder, itermax=itermax)
+    s_base=airPLS(signal, lambda_=lambd, porder=porder, itermax=itermax)
 
- # Standardize signals    
-  reference = (reference - np.median(reference)) / np.std(reference)
-  signal = (signal - np.median(signal)) / np.std(signal)
-  
- # Align reference signal to calcium signal using non-negative robust linear regression
-  lin = Lasso(alpha=0.0001,precompute=True,max_iter=1000,
+    # Remove baseline and the begining of recording
+    reference = (reference[remove:] - r_base[remove:])
+    signal = (signal[remove:] - s_base[remove:])
+
+    reference_orig, signal_orig = reference, signal
+    # Standardize signals
+    reference = (reference - np.median(reference)) / np.std(reference)
+    sig_pow, sig_med = np.std(signal), np.median(signal)
+    signal = (signal - np.median(signal)) / np.std(signal)
+
+    # Align reference signal to calcium signal using non-negative robust linear regression
+    lin = Lasso(alpha=0.0001,precompute=True,max_iter=1000,
               positive=True, random_state=9999, selection='random')
-  n = len(reference)
-  lin.fit(reference.reshape(n,1), signal.reshape(n,1))
-  reference = lin.predict(reference.reshape(n,1)).reshape(n,)
+    n = len(reference)
+    if raw:
+        lin.fit(reference_orig.reshape(n, 1), signal_orig.reshape(n, 1))
+        reference_orig = lin.predict(reference_orig.reshape(n, 1)).reshape(n,)
+        return signal - reference_orig
+    else:
+        lin.fit(reference.reshape(n, 1), signal.reshape(n, 1))
+        reference = lin.predict(reference.reshape(n,1)).reshape(n,)
 
-
- # z dFF    
-  zdFF = (signal - reference)
- 
-  return zdFF
+        # z dFF
+        zdFF = (signal - reference)
+        # this will result in lower signal when there is large motion artifacts etc.
+        return zdFF
 
 def get_f0_Martianova_jove(reference,signal,smooth_win=40,remove=0,lambd=5e4,porder=1,itermax=50):
     '''

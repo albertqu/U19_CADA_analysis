@@ -298,7 +298,7 @@ def get_session_GLM_modeling(fp_sigs, fp_times, matfile, trial_features, fr=1000
 class NeuroMat:
     """
     A class to take trial-structured neural recording and other multi-modal measurement and featurize
-    them for modelling purpose.
+    them for modeling purpose.
     Sampling fixed once set, and therefore careful with the initialization phase!!
     credit: The design is strongly influenced by https://github.com/pillowlab/neuroGLM
     Example usage:

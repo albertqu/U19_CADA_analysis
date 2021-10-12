@@ -369,6 +369,9 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
                       r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>FP_[LR]H).hdf5", filename)
     mMDMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
                       r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>(FP_[LR]H)?)_modeling.hdf5", filename)
+    mTBMat =re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
+                      r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>(FP_[LR]H)?)_trialB.csv", filename)
+
     # case binary
     mBIN = None
     options, ftype = None, None
@@ -410,7 +413,7 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
         # case csv
         #todo: merge cage id and earpoke
         """A2A-16B-1_RT_ChR2_switch_no_cue_LH_p147_red_2020-03-17T15_38_40.csv"""
-        channels = ['keystrokes', "MetaData", "NIDAQ_Ai0_timestamp", "red", "green"]
+        channels = ['keystrokes', "MetaData", "NIDAQ_Ai0_timestamp", "red", "green", "FP", 'FPTS']
         for c in channels:
             mCSV = re.match(
                 r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_(?P<DN>[-&\w]+)_(?P<H>[LR]H)_"
