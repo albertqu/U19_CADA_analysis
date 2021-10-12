@@ -5,12 +5,15 @@ import numpy as np
 import pandas as pd
 from scipy.io import loadmat
 import h5py
+from scipy import interpolate
+
 # Plotting
 import matplotlib.pyplot as plt
 
 # Utils
 from utils import *
 from behavior_base import PSENode, EventNode
+
 
 
 #######################################################
@@ -474,7 +477,6 @@ class PSBehaviorMat(BehaviorMat):
 
     # Always use efficient coding
     def __init__(self, animal, session, hfile, tau=np.inf, STAGE=1):
-        from scipy import interpolate
         super().__init__(animal, session)
         self.tau = tau
         if isinstance(hfile, str):
