@@ -472,8 +472,6 @@ class PSBehaviorMat(BehaviorMat):
     fields = ['center_in', 'center_out', 'side_in', 'outcome', 'zeroth_side_out', 'first_side_out',
               'last_side_out']  # 'ITI'
 
-    time_multiplier = 1000
-    unit = 'ms'
 
     # event_features = 'reward', 'action',
     # trial_features = 'quality', 'struct_complex', 'explore_complex', 'BLKNo', 'CPort'
@@ -490,8 +488,7 @@ class PSBehaviorMat(BehaviorMat):
         self.eventlist = self.initialize_PSEnode(hfile, stage=STAGE)
         self.correct_port = self.get_correct_port_side(hfile)
         self.time_aligner = interpolate.interp1d(np.array(hfile['out/digital_LV_time']).ravel(),
-                                                 np.array(hfile['out/exper_LV_time']).ravel()
-                                                 * self.time_multiplier,
+                                                 np.array(hfile['out/exper_LV_time']).ravel(),
                                                  fill_value="extrapolate")
 
         switch_inds = np.full(self.trialN, False)
@@ -525,7 +522,6 @@ class PSBehaviorMat(BehaviorMat):
         prev_node = None
         for i in range(len(trial_event_mat)):
             eventcode, etime, trial = trial_event_mat[i, :]
-            etime = etime * self.time_multiplier
             if stage == 0:
                 event_wt = code_map[eventcode][0] + '|' + code_map[eventcode][1]
             else:
