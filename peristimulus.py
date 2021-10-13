@@ -20,7 +20,7 @@ def time_aligned_from_files():
     pass
 
 
-def align_activities_with_event(sigs, times, event_times, time_window, discrete=True, align_last=False):
+def align_activities_with_event(sigs, times, event_times, time_window, discrete=False, align_last=False):
     """ Takes signals (... x T), time warp is there is more than one event time type (mean frames)
     :param sigs: (... x T),
     :param times: (... x T) if discrete else float for frame rate (Hz)
