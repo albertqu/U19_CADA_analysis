@@ -371,7 +371,7 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
     mMDMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
                       r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>(FP_[LR]H)?)_modeling.hdf5", filename)
     mTBMat =re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
-                      r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>(FP_[LR]H)?)_trialB.csv", filename)
+                      r"(?P<A>p\d+)(?P<S>_session\d+_|_?)_trialB.csv", filename)
 
     # case binary
     mBIN = None
@@ -388,6 +388,10 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
             options["H"] = dn_match.group(1)
         elif sp_match:
             options['H'] = sp_match.group(1)
+    elif mTBMat is not None:
+        options = mTBMat.groupdict()
+        ftype = 'trialB'
+        oS = options['S']
     elif mMDMat is not None:
         options = mMDMat.groupdict()
         ftype = 'modeling'

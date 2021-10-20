@@ -438,15 +438,230 @@ def get_animal_session_behavior_dataframe(folder, animal, session):
 ################### Data Structure ####################
 #######################################################
 
-class BehaviorMat:
-    code_map = {}
+class PSBehaviorMat(BehaviorMat):
+    # Behavior Mat for Probswitch
+    # Figure out how to make it general
 
-    def __init__(self, animal, session):
-        self.animal = animal
-        self.session = session
+    code_map = {1: ('center_in', 'center_in'),
+                11: ('center_in', 'initiate'),
+                2: ('center_out', 'center_out'),
+                3: ('side_in', 'left'),
+                4: ('side_out', 'left'),
+                44: ('side_out', 'left'),
+                5: ('side_in', 'right'),
+                6: ('side_out', 'right'),
+                66: ('side_out', 'right'),
+                71.1: ('outcome', 'correct_unrewarded'),
+                71.2: ('outcome', 'correct_rewarded'),
+                72: ('outcome', 'incorrect_unrewarded'),
+                73: ('outcome', 'missed'),  # saliency questionable
+                74: ('outcome', 'abort')}  # saliency questionable
+
+    # divide things into events, event_features, trial_features
+    fields = ['center_in', 'center_out', 'side_in', 'outcome', 'zeroth_side_out', 'first_side_out',
+              'last_side_out']  # 'ITI'
+
+
+    # event_features = 'reward', 'action',
+    # trial_features = 'quality', 'struct_complex', 'explore_complex', 'BLKNo', 'CPort'
+    # Always use efficient coding
+    def __init__(self, animal, session, hfile, tau=np.inf, STAGE=1):
+        super().__init__(animal, session)
+        self.tau = tau
+        if isinstance(hfile, str):
+            print("For pipeline loaded hdf5 is recommended for performance")
+            hfile = h5py.File(hfile, 'r')
+        self.choice_sides = None
+        self.trialN = len(hfile['out/outcome'])
+        self.eventlist = self.initialize_PSEnode(hfile, stage=STAGE)
+        self.correct_port = self.get_correct_port_side(hfile)
+        self.time_aligner = interpolate.interp1d(np.array(hfile['out/digital_LV_time']).ravel(),
+                                                 np.array(hfile['out/exper_LV_time']).ravel(),
+                                                 fill_value="extrapolate")
+
+        switch_inds = np.full(self.trialN, False)
+        switch_inds[1:] = self.correct_port[1:] != self.correct_port[:-1]
+        t_in_block = np.full(self.trialN, 0)
+        block_number = np.full(self.trialN, 1)
+        for i in range(1, len(switch_inds)):
+            if not switch_inds[i]:
+                t_in_block[i] = t_in_block[i - 1] + 1
+                block_number[i] = block_number[i - 1]
+            else:
+                block_number[i] = block_number[i - 1] + 1
+        self.block_num = block_number
+        self.t_in_block = t_in_block
+
+    def __str__(self):
+        return f"BehaviorMat({self.animal}_{self.session}, tau={self.tau})"
+
+    def get_correct_port_side(self, hfile):
+        # right: 1, left: 2
+        portside = np.array(hfile['out/cue_port_side'])[:, 0]
+        res = np.full(len(portside), 'right')
+        res[portside == 2] = 'left'
+        return res
+
+    def align_ts2behavior(self, timestamps):
+        return self.time_aligner(timestamps)
+
+    def initialize_PSEnode(self, hfile, stage=1):
+        code_map = self.code_map
+        eventlist = PSENode(None, None, None, None)
+        trial_event_mat = np.array(hfile['out/trial_event_mat'])
+        trialN = len(hfile['out/outcome'])
+        exp_complexity = np.full(trialN, True, dtype=bool)  # default true detect back to back
+        struct_complexity = np.full(trialN, False, dtype=bool)  # default false detect double centers
+        prev_node = None
+        for i in range(len(trial_event_mat)):
+            eventcode, etime, trial = trial_event_mat[i, :]
+            if stage == 0:
+                event_wt = code_map[eventcode][0] + '|' + code_map[eventcode][1]
+            else:
+                event_wt = code_map[eventcode][0]
+            # check duplicate timestamps
+            if prev_node is not None:
+                if prev_node.etime == etime:
+                    if eventcode == prev_node.ecode:
+                        continue
+                    elif eventcode < 70:
+                        print(f"Warning! Duplicate timestamps({prev_node.ecode}, {eventcode}) in {str(self)}")
+                    elif eventcode != 72:
+                        print(f"Special Event Duplicate: {self.animal}, {self.session}, ", event, opt)
+                elif eventcode == 72:
+                    print(f"Unexpected non-duplicate for {trial}, {opt}, {self.animal}, {self.session}")
+            cnode = PSENode(event_wt, etime, trial, eventcode)
+            eventlist.append(cnode)
+            prev_node = cnode
+        if stage == 1:
+            # skip the actual temporal merge for this stage
+            runloop = True
+            while runloop:
+                runloop = False
+                for node in eventlist:
+                    # first see initiate
+                    if node.ecode == 11:
+                        node.saliency = code_map[node.ecode][1]
+                    elif node.ecode > 70:
+                        node.saliency = code_map[node.ecode][1]
+                        # look backward in time and label side_in and center out
+                        curr_node = node.prev
+                        if node.ecode != 73:
+                            # swap curr_node and prev_node label (negative duration between outcome and zero_sideout)
+                            # if sideout followed by outcome
+                            if curr_node.event == 'side_out':
+                                logging.warning(f'swapping {str(node.prev)} and {str(node)}')
+                                curr_node.trial += 0.5
+                                eventlist.swap_nodes(node.prev, node)
+                                runloop = True # rerun the loop
+                                break
+                            assert curr_node.event == 'side_in', f'not a side_in node {str(node.prev)} preceding {str(node)}'
+                            curr_node.saliency = code_map[curr_node.ecode][1]
+                        while (curr_node.event != 'center_out'):
+                            curr_node = curr_node.prev
+                            if curr_node.ecode == 11:
+                                raise RuntimeError(f'Center in not followed by center_out? {curr_node}')
+                        curr_node.saliency = code_map[curr_node.ecode][1]
+                        # look forward in time and label side_outs
+                        curr_node = node.next
+                        if node.ecode == 73:
+                            print(f'skipping side_out events at miss trial {node.trial_index() + 1}')
+                            continue
+                            # FT: current version ignores the side out events after miss trials
+                            # # for missed trial, see if the animal goes straight to the next trial
+                            # while (curr_node.event != 'side_out') and (not curr_node.is_sentinel):
+                            #     curr_node = curr_node.next
+                            # if curr_node.is_sentinel:
+                            #     assert node.trial == trialN, f'should have reached end of experiment? {str(node)}'
+                            #     continue
+                            # elif curr_node.trial_index() != node.trial_index():
+                            #     print(f'animal straight went to the next trial from missed trial {str(node)}')
+                            #     continue
+                        if curr_node.is_sentinel:
+                            print(
+                                f'warning! side_out after the last trial outcome is omitted at trial {node.trial_index() + 1}.')
+                            continue
+                        assert curr_node.event == 'side_out', f'side_out not following outcome? {str(curr_node), str(curr_node.prev)}'
+                        curr_node.saliency = code_map[curr_node.ecode][1] + '_zeroth'
+                        start_node = curr_node
+                        side_ecoder = lambda node: (node.ecode % 10) if (
+                                    node.event in ['side_in', 'side_out']) else node.ecode
+                        # forward loop
+                        while side_ecoder(curr_node) in [side_ecoder(start_node), side_ecoder(start_node) - 1]:
+                            curr_node = curr_node.next
+                        if curr_node.prev.saliency is None:
+                            curr_node.prev.saliency = code_map[curr_node.prev.ecode][1]
+                        curr_node.prev.saliency += '_first'  # TODO: add TAU function to make things more rigorous
+                        while (not curr_node.is_sentinel) and (curr_node.ecode != 11):
+                            curr_node = curr_node.next
+                        # backward loop
+                        end_node = curr_node.prev
+                        curr_node = end_node
+                        while curr_node.event != 'side_out':
+                            if curr_node.event == 'outcome':
+                                print(
+                                    f'non-missed non-terminal outcome nodes not followed by side_out at trial {node.trial_index() + 1}')
+                                continue
+                            curr_node = curr_node.prev
+
+                        # now curr_node is the last side_out
+                        # TODO: bug with last! figure out how this works
+                        if curr_node.saliency is None:
+                            curr_node.saliency = code_map[curr_node.ecode][1]
+                        curr_node.saliency += '_last'
+        return eventlist
 
     def todf(self):
-        return pd.DataFrame()
+        # careful with the trials if their last outcome is the end of the exper file.
+        elist = self.eventlist
+        # reward and action
+        result_df = pd.DataFrame(np.full((self.trialN, 8), np.nan), columns=['trial'] + self.fields)
+        result_df['trial'] = np.arange(1, self.trialN + 1)
+
+        result_df['action'] = pd.Categorical([""] * self.trialN, ['left', 'right'], ordered=False)
+        result_df['rewarded'] = np.zeros(self.trialN, dtype=bool)
+        result_df['trial_in_block'] = self.t_in_block
+        result_df['block_num'] = self.block_num
+        result_df['state'] = pd.Categorical(self.correct_port, ordered=False)
+        result_df['quality'] = pd.Categorical(["normal"] * self.trialN, ['missed', 'abort', 'normal'],
+                                              ordered=False)
+        result_df['last_side_out_side'] = pd.Categorical([""] * self.trialN, ['left', 'right'], ordered=False)
+        for node in elist:
+            if node.saliency:
+                if node.event in ['center_in', 'center_out']:
+                    result_df.loc[node.trial_index(), node.event] = node.etime
+                elif node.event == 'side_in':
+                    result_df.loc[node.trial_index(), node.event] = node.etime
+                    result_df.loc[node.trial_index(), 'action'] = node.saliency
+                elif node.event == 'outcome':
+                    result_df.loc[node.trial_index(), node.event] = node.etime
+                    result_df.loc[node.trial_index(), 'rewarded'] = ('_rewarded' in node.saliency)
+                    if node.saliency in ['missed', 'abort']:
+                        result_df.loc[node.trial_index(), 'quality'] = node.saliency
+                elif node.event == 'side_out':
+                    if node.trial % 1 == 0.5:
+                        trial_ind = int(np.floor(node.trial)) - 1
+                    else:
+                        print('why does this happen')
+                        trial_ind = node.trial_index()
+                    assert trial_ind >= 0, f'salient side_out at {str(node)}'
+                    sals = node.saliency.split("_")
+
+                    for sal in sals[1:]:
+                        result_df.loc[trial_ind, sal + '_side_out'] = node.etime
+                        if sal == 'last':
+                            result_df.loc[trial_ind, 'last_side_out_side'] = sals[0]
+
+        # STRUCT/EXP_COMPLEXITY computed on demand
+        struct_complexity = np.full(self.trialN, False, dtype=bool)  # default false detect double centers
+        sc_inds = np.unique([node.trial_index() for node in elist
+                             if (node.trial % 1 == 0.5) and (node.ecode == 1)])
+        struct_complexity[sc_inds] = True
+
+        result_df['struct_complex'] = struct_complexity
+        result_df['explore_complex'] = result_df['first_side_out'].values != result_df['last_side_out'].values
+        return result_df
+
 
 
 class PSBehaviorMat(BehaviorMat):

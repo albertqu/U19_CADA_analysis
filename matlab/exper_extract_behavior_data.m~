@@ -12,10 +12,7 @@ function [out] = exper_extract_behavior_data(folder, animal, session, mode)
         lvtsf = char(fnamesFP{2});
         out = exper_extract_beh_data_bonsai(folder, experf, lvttlf, lvtsf, [animal '_' session]);
         % TODO: change this later
-        if ~exist(fullfile(out_path, animal, session), 'dir')
-            mkdir(fullfile(out_path, animal, session))
-        end
-        save(fullfile(out_path, animal, session, [animal, '_', session, '_', 'behaviorLOG.mat']), '-v7.3', 'out');
+        save(fullfile(FP_path, animal, session, [animal, '_', session, '_', 'behaviorLOG.mat']), '-v7.3', 'out');
     else
         out = exper_extract_behavior_data_chris(folder, fnames);
     end
