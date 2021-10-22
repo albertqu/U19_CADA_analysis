@@ -438,6 +438,17 @@ def get_animal_session_behavior_dataframe(folder, animal, session):
 ################### Data Structure ####################
 #######################################################
 
+class BehaviorMat:
+    code_map = {}
+
+    def __init__(self, animal, session):
+        self.animal = animal
+        self.session = session
+
+    def todf(self):
+        return pd.DataFrame()
+
+
 class PSBehaviorMat(BehaviorMat):
     # Behavior Mat for Probswitch
     # Figure out how to make it general
