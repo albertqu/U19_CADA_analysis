@@ -4,18 +4,28 @@ function [out] = exper_extract_behavior_data(folder, animal, session, mode)
         beh_path = fullfile(folder, 'BSDML_exper');
         out_path = fullfile(folder, 'BSDML_processed');
         % change and fix later
-        split_animal = split(animal, '_');
-        fnamesFP = get_session_files(FP_path, animal, session, {'LVTTL', 'LVTS'}, 'animal');
+        fnamesFP = get_session_files(FP_path, animal, session, {'LVTTL', 'LVTS', 'FP_', 'FPTS'}, 'animal');
         fnamesEXP = get_session_files(beh_path, animal, session, {'exper'}, 'root');
         experf = char(fnamesEXP{1});
         lvttlf = char(fnamesFP{1});
         lvtsf = char(fnamesFP{2});
-        out = exper_extract_beh_data_bonsai(folder, experf, lvttlf, lvtsf, [animal '_' session]);
+        
         % TODO: change this later
-        if ~exist(fullfile(out_path, animal, session), 'dir')
-            mkdir(fullfile(out_path, animal, session))
+        out_session_folder = fullfile(out_path, animal, session);
+        if ~exist(out_session_folder, 'dir')
+            mkdir(out_session_folder);
         end
-        save(fullfile(out_path, animal, session, [animal, '_', session, '_', 'behaviorLOG.mat']), '-v7.3', 'out');
+        for j=3:4
+            fp_sep = regexp(fnamesFP{j}, filesep, 'split');
+            if ~exist(fullfile(out_session_folder, fp_sep{end}), 'file')
+                copyfile(fnamesFP{j}, out_session_folder);
+            end
+        end
+        blog_f = fullfile(out_session_folder, [animal, '_', session, '_', 'behaviorLOG.mat']);
+        if ~exist(blog_f, 'file')
+            out = exper_extract_beh_data_bonsai(folder, experf, lvttlf, lvtsf, [animal '_' session]);
+            save(blog_f, '-v7.3', 'out');
+        end
     else
         out = exper_extract_behavior_data_chris(folder, fnames);
     end

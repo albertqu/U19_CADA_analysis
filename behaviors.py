@@ -482,6 +482,8 @@ class PSBehaviorMat(BehaviorMat):
         if isinstance(hfile, str):
             print("For pipeline loaded hdf5 is recommended for performance")
             hfile = h5py.File(hfile, 'r')
+        self.animal = animal
+        self.session = session
         self.choice_sides = None
         self.trialN = len(hfile['out/outcome'])
         self.eventlist = self.initialize_PSEnode(hfile, stage=STAGE)
@@ -626,7 +628,11 @@ class PSBehaviorMat(BehaviorMat):
         # careful with the trials if their last outcome is the end of the exper file.
         elist = self.eventlist
         # reward and action
+
         result_df = pd.DataFrame(np.full((self.trialN, 8), np.nan), columns=['trial'] + self.fields)
+        result_df['animal'] = self.animal
+        result_df['session'] = self.session
+        result_df = result_df[['animal', 'session', 'trial'] + self.fields]
         result_df['trial'] = np.arange(1, self.trialN + 1)
 
         result_df['action'] = pd.Categorical([""] * self.trialN, ['left', 'right'], ordered=False)
@@ -672,7 +678,7 @@ class PSBehaviorMat(BehaviorMat):
         result_df['struct_complex'] = struct_complexity
         result_df['explore_complex'] = result_df['first_side_out'].values != result_df['last_side_out'].values
         return result_df
-    
+
 
 class BehaviorMatOld(BehaviorMat):
     # Figure out how to make it general
