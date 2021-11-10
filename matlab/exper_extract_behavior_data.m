@@ -1,4 +1,5 @@
 function [out] = exper_extract_behavior_data(folder, animal, session, mode)
+%     Add method to load all sessions including ones without LVTS
     if contains(mode, 'bonsai')
         FP_path = fullfile(folder, 'BSDML_FP');
         beh_path = fullfile(folder, 'BSDML_exper');

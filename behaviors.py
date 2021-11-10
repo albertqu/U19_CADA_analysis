@@ -540,9 +540,11 @@ class PSBehaviorMat(BehaviorMat):
                     elif eventcode < 70:
                         print(f"Warning! Duplicate timestamps({prev_node.ecode}, {eventcode}) in {str(self)}")
                     elif eventcode != 72:
-                        print(f"Special Event Duplicate: {self.animal}, {self.session}, ", event, opt)
+                        print(f"Special Event Duplicate: {self.animal}, {self.session}, ",
+                              code_map[eventcode])
                 elif eventcode == 72:
-                    print(f"Unexpected non-duplicate for {trial}, {opt}, {self.animal}, {self.session}")
+                    print(f"Unexpected non-duplicate for {trial}, {code_map[eventcode]}, {self.animal}, "
+                          f"{self.session}")
             cnode = PSENode(event_wt, etime, trial, eventcode)
             eventlist.append(cnode)
             prev_node = cnode
