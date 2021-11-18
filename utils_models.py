@@ -18,11 +18,17 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.svm import SVR, SVC
-from umap.umap_ import UMAP
+import logging
+
+try:
+    from umap.umap_ import UMAP
+except:
+    logging.warning('UMAP not installed, some functions might be unsupported')
 try:
     from xgboost import XGBClassifier, XGBRegressor
 except:
     print("Warning! XGBoost cannot be loaded!")
+
 # plotting
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -1873,8 +1879,6 @@ def main():
         save_LD_plots(X_kernel, LDLabels, 'Kernel_PCA', plots, show=False)
 
     # ------------------------------------------------------------------------
-
-
 
 
 
