@@ -20,7 +20,7 @@ def time_aligned_from_files():
     pass
 
 
-def align_activities_with_event(sigs, times, event_times, time_window, discrete=True, align_last=False):
+def align_activities_with_event(sigs, times, event_times, time_window, discrete=False, align_last=False):
     """ Takes signals (... x T), time warp is there is more than one event time type (mean frames)
     :param sigs: (... x T),
     :param times: (... x T) if discrete else float for frame rate (Hz)
@@ -56,17 +56,20 @@ def align_activities_with_event(sigs, times, event_times, time_window, discrete=
                 else:
                     evnt = event_times[np.newaxis, ik]
                 align = evnt[-1] if align_last else evnt[0]
-
+                #print(times[0], align+time_window[0]-dt)
                 rois = (times >= align + time_window[0] - dt) & (times <= align + time_window[-1] + dt)
                 # print(dt, time_window[0], time_window[-1], evnt[0], (times[rois] - evnt[0])[[0, -1]])
                 if (times[0] > align + time_window[0] - dt) & (times[-1] < align + time_window[-1] + dt):
-                    print(f'WARNING: trial {ik}, time traces gets cutoff at edges by time_window, '
+                    logging.warning(f'WARNING: trial {ik}, time traces gets cutoff at edges by time_window, '
                           f'results might not be as expected (e.g. nans)')
                 # TODO: looking into the interpolation for better performance
                 # change to extrapolate
                 # TODO: compare np.nan vs "extrapolate"
-                result[ik] = interpolate.interp1d(times[rois] - align, sigs[rois],
-                                                  fill_value="extrapolate")(time_window)
+                if np.sum(rois) < len(time_window):
+                    logging.info(f"skipping {ik}th entry in event_times")
+                else:
+                    result[ik] = interpolate.interp1d(times[rois] - align, sigs[rois],
+                                                    fill_value="extrapolate")(time_window)
             # TODO: proof read again
             return result
 

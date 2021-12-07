@@ -1,5 +1,6 @@
 # System
 import time, os, h5py, re
+import logging
 # Structure
 from collections import deque
 # Data
@@ -369,6 +370,9 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
                       r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>FP_[LR]H).hdf5", filename)
     mMDMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
                       r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>(FP_[LR]H)?)_modeling.hdf5", filename)
+    mTBMat =re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
+                      r"(?P<A>p\d+)(?P<S>_session\d+_|_?)_trialB.csv", filename)
+
     # case binary
     mBIN = None
     options, ftype = None, None
@@ -384,6 +388,10 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
             options["H"] = dn_match.group(1)
         elif sp_match:
             options['H'] = sp_match.group(1)
+    elif mTBMat is not None:
+        options = mTBMat.groupdict()
+        ftype = 'trialB'
+        oS = options['S']
     elif mMDMat is not None:
         options = mMDMat.groupdict()
         ftype = 'modeling'
@@ -410,7 +418,7 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
         # case csv
         #todo: merge cage id and earpoke
         """A2A-16B-1_RT_ChR2_switch_no_cue_LH_p147_red_2020-03-17T15_38_40.csv"""
-        channels = ['keystrokes', "MetaData", "NIDAQ_Ai0_timestamp", "red", "green"]
+        channels = ['keystrokes', "MetaData", "NIDAQ_Ai0_timestamp", "red", "green", "FP", 'FPTS']
         for c in channels:
             mCSV = re.match(
                 r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_(?P<DN>[-&\w]+)_(?P<H>[LR]H)_"
@@ -422,6 +430,173 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
                 ftype = c
                 oS = options["S"]
                 options['H'] = "FP_" + options['H']
+                break
+                # print(filename)
+                # print(options)
+        if ftype is None:
+            #print("special:", filename)
+            return None
+    mS = re.match(r".*(session\d+).*", oS)
+    fS = ""
+    if mS:
+        fS = "_"+mS.group(1)
+    options["ftype"] = ftype
+    options["animal"] = options['GEN'] + "-" + options["ID"] + "_" + options["EP"]
+    options["session"] = options['A'] + fS + (("_"+options['H']) if options['H'] else "")
+    return options
+
+
+# Figure out rigorous representation; also keep old version intact
+def encode_to_filename_new(folder, animal, session, ftypes="processed_all"):
+    """
+    :param folder: str
+            folder for data storage
+    :param animal: str
+            animal name: e.g. A2A-15B-B_RT
+    :param session: str
+            session name: e.g. p151_session1_FP_RH
+    :param ftype: list or str:
+            list (or a single str) of typed files to return
+            'exper': .mat files
+            'bin_mat': binary file
+            'green': green fluorescence
+            'red': red FP
+            'behavior': .mat behavior file
+            'FP': processed dff hdf5 file
+            if ftypes=="all"
+    :return:
+            returns all 5 files in a dictionary; otherwise return all file types
+            in a dictionary, None if not found
+    """
+    # TODO: enable aliasing
+    paths = [os.path.join(folder, animal, session), os.path.join(folder, animal+'_'+session),
+             os.path.join(folder, animal), folder]
+    if ftypes == "raw all":
+        ftypes = ["exper", "bin_mat", "green", "red"]
+    elif ftypes == "processed_all":
+        ftypes = ["processed", "green", "red", "FP"]
+    elif isinstance(ftypes, str):
+        ftypes = [ftypes]
+    results = {ft: None for ft in ftypes}
+    registers = 0
+    for p in paths:
+        if os.path.exists(p):
+            for f in os.listdir(p):
+                for ift in ftypes:
+                    if ift == 'FP':
+                        ift_arg = 'FP_'
+                    else:
+                        ift_arg = ift
+                    if (ift_arg in f) and (animal in f) and (session in f):
+                        results[ift] = os.path.join(p, f)
+                        registers += 1
+                        if registers == len(ftypes):
+                            return results if len(results) > 1 else results[ift]
+                # opt = decode_from_filename(f)
+                # if opt is not None:
+                #     ift = opt['ftype']
+                #     check_mark = opt['animal'] == animal and opt['session'] == session
+                #     #print(opt['session'], animal, session)
+                #     check_mark_mdl = (opt['animal'] == animal) and (opt['session'] in session)
+                #     cm_mdl = (ift == 'modeling' and check_mark_mdl)
+                #     # TODO: temporary hacky method for modeling
+                #     #print(opt['session'], animal, session, check_mark_mdl, ift, cm_mdl)
+                #     if ift in ftypes and results[ift] is None and (check_mark or cm_mdl):
+                #         results[ift] = os.path.join(p, f)
+                #         registers += 1
+                #         if registers == len(ftypes):
+                #             return results if len(results) > 1 else results[ift]
+    return results if len(results) > 1 else list(results.values())[0]
+
+
+def decode_from_filename_new(filename):
+    """
+    Takes in filenames of the following formats and returns the corresponding file options
+    `A2A-15B_RT_20200612_ProbSwitch_p243_FP_RH`, `D1-27H_LT_20200314_ProbSwitch_FP_RH_p103`
+    behavioral: * **Gen-ID_EarPoke_Time_DNAME_Age_special.mat**
+FP: **Gen-ID_EarPoke_DNAME2_Hemi_Age_channel_Time(dash)[Otherthing].csv**
+binary matrix: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_Binary_Matrix)Time[special].etwas**
+timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special].csv**
+    GEN: genetic line, ID: animal ID, EP: ear poke, T: time of expr, TD: detailed HMS DN: Data Name, A: Age,
+    H: hemisphere, S: session, SP: special extension
+    :param filename:
+    :return: options: dict
+                ftype
+                animal
+                session
+    """
+    filename = path_prefix_free(filename)
+    # case exper
+    mBMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_(?P<T>\d+)_(?P<DN>[-&\w]+)_("
+                      r"?P<A>p\d+)(?P<SP>[-&\w]*)\.mat", filename)
+    # case processed behavior
+    mPBMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
+                      r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>FP_[LR]H)_processed_data.mat", filename)
+    mPBOMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
+                      r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>FP_[LR]H)_behavior_data.mat", filename)
+    mFPMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
+                      r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>FP_[LR]H).hdf5", filename)
+    mMDMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>(\d|\w){3,}[-\w*]*)_(?P<EP>[A-Z]{2})_"
+                      r"(?P<A>p\d+)(?P<S>_session\d+_|_?)(?P<H>(FP_[LR]H)?)_modeling.hdf5", filename)
+    mTBMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>(\d|\w){3,}[-\w*]*)_(?P<EP>[A-Z]{2})_(?P<A>p\d+)(?P<S>(_session\d+)?)_trialB.csv", filename)
+
+    # case binary
+    mBIN = None
+    options, ftype = None, None
+    if mBMat is not None:
+        # TODO: handle session#
+        options = mBMat.groupdict()
+        ftype = "exper"
+        oS = options["SP"]
+        options["H"] = ""
+        dn_match = re.match(".*(FP_[LR]H).*", options['DN'])
+        sp_match = re.match(".*(FP_[LR]H).*", options['SP'])
+        if dn_match:
+            options["H"] = dn_match.group(1)
+        elif sp_match:
+            options['H'] = sp_match.group(1)
+    elif mTBMat is not None:
+        options = mTBMat.groupdict()
+        ftype = 'trialB'
+        oS = options['S']
+        options['H'] = ''
+    elif mMDMat is not None:
+        options = mMDMat.groupdict()
+        ftype = 'modeling'
+        oS = options['S']
+    elif mPBMat is not None:
+        options = mPBMat.groupdict()
+        ftype = "processed"
+        oS = options["S"]
+    elif mPBOMat is not None:
+        options = mPBOMat.groupdict()
+        ftype = "behavior_old"
+        oS = options["S"]
+    elif mFPMat is not None:
+        options = mFPMat.groupdict()
+        ftype = "FP"
+        oS = options['S']
+    elif mBIN is not None:
+        # TODO: fill it up
+        options = mBIN.groupdict()
+        oS = ""
+        ftype = "bin_mat"
+    else:
+        #TODO: print("Warning! Certain sessions have inconsistent naming! needs more through check")
+        # case csv
+        #todo: merge cage id and earpoke
+        """A2A-16B-1_RT_ChR2_switch_no_cue_LH_p147_red_2020-03-17T15_38_40.csv"""
+        channels = ['keystrokes', "MetaData", "NIDAQ_Ai0_timestamp", "red", "green", "FP", 'FPTS']
+        for c in channels:
+            mCSV = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>(\d|\w){3,}[-\w*]*)_(?P<EP>[A-Z]{2})_(?P<DN>[-&\w]+)_(?P<H>([LR]H_)?)"
+                r"(?P<A>p\d+)(?P<SP>[-&\w]*)" + f"_{c}" + r"(?P<S>_session\d+_|_?)(?P<T>\d{4}-?\d{2}-?\d{2})T"
+                r"(?P<TD>[_\d]+)\.csv", filename)
+
+            if mCSV is not None:
+                options = mCSV.groupdict()
+                ftype = c
+                oS = options["S"]
+                options['H'] = ("FP_" + options['H']) if options['H'] else ''
                 break
                 # print(filename)
                 # print(options)

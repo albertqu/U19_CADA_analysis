@@ -41,6 +41,22 @@ def pipeline_example():
     giant_mat = pd.concat([event_FP_mat, modeling_pdf], axis=1)
 
 
+def reg_filestruct_BSDML_FP(folder):
+    for animal in os.listdir(folder):
+        animal_path = os.path.join(folder, animal)
+        if os.path.isdir(animal_path):
+            animal_parts = animal.split('-')
+            if (len(animal_parts) == 3) and ('_' not in animal_parts[-1]):
+                animal_ID = f'{animal_parts[0]}-{animal_parts[1]}_{animal_parts[2]}'
+                new_animal_path = os.path.join(folder, animal_ID)
+                os.rename(animal_path, new_animal_path)
+                for f in os.listdir(new_animal_path):
+                    if animal in f:
+                        os.rename(os.path.join(new_animal_path, f), os.path.join(new_animal_path,
+                                                                                 f.replace(animal,
+                                                                                           animal_ID)))
+
+
 def get_file_path_by_experiment(expr, root):
     if expr == 'ProbSwitch_Chris':
         folder = os.path.join(root, 'ProbSwitch/ProbSwitch_FP_data')

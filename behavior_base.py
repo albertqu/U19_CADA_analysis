@@ -126,6 +126,18 @@ class EventNode:
         node.prev = None
         self.size -= 1
 
+    def swap_nodes(self, node1, node2):
+        assert self.is_sentinel, 'must be sentinel node to do this'
+        assert (not (node1.is_sentinel or node2.is_sentinel)), 'both have to be non-sentinels'
+        first_prev = node1.prev
+        sec_next = node2.next
+        first_prev.next = node2
+        node2.prev = first_prev
+        node2.next = node1
+        node1.prev = node2
+        node1.next = sec_next
+        sec_next.prev = node1
+
     def get_last(self):
         assert self.is_sentinel, 'must be sentinel node to do this'
         return self.prev
