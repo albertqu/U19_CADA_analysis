@@ -1,5 +1,6 @@
 function [out] = run_for_sessions()
-    folder = '/Volumes/Wilbrecht_file_server/2ABT/ProbSwitch';
+    %folder = '/Volumes/Wilbrecht_file_server/2ABT/ProbSwitch';
+    folder = 'Z:\2ABT\ProbSwitch';
     animals = {'D1-R35_RV', 'D1-R34_RT', 'RRM026'};
     sessions = {{'p150', 'p151', 'p152', 'p155', 'p156', 'p157', 'p158'},
         {'p149', 'p150', 'p151', 'p154', 'p155', 'p156', 'p157', 'p158'},
@@ -18,7 +19,8 @@ function [out] = run_for_sessions()
 end
 
 function [out] = run_for_sessions_csv()
-    folder = '/Volumes/Wilbrecht_file_server/2ABT/ProbSwitch';
+%     folder = '/Volumes/Wilbrecht_file_server/2ABT/ProbSwitch';
+    folder = 'Z:\2ABT\ProbSwitch';
     csvfile = fullfile(folder, 'probswitch_neural_subset.csv');
     expr_tb = readtable(csvfile);
     targ_etb = expr_tb(expr_tb.recorded==1, :);
