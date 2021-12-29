@@ -19,7 +19,7 @@ end
 
 function [out] = run_for_sessions_csv()
     folder = '/Volumes/Wilbrecht_file_server/2ABT/ProbSwitch';
-    csvfile = fullfile(folder, 'probswitch_neural_subset.csv');
+    csvfile = fullfile(folder, 'probswitch_neural_subset_RRM.csv');
     expr_tb = readtable(csvfile);
     targ_etb = expr_tb(expr_tb.recorded==1, :);
     for i=1:height(targ_etb)

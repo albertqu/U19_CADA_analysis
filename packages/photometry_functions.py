@@ -14,7 +14,109 @@ Reference:
 import numpy as np
 from sklearn.linear_model import Lasso
 
-def get_zdFF(reference,signal,smooth_win=10,remove=200,lambd=5e4,porder=1,itermax=50, raw=False):
+
+def jove_fit_reference(reference, signal, smooth_win=10, remove=200,
+                       use_raw=True, lambd=5e4, porder=1, itermax=50):
+    '''
+    Calculates z-score dF/F signal based on fiber photometry calcium-idependent
+    and calcium-dependent signals
+
+    Input
+        reference: calcium-independent signal (usually 405-420 nm excitation), 1D array
+        signal: calcium-dependent signal (usually 465-490 nm excitation for
+                     green fluorescent proteins, or ~560 nm for red), 1D array
+        smooth_win: window for moving average smooth, integer, switch to 1 to use raw signal
+        remove: the beginning of the traces with a big slope one would like to remove, integer
+        use_raw: whether to use raw data rather than smoothened when fitting reference
+        Inputs for airPLS:
+        lambd: parameter that can be adjusted by user. The larger lambda is,
+                the smoother the resulting background, z
+        porder: adaptive iteratively reweighted penalized least squares for baseline fitting
+        itermax: maximum iteration times
+    Output
+        z_reference: z-score reference channel
+        z_signal: z-score signal data
+        z_reference_fitted: fitted z-score reference
+    '''
+    # Smooth Signal
+    raw_reference, raw_signal = reference, signal
+    smoothened_reference = smooth_signal(reference, smooth_win)
+    smoothened_signal = smooth_signal(signal, smooth_win)
+    # Find the baseline
+    r_base=airPLS(smoothened_reference.T,lambda_=lambd,porder=porder,itermax=itermax)
+    s_base=airPLS(smoothened_signal,lambda_=lambd,porder=porder,itermax=itermax)
+    # Remove the baseline and the beginning of the recordings
+    if use_raw:
+        reference = (raw_reference[remove:] - r_base[remove:])
+        signal = (raw_signal[remove:] - s_base[remove:])
+    else:
+        reference = (smoothened_reference[remove:] - r_base[remove:])
+        signal = (smoothened_signal[remove:] - s_base[remove:])
+    # Standardize signals
+    z_reference = (reference - np.median(reference)) / np.std(reference)
+    z_signal = (signal - np.median(signal)) / np.std(signal)
+
+    ### Fit reference signal to calcium signal using linear regression
+    from sklearn.linear_model import Lasso
+    lin = Lasso(alpha=0.0001,precompute=True,max_iter=1000,
+                positive=True, random_state=9999, selection='random')
+    n = len(z_reference)
+    lin.fit(z_reference.reshape(n,1), z_signal.reshape(n,1))
+    z_reference_fitted = lin.predict(z_reference.reshape(n,1)).reshape(n,)
+    return z_reference, z_signal, z_reference_fitted
+
+
+def get_zdFF(reference, signal, smooth_win=10, remove=200, use_raw=True, lambd=5e4, porder=1, itermax=50):
+    '''
+    Calculates z-score dF/F signal based on fiber photometry calcium-idependent
+    and calcium-dependent signals
+
+    Input
+        reference: calcium-independent signal (usually 405-420 nm excitation), 1D array
+        signal: calcium-dependent signal (usually 465-490 nm excitation for
+                     green fluorescent proteins, or ~560 nm for red), 1D array
+        smooth_win: window for moving average smooth, integer, switch to 1 to use raw signal
+        remove: the beginning of the traces with a big slope one would like to remove, integer
+        use_raw: whether to use raw data rather than smoothened when fitting reference
+        Inputs for airPLS:
+        lambd: parameter that can be adjusted by user. The larger lambda is,
+                the smoother the resulting background, z
+        porder: adaptive iteratively reweighted penalized least squares for baseline fitting
+        itermax: maximum iteration times
+    Output
+        z_reference: z-score reference channel
+        z_signal: z-score signal data
+        z_reference_fitted: fitted z-score reference
+    '''
+    # Smooth Signal
+    raw_reference, raw_signal = reference, signal
+    smoothened_reference = smooth_signal(reference, smooth_win)
+    smoothened_signal = smooth_signal(signal, smooth_win)
+    # Find the baseline
+    r_base=airPLS(smoothened_reference.T,lambda_=lambd,porder=porder,itermax=itermax)
+    s_base=airPLS(smoothened_signal,lambda_=lambd,porder=porder,itermax=itermax)
+    # Remove the baseline and the beginning of the recordings
+    if use_raw:
+        reference = (raw_reference[remove:] - r_base[remove:])
+        signal = (raw_signal[remove:] - s_base[remove:])
+    else:
+        reference = (smoothened_reference[remove:] - r_base[remove:])
+        signal = (smoothened_signal[remove:] - s_base[remove:])
+    # Standardize signals
+    z_reference = (reference - np.median(reference)) / np.std(reference)
+    z_signal = (signal - np.median(signal)) / np.std(signal)
+
+    ### Fit reference signal to calcium signal using linear regression
+    from sklearn.linear_model import Lasso
+    lin = Lasso(alpha=0.0001,precompute=True,max_iter=1000,
+                positive=True, random_state=9999, selection='random')
+    n = len(z_reference)
+    lin.fit(z_reference.reshape(n,1), z_signal.reshape(n,1))
+    z_reference_fitted = lin.predict(z_reference.reshape(n,1)).reshape(n,)
+    return z_signal - z_reference_fitted
+
+
+def get_zdFF_old(reference,signal,smooth_win=10,remove=200,lambd=5e4,porder=1,itermax=50, raw=False):
     '''
     Calculates z-score dF/F signal based on fiber photometry calcium-idependent
     and calcium-dependent signals

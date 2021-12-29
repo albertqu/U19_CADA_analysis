@@ -472,7 +472,6 @@ class PSBehaviorMat(BehaviorMat):
     fields = ['center_in', 'center_out', 'side_in', 'outcome', 'zeroth_side_out', 'first_side_out',
               'last_side_out']  # 'ITI'
 
-
     # event_features = 'reward', 'action',
     # trial_features = 'quality', 'struct_complex', 'explore_complex', 'BLKNo', 'CPort'
     # Always use efficient coding
