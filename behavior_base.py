@@ -165,4 +165,3 @@ class PSENode(EventNode):
         super().__init__(event, etime, trial, ecode)
         self.serializable = self.serializable + ['saliency']
         self.saliency = None
-
