@@ -686,6 +686,14 @@ def recursive_mat_dict_view(mat, prefix=''):
             recursive_mat_dict_view(mat[p], prefix+"    ")
 
 
+###################################################
+#################### Cleaning #####################
+###################################################
+def flip_back_2_channels(animal, session):
+    pass
+
+
+
 ########################################################
 #################### Preprocessing #####################
 ########################################################
@@ -1075,7 +1083,7 @@ def raw_signal_visualize(FP_415_time, FP_415_signal, FP_470_time, FP_470_signal)
 
 def FP_quality_visualization(raw_reference, raw_signal, ftime, fr=20, initial_time=300, drop_frame=200,
                              time_unit='s', sig_channel='470nm', control_channel='415nm',
-                             roi='470nm', roc_method='QDA', viz=True):
+                             roi='470nm', roc_method='QDA', tag='', viz=True):
     # Assuming signal has already been properly dropped
 
     ch, control_ch = sig_channel, control_channel
@@ -1112,6 +1120,7 @@ def FP_quality_visualization(raw_reference, raw_signal, ftime, fr=20, initial_ti
     ax0.set_ylabel(f'{roi_string}Z(RawF)')
     ax0.set_xlabel(f'Rel. Time ({time_unit})')
     ax0.set_title(f'{roi_title.title()}Raw {ch} Contrasted With Control (First {initial_time/60:.2f} Min)')
+    ax0.legend()
     # Plot scatter plot visualization of two channels
     ax1 = fig.add_subplot(gs[1, 0])
     ax1.plot(z_reference[selector],z_signal[selector],'b.')
@@ -1127,7 +1136,9 @@ def FP_quality_visualization(raw_reference, raw_signal, ftime, fr=20, initial_ti
     # plot_mode == 'diff':
     # sns.histplot(z_signal[selector] - z_reference_fitted[selector], kde=True, ax=axes[i][j])
     # axes[i][j].legend([control_ch])
-    fig.suptitle(f'{ch} {roi_title}auc-roc score ({roc_method}): {auc_score:.4f}', fontsize='xx-large')
+    if tag:
+        tag = tag + ' '
+    fig.suptitle(f'{tag}{ch} {roi_title}auc-roc score ({roc_method}): {auc_score:.4f}', fontsize='xx-large')
 
     return fig, auc_score, sig_dict
 

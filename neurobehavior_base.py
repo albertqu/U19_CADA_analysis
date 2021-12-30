@@ -294,6 +294,7 @@ class NBExperiment:
         ```
         """
         proj_sel = self.meta['animal'].str.startswith(proj)
+        # TODO: found bug here with multiple criterion!!
         for kw in kwargs:
             if kw in self.meta.columns:
                 karg = kwargs[kw]
@@ -341,7 +342,8 @@ class NBExperiment:
         for animal, session in self.meta.loc[proj_sel & meta_sel, ['animal', 'session']].values:
             try:
                 _, neuro_series = self.load_animal_session(animal, session)
-                sig_scores = neuro_series.diagnose_multi_channels(plot_path=self.plot_path)
+                qual_check_folder = oj(self.plot_path, 'FP_quality_check')
+                sig_scores = neuro_series.diagnose_multi_channels(plot_path=qual_check_folder)
             except:
                 logging.warning(f'Error in {animal} {session}')
                 bmat, ps_series = None, None
@@ -355,7 +357,8 @@ class PS_Expr(NBExperiment):
         super().__init__(folder)
         self.folder = folder
         pathlist = folder.split(os.sep)[:-1] + ['plots']
-        self.plot_path = oj(*pathlist)
+        self.plot_path = oj(os.sep, *pathlist)
+        print(f'Changing plot_path as {self.plot_path}')
         if not os.path.exists(self.plot_path):
             os.makedirs(self.plot_path)
         for kw in kwargs:
@@ -416,7 +419,7 @@ class PS_Expr(NBExperiment):
         fp_timestamps = filemap['FPTS']
 
         if (fp_file is not None) and (fp_timestamps is not None):
-            ps_series = BonsaiPS1Hemi2Ch(fp_file, fp_timestamps, 'BSC1')
+            ps_series = BonsaiPS1Hemi2Ch(fp_file, fp_timestamps, 'BSC1', animal_alias, session)
             ps_series.merge_channels()
             ps_series.realign_time(bmat)
         else:

@@ -162,6 +162,7 @@ class FPSeries:
         time_axis = self.neural_df['time']
         control_ch = self.params['control']
         sig_scores = {}
+        fig_tag = f'{self.animal} {self.session}'
         for ch in self.sig_channels:
             for roi in self.sig_channels[ch]:
                 raw_reference = self.neural_df[roi.replace(ch, control_ch)].values
@@ -171,7 +172,7 @@ class FPSeries:
                                                              fr=self.params['fr'], drop_frame=200,
                                                              time_unit=self.params['time_unit'],
                                                              sig_channel=ch, control_channel=control_ch,
-                                                             roi=roi, viz=viz)
+                                                             roi=roi, tag=fig_tag, viz=viz)
                 if fig is not None and plot_path is not None:
                     animal_folder = oj(plot_path, self.animal)
                     animal, session = self.animal, self.session
@@ -191,9 +192,9 @@ class BonsaiFP3001(FPSeries):
 
     rois = []
 
-    def __init__(self, data_file, ts_file, trig_mode):
+    def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0'):
         # determine the golden standard for resampling time series
-        super().__init__(data_file, ts_file, trig_mode)
+        super().__init__(data_file, ts_file, trig_mode, animal, session)
         data = pd.read_csv(data_file, skiprows=1, names=['frame', 'cam_time', 'flag'] + self.rois)
         data_ts = pd.read_csv(ts_file, names=['time'])
         data_fp = pd.concat([data, data_ts.time], axis=1)
@@ -224,8 +225,8 @@ class OldFP3001(FPSeries):
               'control': '415nm',
               'ignore_channels': []}
 
-    def __init__(self, data_file, ts_file=None, trig_mode=None):
-        super().__init__(data_file, ts_file, trig_mode)
+    def __init__(self, data_file, ts_file=None, trig_mode=None, animal='test', session='0'):
+        super().__init__(data_file, ts_file, trig_mode, animal, session)
         self.sig_channels = {}
         if trig_mode is None:
             trig_mode ='BSC1'
@@ -247,8 +248,8 @@ class BonsaiRR2Hemi2Ch(BonsaiFP3001):
               'control': '410nm',
               'ignore_channels': []}
 
-    def __init__(self, data_file, ts_file, trig_mode):
-        super().__init__(data_file, ts_file, trig_mode)
+    def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0'):
+        super().__init__(data_file, ts_file, trig_mode, animal, session)
 
 
 class BonsaiPS1Hemi2Ch(BonsaiFP3001):
@@ -263,7 +264,7 @@ class BonsaiPS1Hemi2Ch(BonsaiFP3001):
               'control': '415nm',
               'ignore_channels': []}
 
-    def __init__(self, data_file, ts_file, trig_mode):
-        super().__init__(data_file, ts_file, trig_mode)
+    def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0'):
+        super().__init__(data_file, ts_file, trig_mode, animal, session)
 
 
