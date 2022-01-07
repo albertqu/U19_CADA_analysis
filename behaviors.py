@@ -474,7 +474,6 @@ class PSBehaviorMat(BehaviorMat):
 
     time_unit = 's'
 
-
     # event_features = 'reward', 'action',
     # trial_features = 'quality', 'struct_complex', 'explore_complex', 'BLKNo', 'CPort'
     # Always use efficient coding

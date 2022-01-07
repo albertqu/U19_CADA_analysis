@@ -10,11 +10,13 @@ import pandas as pd
 from scipy.sparse import diags as spdiags
 from scipy.sparse import linalg as sp_linalg
 from scipy import interpolate, signal
+from utils_models import auc_roc_2dist
 from packages.photometry_functions import get_dFF
 # Plotting
 import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
 import seaborn as sns
-from packages.photometry_functions import get_f0_Martianova_jove
+from packages.photometry_functions import get_f0_Martianova_jove, jove_fit_reference
 # caiman
 try:
     from caiman.source_extraction.cnmf.deconvolution import GetSn
@@ -23,6 +25,7 @@ try:
 except ModuleNotFoundError:
     print("CaImAn not installed or environment not activated, certain functions might not be usable")
 
+RAND_STATE = 230
 
 # TODO: Move project specific portions to pipeline_*.py as things scale
 
@@ -683,6 +686,14 @@ def recursive_mat_dict_view(mat, prefix=''):
             recursive_mat_dict_view(mat[p], prefix+"    ")
 
 
+###################################################
+#################### Cleaning #####################
+###################################################
+def flip_back_2_channels(animal, session):
+    pass
+
+
+
 ########################################################
 #################### Preprocessing #####################
 ########################################################
@@ -1068,6 +1079,68 @@ def raw_signal_visualize(FP_415_time, FP_415_signal, FP_470_time, FP_470_signal)
     axes[1].legend(['470 channel', '415 channel (isosbestic)'])
     axes[1].set_xlabel('frames')
     axes[1].set_ylabel('Fluorescence (demeaned)')
+
+
+def FP_quality_visualization(raw_reference, raw_signal, ftime, fr=20, initial_time=300, drop_frame=200,
+                             time_unit='s', sig_channel='470nm', control_channel='415nm',
+                             roi='470nm', roc_method='QDA', tag='', viz=True):
+    # Assuming signal has already been properly dropped
+
+    ch, control_ch = sig_channel, control_channel
+    roi_string = roi.replace(ch, '')
+    if roi_string:
+            roi_string = roi_string + '_'
+    else:
+        roi_string = 'ROI_'
+    roi_title = roi_string.replace('_', ' ')
+
+    fig = plt.figure(figsize=(20, 6))
+    gs = GridSpec(nrows=2, ncols=2)
+
+    z_reference, z_signal, z_reference_fitted = jove_fit_reference(raw_reference,raw_signal,smooth_win=int(fr),
+                                                                    use_raw=False, remove=0,lambd=5e4,porder=1)
+    sig_dict = {'reference': z_reference, 'signal': z_signal, 'fitted_ref': z_reference_fitted}
+    #selector = z_signal >= (np.median(z_signal) + np.std(z_signal))
+    selector = np.abs(z_signal - np.median(z_signal)) >= np.std(z_signal)
+    auc_score = auc_roc_2dist(z_reference_fitted[selector], z_signal[selector], roc_method)
+    if not viz:
+        return None, auc_score, sig_dict
+    #selector = np.full(len(z_signal), 1, dtype=bool)
+    print(f'Selected {100 * np.sum(selector) / len(selector):.4f}% data')
+    # Plot two channels against each other
+    ax0 = fig.add_subplot(gs[0, :])
+    min_time = np.min(ftime)
+    segment_sel = ftime <= (min_time + initial_time)
+    segment_time = ftime[segment_sel][drop_frame:] - min_time
+    normalize = lambda xs: (xs - np.mean(xs)) / np.std(xs)
+    sig_segment = normalize(raw_signal[segment_sel][drop_frame:])
+    ref_segment = normalize(raw_reference[segment_sel][drop_frame:])
+    ax0.plot(segment_time, sig_segment, label=ch)
+    ax0.plot(segment_time, ref_segment, label=control_ch)
+    ax0.set_ylabel(f'{roi_string}Z(RawF)')
+    ax0.set_xlabel(f'Rel. Time ({time_unit})')
+    ax0.set_title(f'{roi_title.title()}Raw {ch} Contrasted With Control (First {initial_time/60:.2f} Min)')
+    ax0.legend()
+    # Plot scatter plot visualization of two channels
+    ax1 = fig.add_subplot(gs[1, 0])
+    ax1.plot(z_reference[selector],z_signal[selector],'b.')
+    ax1.plot(z_reference,z_reference_fitted, 'r--',linewidth=1.5)
+    ax1.set_xlabel(f'{control_ch} values')
+    ax1.set_ylabel(f'{ch} values')
+    ax2 = fig.add_subplot(gs[1, 1])
+    sns.histplot(z_reference_fitted[selector], label=control_ch, kde=True, ax=ax2, color='b')
+    # sns.histplot(z_reference_fitted[selector], label=control_ch, kde=True, ax=ax1, color='b')
+    sns.histplot(z_signal[selector], label=ch, kde=True, ax=ax2, color='r')
+    ax2.legend()
+    sns.despine()
+    # plot_mode == 'diff':
+    # sns.histplot(z_signal[selector] - z_reference_fitted[selector], kde=True, ax=axes[i][j])
+    # axes[i][j].legend([control_ch])
+    if tag:
+        tag = tag + ' '
+    fig.suptitle(f'{tag}{ch} {roi_title}auc-roc score ({roc_method}): {auc_score:.4f}', fontsize='xx-large')
+
+    return fig, auc_score, sig_dict
 
 
 ########################################################

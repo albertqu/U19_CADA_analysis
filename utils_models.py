@@ -18,6 +18,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.svm import SVR, SVC
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis as QDA
+from sklearn.model_selection import KFold
 import logging
 
 try:
@@ -39,7 +43,7 @@ try:
 except:
     print("Warning: Plotly cannot be loaded!")
 
-RAND_STATE = 2020
+RAND_STATE = 230
 
 
 # PRINCIPLE: CODE: 0 INDEX, PLOTTING: 1 INDEX
@@ -408,6 +412,35 @@ def get_data_label(tPDF, tLabels, label=None, STRIFY=True):
         if STRIFY:
             LDLabels = LDLabels.astype('str')
         return LDLabels
+
+
+""" ########################################
+################ Validation ################
+######################################## """
+
+
+def auc_roc_2dist(d1, d2, method='QDA', k=5, return_dist=False):
+    X = np.concatenate((d1, d2)).reshape((-1, 1))
+    y = np.repeat([0, 1], len(d1))
+    if method == 'QDA':
+        clf = QDA()
+    elif method == 'LR':
+        clf = LogisticRegression(solver="liblinear", random_state=RAND_STATE)
+    if k == 1:
+        clf.fit(X, y)
+        return roc_auc_score(y, clf.predict_proba(X)[:, 1])
+    else:
+        kf = KFold(n_splits=k, shuffle=True, random_state=RAND_STATE)
+        roc_scores = []
+        for train_index, test_index in kf.split(X):
+            X_train, X_test = X[train_index], X[test_index]
+            y_train, y_test = y[train_index], y[test_index]
+            test_probs = clf.fit(X_train, y_train).predict_proba(X_test)[:, 1]
+            roc_scores.append(roc_auc_score(y_test, test_probs))
+        if return_dist:
+            return roc_scores
+        else:
+            return np.mean(roc_scores)
 
 
 """ ##########################################
