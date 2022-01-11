@@ -16,7 +16,7 @@ from packages.photometry_functions import get_dFF
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 import seaborn as sns
-from packages.photometry_functions import get_f0_Martianova_jove, jove_fit_reference
+from packages.photometry_functions import get_f0_Martianova_jove, jove_fit_reference, jove_find_best_param
 # caiman
 try:
     from caiman.source_extraction.cnmf.deconvolution import GetSn
@@ -1089,28 +1089,31 @@ def FP_quality_visualization(raw_reference, raw_signal, ftime, fr=20, initial_ti
     ch, control_ch = sig_channel, control_channel
     roi_string = roi.replace(ch, '')
     if roi_string:
-            roi_string = roi_string + '_'
+        roi_string = roi_string + '_'
     else:
         roi_string = 'ROI_'
     roi_title = roi_string.replace('_', ' ')
 
-    fig = plt.figure(figsize=(20, 6))
-    gs = GridSpec(nrows=2, ncols=2)
-
-    z_reference, z_signal, z_reference_fitted = jove_fit_reference(raw_reference,raw_signal,smooth_win=int(fr),
-                                                                    use_raw=False, remove=0,lambd=5e4,porder=1)
+    result_df, pgrid = jove_find_best_param(raw_reference, raw_signal, smooth_win=int(fr), use_raw=False, remove=0)
+    z_reference, z_signal, z_reference_fitted = jove_fit_reference(raw_reference, raw_signal, smooth_win=int(fr),
+                                                                   use_raw=False, remove=0, **pgrid)
     sig_dict = {'reference': z_reference, 'signal': z_signal, 'fitted_ref': z_reference_fitted}
-    #selector = z_signal >= (np.median(z_signal) + np.std(z_signal))
+    # selector = z_signal >= (np.median(z_signal) + np.std(z_signal))
     selector = np.abs(z_signal - np.median(z_signal)) >= np.std(z_signal)
     auc_score = auc_roc_2dist(z_reference_fitted[selector], z_signal[selector], roc_method)
-    if not viz:
-        return None, auc_score, sig_dict
-    #selector = np.full(len(z_signal), 1, dtype=bool)
+    # if not viz:
+    #     return None, auc_score, sig_dict
+    # selector = np.full(len(z_signal), 1, dtype=bool)
     print(f'Selected {100 * np.sum(selector) / len(selector):.4f}% data')
+    print(np.sum(selector))
     # Plot two channels against each other
+
+    fig = plt.figure(figsize=(20, 9))
+    gs = GridSpec(nrows=3, ncols=3)
     ax0 = fig.add_subplot(gs[0, :])
     min_time = np.min(ftime)
     segment_sel = ftime <= (min_time + initial_time)
+
     segment_time = ftime[segment_sel][drop_frame:] - min_time
     normalize = lambda xs: (xs - np.mean(xs)) / np.std(xs)
     sig_segment = normalize(raw_signal[segment_sel][drop_frame:])
@@ -1118,26 +1121,39 @@ def FP_quality_visualization(raw_reference, raw_signal, ftime, fr=20, initial_ti
     ax0.plot(segment_time, sig_segment, label=ch)
     ax0.plot(segment_time, ref_segment, label=control_ch)
     ax0.set_ylabel(f'{roi_string}Z(RawF)')
-    ax0.set_xlabel(f'Rel. Time ({time_unit})')
-    ax0.set_title(f'{roi_title.title()}Raw {ch} Contrasted With Control (First {initial_time/60:.2f} Min)')
+    ax0.set_title(f'{roi_title.title()}Raw {ch} Contrasted With Control (First {initial_time / 60:.2f} Min)')
     ax0.legend()
+
+    ax1 = fig.add_subplot(gs[1, :])
+    ax1.plot(segment_time, z_signal[segment_sel][drop_frame:], label=f"Z({ch})")
+    # ax1.plot(segment_time, z_reference[segment_sel][drop_frame:], label=control_ch)
+    ax1.plot(segment_time, z_reference_fitted[segment_sel][drop_frame:], label='~' + control_ch)
+    ax1.set_ylabel(f'{roi_string}Z(F)')
+    ax1.set_xlabel(f'Rel. Time ({time_unit})')
+    ax1.set_title(f'{roi_title.title()}Z {ch} Contrasted With Control (First {initial_time / 60:.2f} Min)')
+    ax1.legend()
+
     # Plot scatter plot visualization of two channels
-    ax1 = fig.add_subplot(gs[1, 0])
-    ax1.plot(z_reference[selector],z_signal[selector],'b.')
-    ax1.plot(z_reference,z_reference_fitted, 'r--',linewidth=1.5)
-    ax1.set_xlabel(f'{control_ch} values')
-    ax1.set_ylabel(f'{ch} values')
-    ax2 = fig.add_subplot(gs[1, 1])
-    sns.histplot(z_reference_fitted[selector], label=control_ch, kde=True, ax=ax2, color='b')
+    ax2 = fig.add_subplot(gs[2, 0])
+    ax2.plot(z_reference[selector], z_signal[selector], 'b.')
+    ax2.plot(z_reference, z_reference_fitted, 'r--', linewidth=1.5)
+    ax2.set_xlabel(f'{control_ch} values')
+    ax2.set_ylabel(f'{ch} values')
+    ax3 = fig.add_subplot(gs[2, 1])
+
+    sns.histplot(z_reference_fitted[selector], label=control_ch, kde=False, ax=ax3, color='b')
     # sns.histplot(z_reference_fitted[selector], label=control_ch, kde=True, ax=ax1, color='b')
-    sns.histplot(z_signal[selector], label=ch, kde=True, ax=ax2, color='r')
-    ax2.legend()
+    sns.histplot(z_signal[selector], label=ch, kde=False, ax=ax3, color='r')
+    ax3.legend()
     sns.despine()
-    # plot_mode == 'diff':
-    # sns.histplot(z_signal[selector] - z_reference_fitted[selector], kde=True, ax=axes[i][j])
-    # axes[i][j].legend([control_ch])
+
+    ax4 = fig.add_subplot(gs[2, 2])
+    sns.histplot(z_signal[selector] - z_reference_fitted[selector], kde=True, ax=ax4)
+    ax4.legend(['diff(470, ~415)'])
+    sns.despine()
     if tag:
         tag = tag + ' '
+    plt.subplots_adjust(hspace=0.3)
     fig.suptitle(f'{tag}{ch} {roi_title}auc-roc score ({roc_method}): {auc_score:.4f}', fontsize='xx-large')
 
     return fig, auc_score, sig_dict

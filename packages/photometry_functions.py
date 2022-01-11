@@ -13,6 +13,12 @@ Reference:
 '''
 import numpy as np
 from sklearn.linear_model import Lasso
+import itertools
+import pandas as pd
+
+from sklearn.model_selection import train_test_split
+from utils_models import ksplit_X_y, simple_metric, fp_corrected_metric
+from functools import partial
 
 
 def jove_fit_reference(reference, signal, smooth_win=10, remove=200,
@@ -64,6 +70,86 @@ def jove_fit_reference(reference, signal, smooth_win=10, remove=200,
     lin.fit(z_reference.reshape(n,1), z_signal.reshape(n,1))
     z_reference_fitted = lin.predict(z_reference.reshape(n,1)).reshape(n,)
     return z_reference, z_signal, z_reference_fitted
+
+
+# Apply the smoothing baseline removal together and then split the data in k_fold
+# Does it make more sense to split first (more edge effect) or preprocess first?
+# make method Jove_preprocess(**kwargs)
+def jove_preprocess(reference, signal, smooth_win=10, remove=200,
+                       use_raw=True, lambd=5e4, porder=1, itermax=50):
+    '''
+    Calculates z-score dF/F signal based on fiber photometry calcium-idependent
+    and calcium-dependent signals
+
+    Input
+        reference: calcium-independent signal (usually 405-420 nm excitation), 1D array
+        signal: calcium-dependent signal (usually 465-490 nm excitation for
+                     green fluorescent proteins, or ~560 nm for red), 1D array
+        smooth_win: window for moving average smooth, integer, switch to 1 to use raw signal
+        remove: the beginning of the traces with a big slope one would like to remove, integer
+        use_raw: whether to use raw data rather than smoothened when fitting reference
+        Inputs for airPLS:
+        lambd: parameter that can be adjusted by user. The larger lambda is,
+                the smoother the resulting background, z
+        porder: adaptive iteratively reweighted penalized least squares for baseline fitting
+        itermax: maximum iteration times
+    Output
+        z_reference: z-score reference channel
+        z_signal: z-score signal data
+        z_reference_fitted: fitted z-score reference
+    '''
+    # Smooth Signal
+    raw_reference, raw_signal = reference, signal
+    smoothened_reference = smooth_signal(reference, smooth_win)
+    smoothened_signal = smooth_signal(signal, smooth_win)
+    # Find the baseline
+    r_base=airPLS(smoothened_reference.T,lambda_=lambd,porder=porder,itermax=itermax)
+    s_base=airPLS(smoothened_signal,lambda_=lambd,porder=porder,itermax=itermax)
+    # Remove the baseline and the beginning of the recordings
+    if use_raw:
+        reference = (raw_reference[remove:] - r_base[remove:])
+        signal = (raw_signal[remove:] - s_base[remove:])
+    else:
+        reference = (smoothened_reference[remove:] - r_base[remove:])
+        signal = (smoothened_signal[remove:] - s_base[remove:])
+    # Standardize signals
+    z_reference = (reference - np.median(reference)) / np.std(reference)
+    z_signal = (signal - np.median(signal)) / np.std(signal)
+    return z_reference, z_signal
+
+
+def jove_find_best_param(reference, signal, smooth_win=10, remove=200,
+                  use_raw=True, itermax=50, k_split=5):
+    param_grid = {'lambd': [5e1, 5e2, 5e3, 5e4, 5e5], 'porder': [1, 2]}
+    params = list(param_grid.keys())
+    param_product = itertools.product(*[param_grid[pr] for pr in param_grid])
+    result_df = []
+    for pgrid in param_product:
+        grid_vals = {params[i]: pgrid[i] for i in range(len(params))}
+        z_reference, z_signal = jove_preprocess(reference, signal, smooth_win,
+                                                remove, use_raw, itermax=itermax, **grid_vals)
+        X = z_reference.reshape((-1, 1))
+        y = z_signal
+        metrics = {'resid_std': simple_metric, 'r2': partial(fp_corrected_metric, method='r2'),
+                   'var_ratio': partial(fp_corrected_metric, method='explained_variance')}
+        sort_metric = 'resid_std'
+        results = []
+        for k_X, k_y in ksplit_X_y(X, y, k_split):
+            k_X_train, k_X_test, k_y_train, k_y_test = train_test_split(k_X, k_y, test_size=0.3, shuffle=False)
+            lin = Lasso(alpha=0.0001,precompute=True,max_iter=1000,
+                        positive=True, random_state=9999, selection='random')
+            lin.fit(k_X_train, k_y_train)
+            k_y_pred = lin.predict(k_X_test).ravel()
+            results.append([metrics[m](k_y_test, k_y_pred) for m in metrics])
+        iresult_df = pd.DataFrame(results, columns=list(metrics.keys()))
+        iresult_df['fold'] = np.arange(k_split)
+        iresult_df[params] = pgrid
+        result_df.append(iresult_df)
+    result_df = pd.concat(result_df, axis=0)
+    final = result_df.drop(columns=['fold']).groupby(params, as_index=False).mean().sort_values(sort_metric, ascending=False)
+    #result_df.drop(columns=['fold']).groupby(params).agg(['mean', 'std'])
+    pgrid_star = final.loc[0, params].to_dict()
+    return result_df, pgrid_star
 
 
 def get_zdFF(reference, signal, smooth_win=10, remove=200, use_raw=True, lambd=5e4, porder=1, itermax=50):

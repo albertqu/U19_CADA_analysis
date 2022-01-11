@@ -19,7 +19,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.svm import SVR, SVC
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, explained_variance_score, r2_score
 from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis as QDA
 from sklearn.model_selection import KFold
 import logging
@@ -443,6 +443,40 @@ def auc_roc_2dist(d1, d2, method='QDA', k=5, return_dist=False):
             return np.mean(roc_scores)
 
 
+def make_k_arange_segs(n, k):
+    # alternative method making split more even
+    inds = np.arange(n)
+    # block_f = n / k
+    # if block_f % 1 > 0.5:
+    #     block = int(np.ceil(block_f))
+    # else:
+    #     block = int(np.floor(block_f))
+    block = n // k
+    for i in range(k):
+        if i == k-1:
+            yield inds[i*block:]
+        else:
+            yield inds[i*block:(i+1)*block]
+
+
+def ksplit_X_y(X, y, k):
+    for inds in make_k_arange_segs(len(X), k):
+        yield X[inds], y[inds]
+
+
+def simple_metric(y, y_pred):
+    region = np.abs(y-np.mean(y)) <= np.std(y)
+    return 1 - (np.std((y[region]-y_pred[region])) / np.std(y[region])) ** 2
+    # return np.std((y[region]-y_pred[region]))
+
+
+def fp_corrected_metric(y, y_pred, method):
+    region = np.abs(y-np.mean(y)) <= np.std(y)
+    metric_list = {'explained_variance': explained_variance_score,
+                   'r2': r2_score}
+    return metric_list[method](y[region], y_pred[region])
+
+
 """ ##########################################
 ################ Visualization ###############
 ########################################## """
@@ -679,9 +713,8 @@ def visualize_3d_multiple_surface_umap():
     for m in umap_accus:
         if len(umap_accus[m].shape) == 1:
             umap_accus[m] = umap_accus[m].reshape(umap_xs.shape)
-    fig = go.Figure(
-        data=[go.Surface(x=umap_min_dists_seqs, y=umap_neighbor_seqs, z=umap_accus[m], showscale=False) for m
-              in umap_accus])
+    fig = go.Figure(data=[go.Surface(x=umap_min_dists_seqs, y=umap_neighbor_seqs, z=umap_accus[m], showscale=False)
+                          for m in umap_accus])
     fig.update_layout({'title': 'UMAP', 'xaxis_title': 'min_dist', 'yaxis_title': 'neighbor'})
     fig.show()
 

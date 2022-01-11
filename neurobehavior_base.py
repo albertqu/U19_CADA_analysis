@@ -366,7 +366,7 @@ class PS_Expr(NBExperiment):
                 setattr(self, kw, kwargs[kw])
         info = pd.read_csv(os.path.join(folder, self.info_name))
         spec = pd.read_csv(os.path.join(folder, self.spec_name))
-        self.meta = info.merge(spec, on='animal_ID', how='left')
+        self.meta = info.merge(spec, left_on='animal', right_on='alias', how='left')
         # self.meta.loc[self.meta['session_num']]
         self.meta['cell_type'] = self.meta['animal_ID'].str.split('-', expand=True)[0]
         self.meta['session'] = self.meta['age'].apply(self.cvt_age_to_session)
