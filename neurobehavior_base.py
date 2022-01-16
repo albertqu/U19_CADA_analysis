@@ -152,16 +152,27 @@ class NeuroBehaviorMat:
             if 'long' in features[feat] and features[feat]['long']:
                 melt_cols = features[feat]['to_melt']
                 id_cols = np.setdiff1d(nb_df.columns, melt_cols)
-                assert '_neur' in feat, 'currently only support aligned neural'
-                # TODO: flexible _ZdFF treatment
-                nb_df = nb_df.melt(id_vars=id_cols, value_vars=melt_cols, var_name=f'{feat}_arg',
-                                   value_name=f'{feat}_ZdFF')
-                nb_df[[f'{feat}_lag', f'{feat}_time']] = nb_df[f'{feat}_arg'].str.replace(feat, '').str.split(
-                    r'|', expand=True)
+                # assert '_neur' in feat, 'currently only support aligned neural'
+                if '_neur' in feat:
+                    # TODO: flexible _ZdFF treatment
+                    nb_df = nb_df.melt(id_vars=id_cols, value_vars=melt_cols, var_name=f'{feat}_arg',
+                                       value_name=f'{feat}_ZdFF')
+                    nb_df[[f'{feat}_lag', f'{feat}_time']] = nb_df[f'{feat}_arg'].str.replace(feat, '').str.split(
+                        r'|', expand=True)
+                    nb_df[f'{feat}_time'] = nb_df[f'{feat}_time'].astype(np.float)
+                else:
+                    nb_df = nb_df.melt(id_vars=id_cols, value_vars=melt_cols, var_name=f'{feat}_arg',
+                                       value_name=f'{feat}_value')
+                    sample_val = nb_df.loc[0, f'{feat}_arg']
+                    if '|' in sample_val:
+                        nb_df[[f'{feat}_lag', f'{feat}_time']] = nb_df[f'{feat}_arg'].str.replace(feat, '').str.split(
+                            r'|', expand=True)
+                        nb_df[f'{feat}_time'] = nb_df[f'{feat}_time'].astype(np.float)
+                    else:
+                        nb_df[f'{feat}_lag'] = nb_df[f'{feat}_arg'].str.replace(feat, '')
                 nb_df[f'{feat}_lag'] = nb_df[f'{feat}_lag'].apply(lambda x: x[1:-1].replace('t', ''))
                 nb_df.loc[nb_df[f'{feat}_lag'] == '', f'{feat}_lag'] = 0
                 nb_df[f'{feat}_lag'] = nb_df[f'{feat}_lag'].astype(np.int)
-                nb_df[f'{feat}_time'] = nb_df[f'{feat}_time'].astype(np.float)
                 nb_df.drop(columns=f'{feat}_arg', inplace=True)
                 uniq_lag = np.unique(nb_df[f'{feat}_lag'])
                 if (len(uniq_lag) == 1) and (uniq_lag[0] == 0):

@@ -1,4 +1,3 @@
-absl-py==0.7.1
 alabaster==0.7.12
 aplus==0.11.0
 appnope==0.1.0
