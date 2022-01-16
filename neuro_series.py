@@ -63,7 +63,7 @@ class FPSeries:
             for roi in self.sig_channels[ch]:
                 rec_time = self.neural_df['time'].values
                 rec_sig = self.neural_df[roi].values
-                iso_sig = self.neural_df[roi.replace(ch, self.params['control'])]
+                iso_sig = self.neural_df[roi.replace(ch, self.params['control'])].values
                 if method == 'dZF_jove':
                     assert zscore, 'isosbestic jove is always zscored'
                     dff = get_zdFF(iso_sig, rec_sig, smooth_win=int(self.params['fr']), remove=0)
