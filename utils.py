@@ -1107,54 +1107,55 @@ def FP_quality_visualization(raw_reference, raw_signal, ftime, fr=20, initial_ti
     print(f'Selected {100 * np.sum(selector) / len(selector):.4f}% data')
     print(np.sum(selector))
     # Plot two channels against each other
+    fig = None
+    if viz:
+        fig = plt.figure(figsize=(20, 9))
+        gs = GridSpec(nrows=3, ncols=3)
+        ax0 = fig.add_subplot(gs[0, :])
+        min_time = np.min(ftime)
+        segment_sel = ftime <= (min_time + initial_time)
 
-    fig = plt.figure(figsize=(20, 9))
-    gs = GridSpec(nrows=3, ncols=3)
-    ax0 = fig.add_subplot(gs[0, :])
-    min_time = np.min(ftime)
-    segment_sel = ftime <= (min_time + initial_time)
+        segment_time = ftime[segment_sel][drop_frame:] - min_time
+        normalize = lambda xs: (xs - np.mean(xs)) / np.std(xs)
+        sig_segment = normalize(raw_signal[segment_sel][drop_frame:])
+        ref_segment = normalize(raw_reference[segment_sel][drop_frame:])
+        ax0.plot(segment_time, sig_segment, label=ch)
+        ax0.plot(segment_time, ref_segment, label=control_ch)
+        ax0.set_ylabel(f'{roi_string}Z(RawF)')
+        ax0.set_title(f'{roi_title.title()}Raw {ch} Contrasted With Control (First {initial_time / 60:.2f} Min)')
+        ax0.legend()
 
-    segment_time = ftime[segment_sel][drop_frame:] - min_time
-    normalize = lambda xs: (xs - np.mean(xs)) / np.std(xs)
-    sig_segment = normalize(raw_signal[segment_sel][drop_frame:])
-    ref_segment = normalize(raw_reference[segment_sel][drop_frame:])
-    ax0.plot(segment_time, sig_segment, label=ch)
-    ax0.plot(segment_time, ref_segment, label=control_ch)
-    ax0.set_ylabel(f'{roi_string}Z(RawF)')
-    ax0.set_title(f'{roi_title.title()}Raw {ch} Contrasted With Control (First {initial_time / 60:.2f} Min)')
-    ax0.legend()
+        ax1 = fig.add_subplot(gs[1, :])
+        ax1.plot(segment_time, z_signal[segment_sel][drop_frame:], label=f"Z({ch})")
+        # ax1.plot(segment_time, z_reference[segment_sel][drop_frame:], label=control_ch)
+        ax1.plot(segment_time, z_reference_fitted[segment_sel][drop_frame:], label='~' + control_ch)
+        ax1.set_ylabel(f'{roi_string}Z(F)')
+        ax1.set_xlabel(f'Rel. Time ({time_unit})')
+        ax1.set_title(f'{roi_title.title()}Z {ch} Contrasted With Control (First {initial_time / 60:.2f} Min)')
+        ax1.legend()
 
-    ax1 = fig.add_subplot(gs[1, :])
-    ax1.plot(segment_time, z_signal[segment_sel][drop_frame:], label=f"Z({ch})")
-    # ax1.plot(segment_time, z_reference[segment_sel][drop_frame:], label=control_ch)
-    ax1.plot(segment_time, z_reference_fitted[segment_sel][drop_frame:], label='~' + control_ch)
-    ax1.set_ylabel(f'{roi_string}Z(F)')
-    ax1.set_xlabel(f'Rel. Time ({time_unit})')
-    ax1.set_title(f'{roi_title.title()}Z {ch} Contrasted With Control (First {initial_time / 60:.2f} Min)')
-    ax1.legend()
+        # Plot scatter plot visualization of two channels
+        ax2 = fig.add_subplot(gs[2, 0])
+        ax2.plot(z_reference[selector], z_signal[selector], 'b.')
+        ax2.plot(z_reference, z_reference_fitted, 'r--', linewidth=1.5)
+        ax2.set_xlabel(f'{control_ch} values')
+        ax2.set_ylabel(f'{ch} values')
+        ax3 = fig.add_subplot(gs[2, 1])
 
-    # Plot scatter plot visualization of two channels
-    ax2 = fig.add_subplot(gs[2, 0])
-    ax2.plot(z_reference[selector], z_signal[selector], 'b.')
-    ax2.plot(z_reference, z_reference_fitted, 'r--', linewidth=1.5)
-    ax2.set_xlabel(f'{control_ch} values')
-    ax2.set_ylabel(f'{ch} values')
-    ax3 = fig.add_subplot(gs[2, 1])
+        sns.histplot(z_reference_fitted[selector], label=control_ch, kde=False, ax=ax3, color='b')
+        # sns.histplot(z_reference_fitted[selector], label=control_ch, kde=True, ax=ax1, color='b')
+        sns.histplot(z_signal[selector], label=ch, kde=False, ax=ax3, color='r')
+        ax3.legend()
+        sns.despine()
 
-    sns.histplot(z_reference_fitted[selector], label=control_ch, kde=False, ax=ax3, color='b')
-    # sns.histplot(z_reference_fitted[selector], label=control_ch, kde=True, ax=ax1, color='b')
-    sns.histplot(z_signal[selector], label=ch, kde=False, ax=ax3, color='r')
-    ax3.legend()
-    sns.despine()
-
-    ax4 = fig.add_subplot(gs[2, 2])
-    sns.histplot(z_signal[selector] - z_reference_fitted[selector], kde=True, ax=ax4)
-    ax4.legend(['diff(470, ~415)'])
-    sns.despine()
-    if tag:
-        tag = tag + ' '
-    plt.subplots_adjust(hspace=0.3)
-    fig.suptitle(f'{tag}{ch} {roi_title}auc-roc score ({roc_method}): {auc_score:.4f}', fontsize='xx-large')
+        ax4 = fig.add_subplot(gs[2, 2])
+        sns.histplot(z_signal[selector] - z_reference_fitted[selector], kde=True, ax=ax4)
+        ax4.legend(['diff(470, ~415)'])
+        sns.despine()
+        if tag:
+            tag = tag + ' '
+        plt.subplots_adjust(hspace=0.3)
+        fig.suptitle(f'{tag}{ch} {roi_title}auc-roc score ({roc_method}): {auc_score:.4f}', fontsize='xx-large')
 
     return fig, auc_score, sig_dict
 
