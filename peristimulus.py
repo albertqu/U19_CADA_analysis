@@ -20,7 +20,7 @@ def time_aligned_from_files():
     pass
 
 
-def align_activities_with_event(sigs, times, event_times, time_window, discrete=False, align_last=False):
+def align_activities_with_event(sigs, times, event_times, time_window, discrete=False, align_last=False, fr=None):
     """ Takes signals (... x T), time warp is there is more than one event time type (mean frames)
     :param sigs: (... x T),
     :param times: (... x T) if discrete else float for frame rate (Hz)
@@ -33,13 +33,24 @@ def align_activities_with_event(sigs, times, event_times, time_window, discrete=
     TODO: subjected to change as the trial numbers for different sessions are largely variable
     TODO: Generalize to arbitrary events with uniform time window
     """
+    if times is None:
+        times = np.arange(sigs.shape[-1])
+    assert np.all(~np.isnan(event_times)), "event_times must not contain nans"
     if isinstance(time_window, tuple):
         time_window = calculate_best_time_window(times, event_times, time_window)
     dt = 2 * (time_window[1] - time_window[0])
     k = event_times.shape[-1]
     if discrete:
-        result = [None] * k
-        pass
+        assert isinstance(sigs, np.ndarray), 'currently only support discrete on ndarray'
+        assert len(times) == sigs.shape[-1]
+        assert fr is not None
+        min_time, max_time = np.min(event_times), np.max(event_times)
+        t0, tf = time_window[0], time_window[-1]
+        t0_new, tf_new = int(t0 * fr), int(tf * fr)
+        twindow = np.arange(t0_new, tf_new+1)
+        assert ((min_time + t0_new) >= 0) & ((max_time + tf_new) >= np.max(times))
+        result = np.concatenate([sigs[..., np.newaxis, twindow+et] for et in event_times], axis=len(sigs)-1)
+        return result
     else:
         if len(sigs.shape) != 1:
             return np.concatenate([align_activities_with_event(sigs[i], times[i], event_times[i],
