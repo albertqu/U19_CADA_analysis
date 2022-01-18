@@ -1105,7 +1105,6 @@ def FP_quality_visualization(raw_reference, raw_signal, ftime, fr=20, initial_ti
     #     return None, auc_score, sig_dict
     # selector = np.full(len(z_signal), 1, dtype=bool)
     print(f'Selected {100 * np.sum(selector) / len(selector):.4f}% data')
-    print(np.sum(selector))
     # Plot two channels against each other
     fig = None
     if viz:
@@ -1346,3 +1345,31 @@ class ProgressBar:
 ########################################################
 def df_col_is_str(df, c):
     return df[c].dtype == object and isinstance(df.iloc[0][c], str)
+
+
+def df_select_kwargs(df, return_index=False, **kwargs):
+    """ R style select for pd.DataFrame
+    Alternatively can use query method but very ugly syntax
+    def query_method(pse, proj, qarg=""):
+        self=pse
+        proj_sel = self.meta['animal'].str.startswith(proj)
+        full_qarg = f"animal.str.startswith('{proj}').values"
+        if qarg:
+            full_qarg = full_qarg + ' & ' + qarg
+        print(full_qarg)
+        return self.meta.query(full_qarg)
+    query_method(pse, 'BSD', f"(animal_ID=='{animal}') & (session=='{session}')")
+    """
+    for kw in kwargs:
+        if kw in df.columns:
+            karg = kwargs[kw]
+            if not hasattr(karg, '__call__'):
+                kwargs[kw] = (lambda a: (lambda s: s == a))(karg)
+        else:
+            logging.warning(f'keyword argument key {kw} is not in dataframe!')
+    # add function capacity
+    df_sel = np.logical_and.reduce([kwargs[kw](df[kw]) for kw in kwargs if kw in df.columns])
+    if return_index:
+        return df_sel
+    else:
+        return df[df_sel]

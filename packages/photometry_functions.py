@@ -24,7 +24,7 @@ from functools import partial
 def jove_fit_reference(reference, signal, smooth_win=10, remove=200,
                        use_raw=True, lambd=5e4, porder=1, itermax=50):
     '''
-    Calculates z-score dF/F signal based on fiber photometry calcium-idependent
+    Calculates z-score dF/F signal based on fiber photometry calcium-independent
     and calcium-dependent signals
 
     Input
@@ -120,6 +120,7 @@ def jove_preprocess(reference, signal, smooth_win=10, remove=200,
 
 def jove_find_best_param(reference, signal, smooth_win=10, remove=200,
                   use_raw=True, itermax=50, k_split=5):
+    # Integrate vflow for future
     param_grid = {'lambd': [5e1, 5e2, 5e3, 5e4, 5e5], 'porder': [1, 2]}
     params = list(param_grid.keys())
     param_product = itertools.product(*[param_grid[pr] for pr in param_grid])

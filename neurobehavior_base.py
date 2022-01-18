@@ -304,18 +304,11 @@ class NBExperiment:
         nb_df_rrm = pse_rrm.align_lagged_view('RRM', ['outcome'], laglist=None, cell_type='A2A')
         ```
         """
-        proj_sel = self.meta['animal'].str.startswith(proj)
-        # TODO: found bug here with multiple criterion!!
-        for kw in kwargs:
-            if kw in self.meta.columns:
-                karg = kwargs[kw]
-                kwargs[kw] = lambda s: s == karg
-        # add function capacity
-        meta_sel = np.logical_and.reduce(
-            [kwargs[kw](self.meta[kw]) for kw in kwargs if kw in self.meta.columns])
+        proj_f = lambda s: s.str.startswith(proj)
+        meta_sel = df_select_kwargs(self.meta, return_index=True, animal=proj_f, **kwargs)
         all_nb_dfs = []
 
-        for animal, session in self.meta.loc[proj_sel & meta_sel, ['animal', 'session']].values:
+        for animal, session in self.meta.loc[meta_sel, ['animal', 'session']].values:
             try:
                 bmat, neuro_series = self.load_animal_session(animal, session)
             except:
@@ -341,16 +334,10 @@ class NBExperiment:
         return all_nb_df.merge(self.meta, how='left', on=['animal', 'session'])
 
     def neural_sig_check(self, proj, **kwargs):
-        proj_sel = self.meta['animal'].str.startswith(proj)
-        for kw in kwargs:
-            if kw in self.meta.columns:
-                karg = kwargs[kw]
-                kwargs[kw] = lambda s: s == karg
-        # add function capacity
-        meta_sel = np.logical_and.reduce(
-            [kwargs[kw](self.meta[kw]) for kw in kwargs if kw in self.meta.columns])
+        proj_f = lambda s: s.str.startswith(proj)
+        meta_sel = df_select_kwargs(self.meta, return_index=True, animal=proj_f, **kwargs)
 
-        for animal, session in self.meta.loc[proj_sel & meta_sel, ['animal', 'session']].values:
+        for animal, session in self.meta.loc[meta_sel, ['animal', 'session']].values:
             try:
                 _, neuro_series = self.load_animal_session(animal, session)
                 qual_check_folder = oj(self.plot_path, 'FP_quality_check')
