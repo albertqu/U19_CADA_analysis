@@ -1,5 +1,40 @@
 from behaviors import *
 from peristimulus import *
+from neurobehavior_base import *
+
+"""
+"""
+def trial_feature_lag_function_check():
+    # The following 3 methods are equivalent, check by see that the three plots are equivalent
+    # Method 1: gtruth without using lag function
+    data_root = '/content/drive/MyDrive/WilbrechtLab/U19_project/analysis/ProbSwitch/BSDML_processed'
+    pse = PS_Expr(data_root)
+    animal, session = 'D1-R35_RV', 'p155'  # "RRM033", 'p188' #(GOOD)# #'RRM031', 'p193'
+    # bmat, neuro_series = pse.load_animal_session(animal, session)
+    nb_df = pse.align_lagged_view('BSD', ['outcome'], laglist=None, animal_ID=animal, session=session)
+    nb_df['correct'] = nb_df['action'] == nb_df['state']
+    nb_df['correct'] = nb_df['correct'].astype(np.int)
+    laglist = {'correct': {'pre': 7, 'post': 7}}
+    nb_df_lagged = pse.nbm.lag_wide_df(nb_df, laglist)
+    # nb_df_lagged[['trial', 'action', 'state'] + cor_cols]
+    plot_df1 = df_melt_lagged_features(nb_df_lagged, 'correct',
+                                       ['animal', 'session', 'session_num', 'trial', 'action', 'state',
+                                        'trial_in_block'])
+    sns.relplot(data=plot_df1[plot_df1['trial_in_block'] == 0], x='correct_lag', y='correct_value', kind='line')
+
+    # Method 2: use lag function in NBM, same
+    laglist = {'correct': {'pre': 7, 'post': 7, 'long': True}}
+    plot_df2 = pse.nbm.lag_wide_df(nb_df, laglist)
+    sns.relplot(data=plot_df2[plot_df2['trial_in_block'] == 0], x='correct_lag', y='correct_value', kind='line')
+
+    # Method 3: use two lags, neur and behavior, problematic since it averages across repetitive values, use .drop_duplicates to solve
+    laglist = {'correct': {'pre': 7, 'post': 7, 'long': True},
+               'action': {'pre': 3, 'post': 3},
+               'outcome_neur': {'pre': 2, 'post': 3, 'long': True}}
+    plot_df3 = pse.nbm.lag_wide_df(nb_df, laglist)
+    sns.relplot(
+        data=plot_df3[plot_df3['trial_in_block'] == 0].drop_duplicates(['animal', 'session', 'trial', 'correct_lag']),
+        x='correct_lag', y='correct_value', kind='line')
 
 
 def test_FP_preprocessing():

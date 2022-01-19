@@ -1373,3 +1373,14 @@ def df_select_kwargs(df, return_index=False, **kwargs):
         return df_sel
     else:
         return df[df_sel]
+
+
+def df_melt_lagged_features(df, feat, id_vars, value_vars=None):
+    if value_vars is None:
+        value_vars = [c for c in df.columns if (feat in c)]
+    df = pd.melt(df, id_vars, value_vars, f'{feat}_arg', value_name=f'{feat}_value')
+    df[f'{feat}_lag'] = df[f'{feat}_arg'].str.replace(feat, '').apply(lambda x: x[1:-1].replace('t', ''))
+    df.loc[df[f'{feat}_lag'] == '', f'{feat}_lag'] = 0
+    df[f'{feat}_lag'] = df[f'{feat}_lag'].astype(np.int)
+    df.drop(columns=f'{feat}_arg', inplace=True)
+    return df
