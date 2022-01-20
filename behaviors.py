@@ -476,6 +476,11 @@ class RRBehaviorMat(BehaviorMat):
 
     def __init__(self, animal, session, logfile, STAGE=1):
         super().__init__(animal, session)
+        names = ['timestamp', 'eventcode']
+        strip = lambda t: t.replace(" ", "") if isinstance(t, str) else t
+        bonsai_output = pd.read_csv(logfile, sep=" ", index_col=False, names=names)[names]
+        bonsai_output['timestamp'] = bonsai_output['timestamp'].map(strip).astype(float)
+        self.time_aligner = lambda ts: (ts - bonsai_output.iloc[0, 0]) / 1000
         self.eventlist = self.initialize(logfile, stage=STAGE)
 
     def initialize(self, logfile, stage=3):
