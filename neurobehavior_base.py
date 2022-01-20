@@ -65,7 +65,7 @@ class NeuroBehaviorMat:
                 if event == 'side_out':
                     event = 'first_side_out'
                 assert event in self.behavior_events, f"unknown event {event}"
-                ev_sel = ~np.isnan(behavior_df[event])
+                ev_sel = ~np.isnan(behavior_df[event]) # TODO: maybe use pd.isnull instead
                 aROI = align_activities_with_event(roi_sig, roi_time,
                                                    behavior_df.loc[ev_sel, event].values,
                                                    self.event_time_windows[event])
@@ -273,6 +273,7 @@ class RR_NBMat(NeuroBehaviorMat):
                                    'exit': np.arange(-1, 1.001, 0.05)}
 
 
+
 #########################################################
 ##################### NBExperiment ######################
 #########################################################
@@ -325,11 +326,11 @@ class NBExperiment:
         nb_df_rrm = pse_rrm.align_lagged_view('RRM', ['outcome'], laglist=None, cell_type='A2A')
         ```
         """
-        proj_f = lambda s: s.str.startswith(proj)
-        meta_sel = df_select_kwargs(self.meta, return_index=True, animal=proj_f, **kwargs)
+        proj_sel = self.meta['animal'].str.startswith(proj)
+        meta_sel = df_select_kwargs(self.meta, return_index=True, **kwargs)
         all_nb_dfs = []
 
-        for animal, session in self.meta.loc[meta_sel, ['animal', 'session']].values:
+        for animal, session in self.meta.loc[meta_sel & proj_sel, ['animal', 'session']].values:
             try:
                 bmat, neuro_series = self.load_animal_session(animal, session)
             except:

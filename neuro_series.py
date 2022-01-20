@@ -95,6 +95,7 @@ class FPSeries:
         return melted
 
     def merge_channels(self, ts_resamp_opt='lossy_ctrl'):
+        # TODO: change default to interp
         # if unsatisfied with the direct merge we should interpolate
         # drop 200 frames, and then use ctrl timestamps
         # TODO: need a more rigorous check to make sure the jitter between times are within 50ms
@@ -108,10 +109,10 @@ class FPSeries:
             for ch in self.neural_dfs:
                 dcs = [c for c in self.neural_dfs[ch].columns if c != 'time']
                 sub_df = self.neural_dfs[ch].rename(
-                    columns={'time': 'time_ ' +ch})[drop_fr:min_len].reset_index(drop=True)
+                    columns={'time': 'time_' +ch})[drop_fr:min_len].reset_index(drop=True)
                 all_dfs.append(sub_df[dcs])
                 if ch != ctrl_ch:
-                    ch_time = sub_df['time_ ' +ch]
+                    ch_time = sub_df['time_' +ch]
                     if not np.all(np.abs(ch_time - time_axis) < 50):
                         print(f'{ch} has large time offset from control channels after preprocessing')
                     chtime_dfs.append(ch_time)

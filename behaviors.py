@@ -494,7 +494,7 @@ class RRBehaviorMat(BehaviorMat):
         events_list_partial = clean_and_organize(events_partial)
         return write_bonsaiEvent_dll(events_list_partial)
 
-    def todf(self, valid=True):
+    def todf(self, valid=True, comment=False):
         # Careful of using todf if initialized with STAGE 0
         # trial structure containing pseudotrials
         trials = trial_writer(self.eventlist)
@@ -507,10 +507,17 @@ class RRBehaviorMat(BehaviorMat):
             result_df = new_df.sort_values(by='tone_onset').reset_index(drop=True)
         else:
             result_df = trials_df.sort_values(by='trial_index').reset_index(drop=True)
+        if not comment:
+            result_df.drop(columns='comment', inplace=True)
+        for ev in self.fields:
+            result_df[ev] = result_df[ev].astype(np.float)
+        result_df['tone_prob'] = result_df['tone_prob'].astype(np.float)
+        old_cols = list(result_df.columns)
         result_df['animal'] = self.animal
         result_df['session'] = self.session
-        result_df = np.arange(1, result_df.shape[0]+1)
-        return result_df
+        result_df['trial'] = np.arange(1, result_df.shape[0]+1)
+
+        return result_df[['animal', 'session', 'trial'] + old_cols]
 
     def eventlist_to_df(self):
         # non-prefered method but use it for convenience
