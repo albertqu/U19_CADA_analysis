@@ -1,3 +1,5 @@
+# author: Lexi Zhou
+
 import copy
 from mainAnalysis import getindex
 

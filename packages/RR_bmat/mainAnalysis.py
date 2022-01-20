@@ -1,3 +1,6 @@
+# author: Lexi Zhou
+
+
 import pandas as pd
 import list as ls
 import re
@@ -16,9 +19,9 @@ def preprocessing(filepath, eventcodedict):
 
     keys = list(eventcodedict.keys())
     bonsai_output['timestamp'] = bonsai_output['timestamp'].map(strip).astype(float)
-    first_timestamp = bonsai_output.iloc[0, 0]
     bonsai_output = bonsai_output[bonsai_output.eventcode.isin(keys)].reset_index(drop=True)
     bonsai_output['event'] = bonsai_output['eventcode'].map(lambda code: eventcodedict[code])
+    first_timestamp = bonsai_output.iloc[0, 0]
     first = bonsai_output[bonsai_output['eventcode'] == 9].index[0]
     bonsai_output = bonsai_output[bonsai_output['eventcode'] != 9]
     bonsai_output['timestamp'] = bonsai_output['timestamp'].map(lambda t: (t - first_timestamp) / 1000)
@@ -358,6 +361,8 @@ def write_trial_to_df(trials):
 
 
 def save_valid_trial(df):
-    new_df = df[df.trial_end.notnull()]
-    new_df = new_df.sort_values(by=['tone_onset'])
+    df = df[df.loc[:, ['trial_end', 'tone_onset', 'T_Entry']].notnull().all(axis='columns')]
+    df = df.query('tone_onset < T_Entry and T_Entry < choice and trial_end <= exit and outcome < collection')
+
+    new_df = df.sort_values(by=['tone_onset'])
     return new_df

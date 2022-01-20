@@ -503,10 +503,9 @@ class RRBehaviorMat(BehaviorMat):
         write_lap_block(trials)
         trials_df = write_trial_to_df(trials)
         if valid:
-            new_df = trials_df[trials_df.trial_end.notnull()]
-            result_df = new_df.sort_values(by='tone_onset').reset_index(drop=True)
+            result_df = save_valid_trial(trials_df).reset_index(drop=True)
         else:
-            result_df = trials_df.sort_values(by='trial_index').reset_index(drop=True)
+            result_df = trials_df.reset_index(drop=True)
         if not comment:
             result_df.drop(columns='comment', inplace=True)
         for ev in self.fields:

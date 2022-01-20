@@ -1,3 +1,6 @@
+# author: Lexi Zhou
+
+
 eventcodedict_partial ={1: 'Servo 1 open',
                         3: 'Servo 2 open',
                         5: 'Servo 3 open',

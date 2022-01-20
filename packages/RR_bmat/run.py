@@ -1,9 +1,11 @@
+# author: Lexi Zhou
+
 from mainAnalysis import *
 import os
 from clean_bonsai_output import *
 from eventcodedict import *
 
-input_folder = '/Users/lexizhou/Desktop/RRM028'
+input_folder = '/Users/lexizhou/Desktop/RRM030'
 
 
 def list_files(dir, type):
