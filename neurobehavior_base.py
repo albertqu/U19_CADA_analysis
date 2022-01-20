@@ -563,19 +563,19 @@ class RR_Expr(NBExperiment):
             return None, None
 
         animal_alias = self.meta.loc[self.meta[arg_type] == animal_arg, 'animal'].values[0]
-        bmat = PSBehaviorMat(animal_alias, session, filemap['RR_'], STAGE=1)
+        bmat = RRBehaviorMat(animal_alias, session, filemap['RR_'], STAGE=1)
         fp_file = filemap['FP']
         fp_timestamps = filemap['FPTS']
 
         if (fp_file is not None) and (fp_timestamps is not None):
             session_sel = self.meta['session'] == session
             trig_mode = self.meta.loc[(self.meta[arg_type] == animal_arg) & session_sel, 'trig_mode'].values[0]
-            ps_series = BonsaiPS1Hemi2Ch(fp_file, fp_timestamps, trig_mode, animal_alias, session)
-            ps_series.merge_channels()
-            ps_series.realign_time(bmat)
+            rr_series = BonsaiRR2Hemi2Ch(fp_file, fp_timestamps, trig_mode, animal_alias, session)
+            rr_series.merge_channels()
+            rr_series.realign_time(bmat)
         else:
-            ps_series = None
-        return bmat, ps_series
+            rr_series = None
+        return bmat, rr_series
 
     def encode_to_filename(self, animal, session, ftypes="all"):
         """
