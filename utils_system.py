@@ -1,10 +1,12 @@
-import os, shutil, stat, errno, time, datetime
+import os, shutil, stat, errno, time, datetime, re
 
 import pandas as pd
 import numpy as np
 
 from utils import path_prefix_free
 import imageio, cv2
+from os.path import join as oj
+
 
 
 def archive_by_date(src_folder, dest_folder, archive_date):
@@ -92,14 +94,62 @@ def chunk_helper_session(animal, session, folder, out_folder, duration=20*60):
     chunk_four_vids_and_stitch(vid_files, vid_times, out_folder, fps, duration, time_zero=df_zero)
 
 
-
+"""####################################################
+################### Data Structure ####################
+####################################################"""
+def organize_RR_structures(root, out):
+    name_map = {'behavior': r"^RR_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
+                'FP': r"^FP_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
+                'FPTS': r"^FPTS_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv"}
+    flp_created = []
+    for group in ['D1', 'A2A']:
+        print(group)
+        group_folder = oj(root, group)
+        for af in os.listdir(group_folder):
+            if af.startswith('RRM'):
+                animal = af
+                animal_folder = oj(group_folder, af)
+                fp_folder = oj(animal_folder, 'photometry')
+                flipped = oj(animal_folder, r'LR flipped', 'photometry')
+                # TODO: later make method that save files in different folders
+                for src_fd in [animal_folder, fp_folder, flipped]:
+                    if not os.path.exists(src_fd):
+                        continue
+                    for sf in os.listdir(src_fd):
+                        match = None
+                        for ftype in name_map:
+                            mt = re.match(name_map[ftype], sf)
+                            if mt:
+                                match = mt
+                                break
+                        if match:
+                            session = match.groupdict()['D']
+                            session_out = oj(out, animal, session)
+                            if not os.path.exists(session_out):
+                                os.makedirs(session_out)
+                            target_file = oj(session_out, sf)
+                            if os.path.exists(target_file):
+                                continue
+                            else:
+                                print(f'Copying {animal} {session} {sf} to {session_out}')
+                                shutil.copyfile(oj(src_fd, sf), oj(session_out, sf))
+                                if ('flipped' in src_fd):
+                                    fname = oj(session_out, '.flp')
+                                    if not os.path.exists(fname):
+                                        with open(fname, 'w+') as wf:
+                                            print('creating .flp')
+                                            flp_created.append((animal, session))
+        return flp_created
 
 
 if __name__ == '__main__':
-    archive_date = datetime.datetime.strptime("2019/05/31", "%Y/%m/%d")
-    src_folder = "/Volumes/Wilbrecht_file_server"
-    archive = os.path.join(src_folder, '_ARCHIVE')
-    if not os.path.exists(archive):
-        os.makedirs(archive)
-    archive_by_date(src_folder, archive, archive_date)
+    # archive_date = datetime.datetime.strptime("2019/05/31", "%Y/%m/%d")
+    # src_folder = "/Volumes/Wilbrecht_file_server"
+    # archive = os.path.join(src_folder, '_ARCHIVE')
+    # if not os.path.exists(archive):
+    #     os.makedirs(archive)
+    # archive_by_date(src_folder, archive, archive_date)
+    ROOT = r"Z:\Restaurant Row\Data"
+    out = r"D:\U19\data\RR"
+    organize_RR_structures(ROOT, out)
 

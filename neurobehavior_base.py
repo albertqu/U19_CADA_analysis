@@ -31,9 +31,8 @@ class NeuroBehaviorMat:
         self.nb_cols = None
         self.nb_lag_cols = None
 
-    @abstractmethod
-    def extend_features(self, *args, **kwargs):
-        return NotImplemented
+    def extend_features(self, nb_df, *args, **kwargs):
+        return nb_df
 
     def align_B2N_dff_ID(self, behavior_df, neur_df, events, form='wide'):
         # align behavior to neural on a single session basis, DO NOT use it across multiple sessions
@@ -240,17 +239,38 @@ class PS_NBMat(NeuroBehaviorMat):
 
         return self.apply_to_idgroups(nb_df, ptib, id_vars=['animal', 'session'])
 
-    def extend_features(self, nb_df):
+    def extend_features(self, nb_df, *args, **kwargs):
         nb_df = self.get_perc_trial_in_block(nb_df)
         nb_df['pTIB_Q'] = pd.cut(nb_df['perc_TIB'], 4, labels=['Q1', 'Q2', 'Q3', 'Q4'])
         return nb_df
 
 
 class RR_NBMat(NeuroBehaviorMat):
-    behavior_events = ['tone_onset']
+
+    fields = ['tone_onset', 'T_Entry', 'choice', 'outcome',
+              'quit', 'collection', 'trial_end', 'exit']
+    # Add capacity for only behavior
+    behavior_events = RRBehaviorMat.fields
+    # tone_onset -> T_Entry -> choice (-> {0: quit,
+    #                                      1: outcome (-> collection)}) -> trial_end
+
+    event_features = {'accept': ['tone_onset', 'T_entry', 'choice', 'trial_end', 'exit'],
+                      'reward': ['outcome', 'trial_end', 'exit']}
+
+    trial_features = ['tone_prob', 'restaurant', 'lapIndex', 'blockIndex']
+
+    id_vars = ['animal', 'session', 'roi']
 
     def __init__(self, fp_series=None, behavior_df=None):
         super().__init__(fp_series, behavior_df)
+        self.event_time_windows = {'tone_onset': np.arange(-1, 1.001, 0.05),
+                                   'T_Entry': np.arange(-1, 1.001, 0.05),
+                                   'choice': np.arange(-1, 1.001, 0.05),
+                                   'outcome': np.arange(-1, 1.001, 0.05),
+                                   'quit': np.arange(-1, 1.001, 0.05),
+                                   'collection': np.arange(-1, 1.001, 0.05),
+                                   'trial_end': np.arange(-1, 1.001, 0.05),
+                                   'exit': np.arange(-1, 1.001, 0.05)}
 
 
 #########################################################
@@ -419,7 +439,9 @@ class PS_Expr(NBExperiment):
         fp_timestamps = filemap['FPTS']
 
         if (fp_file is not None) and (fp_timestamps is not None):
-            ps_series = BonsaiPS1Hemi2Ch(fp_file, fp_timestamps, 'BSC1', animal_alias, session)
+            session_sel = self.meta['session'] == session
+            trig_mode = self.meta.loc[(self.meta[arg_type] == animal_arg) & session_sel, 'trig_mode'].values[0]
+            ps_series = BonsaiPS1Hemi2Ch(fp_file, fp_timestamps, trig_mode, animal_alias, session)
             ps_series.merge_channels()
             ps_series.realign_time(bmat)
         else:
@@ -477,3 +499,131 @@ class PS_Expr(NBExperiment):
         left_sel = (nb_df['hemi'] == 'left') & (nb_df['left_region'] == region)
         right_sel = (nb_df['hemi'] == 'right') & (nb_df['right_region'] == region)
         return nb_df[left_sel | right_sel].reset_index(drop=True)
+
+
+class RR_Expr(NBExperiment):
+    # TODO: for decoding, add functions to merge multiple rois
+    info_name = 'rr_neural_subset.csv'
+    spec_name = 'rr_animal_specs.csv'
+
+    def __init__(self, folder, **kwargs):
+        super().__init__(folder)
+        self.folder = folder
+        pathlist = folder.split(os.sep)[:-1] + ['plots']
+        self.plot_path = oj(os.sep, *pathlist)
+        print(f'Changing plot_path as {self.plot_path}')
+        if not os.path.exists(self.plot_path):
+            os.makedirs(self.plot_path)
+        for kw in kwargs:
+            if hasattr(self, kw):
+                setattr(self, kw, kwargs[kw])
+        info = pd.read_csv(os.path.join(folder, self.info_name))
+        spec = pd.read_csv(os.path.join(folder, self.spec_name))
+        self.meta = info.merge(spec, left_on='animal', right_on='alias', how='left')
+        # # self.meta.loc[self.meta['session_num']]
+        self.meta['cell_type'] = self.meta['animal_ID'].str.split('-', expand=True)[0]
+        self.meta['session'] = self.meta['age'].apply(self.cvt_age_to_session)
+        self.nbm = RR_NBMat()
+
+        # # TODO: modify this later
+        if 'trig_mode' not in self.meta.columns:
+            self.meta['trig_mode'] = 'TRIG1'
+
+    def cvt_age_to_session(self, age):
+        DIG_LIMIT = 2  # limit the digits allowed for age representation (max 99)
+        age = float(age)
+        if np.allclose(age % 1, 0):
+            return f'Day{int(age)}'
+        else:
+            digit = np.around(age % 1, DIG_LIMIT)
+            agenum = int(age // 1)
+            if np.allclose(digit, 0.05):
+                return f'Day{agenum}_session0'
+            else:
+                snum = str(digit).split('.')[1]
+                return f'Day{agenum}_session{snum}'
+
+    def load_animal_session(self, animal_arg, session, options='all'):
+        # load animal session according to info sheet and align to neural signal
+        # left location
+        # right location
+        # left virus
+        # right virus
+        file_found = False
+
+        arg_type = 'animal_ID' if (animal_arg in np.unique(self.meta.animal_ID)) else 'animal'
+        for aopt in ('animal_ID', 'animal'):
+            filearg = self.meta.loc[self.meta[arg_type] == animal_arg, aopt].values[0]
+            filemap = self.encode_to_filename(filearg, session, ['RR_', 'FP', 'FPTS'])
+            if filemap['RR_'] is not None:
+                file_found = True
+                break
+        if not file_found:
+            logging.warning(f'Cannot find files for {animal_arg}, {session}')
+            return None, None
+
+        animal_alias = self.meta.loc[self.meta[arg_type] == animal_arg, 'animal'].values[0]
+        bmat = PSBehaviorMat(animal_alias, session, filemap['RR_'], STAGE=1)
+        fp_file = filemap['FP']
+        fp_timestamps = filemap['FPTS']
+
+        if (fp_file is not None) and (fp_timestamps is not None):
+            session_sel = self.meta['session'] == session
+            trig_mode = self.meta.loc[(self.meta[arg_type] == animal_arg) & session_sel, 'trig_mode'].values[0]
+            ps_series = BonsaiPS1Hemi2Ch(fp_file, fp_timestamps, trig_mode, animal_alias, session)
+            ps_series.merge_channels()
+            ps_series.realign_time(bmat)
+        else:
+            ps_series = None
+        return bmat, ps_series
+
+    def encode_to_filename(self, animal, session, ftypes="all"):
+        """
+        :param folder: str
+                folder for data storage
+        :param animal: str
+                animal name: e.g. A2A-15B-B_RT
+        :param session: str
+                session name: e.g. p151_session1_FP_RH
+        :param ftype: list or str:
+                list (or a single str) of typed files to return
+                'RR_': behavior files
+                'bin_mat': binary file
+                'green': green fluorescence
+                'red': red FP
+                'behavior': .mat behavior file
+                'FP': processed dff hdf5 file
+                if ftypes=="all"
+        :return:
+                returns all 5 files in a dictionary; otherwise return all file types
+                in a dictionary, None if not found
+        """
+        folder = self.folder
+        # bfolder = oj(folder, 'RR_Behavior_Data')
+        # fpfolder = oj(folder, 'RR_FP_Data')
+        # paths = [os.path.join(bfolder, animal, session), os.path.join(bfolder, animal + '_' + session),
+        #          os.path.join(bfolder, animal), bfolder,
+        #          oj(fpfolder, animal, session), oj(fpfolder, animal + '_' + session),
+        #          oj(fpfolder, animal), fpfolder]
+        paths = [oj(folder, animal, session), oj(folder, animal + '_' + session),
+                 oj(folder, animal), folder]
+        if ftypes == "all":
+            ftypes = ['RR_', "FP", 'FPTS']
+        elif isinstance(ftypes, str):
+            ftypes = [ftypes]
+        results = {ft: None for ft in ftypes}
+        registers = 0
+        for p in paths:
+            if os.path.exists(p):
+                for f in os.listdir(p):
+                    for ift in ftypes:
+                        if ift == 'FP':
+                            ift_arg = 'FP_'
+                        else:
+                            ift_arg = ift
+                        if (ift_arg in f) and (animal in f) and (session in f):
+                            results[ift] = os.path.join(p, f)
+                            registers += 1
+                            if registers == len(ftypes):
+                                return results if len(results) > 1 else results[ift]
+        return results if len(results) > 1 else list(results.values())[0]

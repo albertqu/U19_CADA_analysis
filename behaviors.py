@@ -1,4 +1,5 @@
 # System
+from abc import abstractmethod
 
 # Data
 import numpy as np
@@ -13,6 +14,10 @@ import matplotlib.pyplot as plt
 # Utils
 from utils import *
 from behavior_base import PSENode, EventNode
+from packages.RR_bmat.eventcodedict import eventcodedict_full as RR_codemap
+from packages.RR_bmat.mainAnalysis import *
+from packages.RR_bmat.eventcodedict import *
+from packages.RR_bmat.clean_bonsai_output import *
 
 
 
@@ -440,19 +445,76 @@ def get_animal_session_behavior_dataframe(folder, animal, session):
 
 class BehaviorMat:
     code_map = {}
+    fields = [] # maybe divide to event, ev_features, trial_features
+    time_unit = None
+    eventlist = None
 
     def __init__(self, animal, session):
         self.animal = animal
         self.session = session
+        self.time_aligner = lambda s: s # provides method to align timestamps
 
+    @abstractmethod
     def todf(self):
-        return pd.DataFrame()
+        return NotImplemented
+
+    def align_ts2behavior(self, timestamps):
+        return self.time_aligner(timestamps)
+
+
+class RRBehaviorMat(BehaviorMat):
+    """
+    STAGE: 0, raw behavior log
+    1, cleaned partial behavior log
+    2, trial structure with pseudo trials
+    3, trial structure without pseudo trials
+    """
+    code_map = RR_codemap
+    fields = ['tone_onset', 'T_Entry', 'choice', 'outcome',
+              'quit', 'collection', 'trial_end', 'exit']
+    time_unit = 's'
+
+    def __init__(self, animal, session, logfile, STAGE=1):
+        super().__init__(animal, session)
+        self.eventlist = self.initialize(logfile, stage=STAGE)
+
+    def initialize(self, logfile, stage=3):
+        if stage == 0:
+            # Save raw bonsai output with event description --> raw behavior LOG human readable
+            events = preprocessing(logfile, eventcodedict_full)
+            return write_bonsaiEvent_dll(events)
+        assert stage == 1, f'Unknown stage {stage}'
+        # Save selected bonsai events --> cleaned behavior LOG, dropping nonsense
+        events_partial = detect_keyword_in_event(preprocessing(logfile, eventcodedict_partial))
+        events_list_partial = clean_and_organize(events_partial)
+        return write_bonsaiEvent_dll(events_list_partial)
+
+    def todf(self, valid=True):
+        # Careful of using todf if initialized with STAGE 0
+        # trial structure containing pseudotrials
+        trials = trial_writer(self.eventlist)
+        trial_info_filler(trials)
+        trial_merger(trials)
+        write_lap_block(trials)
+        trials_df = write_trial_to_df(trials)
+        if valid:
+            new_df = trials_df[trials_df.trial_end.notnull()]
+            result_df = new_df.sort_values(by='tone_onset').reset_index(drop=True)
+        else:
+            result_df = trials_df.sort_values(by='trial_index').reset_index(drop=True)
+        result_df['animal'] = self.animal
+        result_df['session'] = self.session
+        result_df = np.arange(1, result_df.shape[0]+1)
+        return result_df
+
+    def eventlist_to_df(self):
+        # non-prefered method but use it for convenience
+        return write_dll_to_df(self.eventlist)
 
 
 class PSBehaviorMat(BehaviorMat):
     # Behavior Mat for Probswitch
     # Figure out how to make it general
-
     code_map = {1: ('center_in', 'center_in'),
                 11: ('center_in', 'initiate'),
                 2: ('center_out', 'center_out'),
@@ -469,8 +531,8 @@ class PSBehaviorMat(BehaviorMat):
                 74: ('outcome', 'abort')}  # saliency questionable
 
     # divide things into events, event_features, trial_features
-    fields = ['center_in', 'center_out', 'side_in', 'outcome', 'zeroth_side_out', 'first_side_out',
-              'last_side_out']  # 'ITI'
+    fields = ['center_in', 'center_out', 'side_in', 'outcome',
+              'zeroth_side_out', 'first_side_out', 'last_side_out']  # 'ITI'
 
     time_unit = 's'
 
@@ -515,9 +577,6 @@ class PSBehaviorMat(BehaviorMat):
         res = np.full(len(portside), 'right')
         res[portside == 2] = 'left'
         return res
-
-    def align_ts2behavior(self, timestamps):
-        return self.time_aligner(timestamps)
 
     def initialize_PSEnode(self, hfile, stage=1):
         code_map = self.code_map
