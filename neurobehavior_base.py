@@ -340,7 +340,10 @@ class NBExperiment:
             if bmat is None:
                 logging.info(f'skipping {animal} {session}')
             else:
-                bdf, dff_df = bmat.todf(), neuro_series.calculate_dff(method='dZF_jove')
+                try:
+                    bdf, dff_df = bmat.todf(), neuro_series.calculate_dff(method='dZF_jove')
+                except:
+                    logging.warning(f'Error in calculating dff in {animal} {session}')
                 nb_df = self.nbm.align_B2N_dff_ID(bdf, dff_df, events, form='wide')
                 nb_df = self.nbm.extend_features(nb_df)
                 try:
