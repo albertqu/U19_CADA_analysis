@@ -504,6 +504,8 @@ class RRBehaviorMat(BehaviorMat):
         trials_df = write_trial_to_df(trials)
         if valid:
             result_df = save_valid_trial(trials_df).reset_index(drop=True)
+            # new_df = trials_df[trials_df.trial_end.notnull()]
+            # result_df = new_df.sort_values(by='tone_onset').reset_index(drop=True)
         else:
             result_df = trials_df.reset_index(drop=True)
         if not comment:
