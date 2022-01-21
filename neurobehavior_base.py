@@ -350,11 +350,11 @@ class NBExperiment:
                         self.meta.loc[(self.meta['animal'] == animal)
                                       & (self.meta['session'] == session),
                                       sigch_score_col] = sig_scores[sigch]
+                    if laglist is not None:
+                        nb_df = self.nbm.lag_wide_df_ID(nb_df, laglist)
+                    all_nb_dfs.append(nb_df)
                 except Exception:
-                    logging.warning('Error in calculating dff or AUC-score, check signal')
-                if laglist is not None:
-                    nb_df = self.nbm.lag_wide_df_ID(nb_df, laglist)
-                all_nb_dfs.append(nb_df)
+                    logging.warning(f'Error in calculating dff or AUC-score for {animal}, {session}, check signal')
 
         all_nb_df = pd.concat(all_nb_dfs, axis=0)
         return all_nb_df.merge(self.meta, how='left', on=['animal', 'session'])
