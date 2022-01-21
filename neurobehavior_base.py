@@ -333,21 +333,25 @@ class NBExperiment:
         for animal, session in self.meta.loc[meta_sel & proj_sel, ['animal', 'session']].values:
             try:
                 bmat, neuro_series = self.load_animal_session(animal, session)
-            except:
+            except Exception:
                 logging.warning(f'Error in {animal} {session}')
                 bmat, ps_series = None, None
+
             if bmat is None:
                 logging.info(f'skipping {animal} {session}')
             else:
                 bdf, dff_df = bmat.todf(), neuro_series.calculate_dff(method='dZF_jove')
                 nb_df = self.nbm.align_B2N_dff_ID(bdf, dff_df, events, form='wide')
                 nb_df = self.nbm.extend_features(nb_df)
-                sig_scores = neuro_series.diagnose_multi_channels(viz=False)
-                for sigch in sig_scores:
-                    sigch_score_col = neuro_series.quality_metric + f'_{sigch}'
-                    self.meta.loc[(self.meta['animal'] == animal)
-                                  & (self.meta['session'] == session),
-                                  sigch_score_col] = sig_scores[sigch]
+                try:
+                    sig_scores = neuro_series.diagnose_multi_channels(viz=False)
+                    for sigch in sig_scores:
+                        sigch_score_col = neuro_series.quality_metric + f'_{sigch}'
+                        self.meta.loc[(self.meta['animal'] == animal)
+                                      & (self.meta['session'] == session),
+                                      sigch_score_col] = sig_scores[sigch]
+                except Exception:
+                    logging.warning('Error in calculating AUC-score, check signal')
                 if laglist is not None:
                     nb_df = self.nbm.lag_wide_df_ID(nb_df, laglist)
                 all_nb_dfs.append(nb_df)
