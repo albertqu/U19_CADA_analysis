@@ -342,11 +342,8 @@ class NBExperiment:
             else:
                 try:
                     bdf, dff_df = bmat.todf(), neuro_series.calculate_dff(method='dZF_jove')
-                except:
-                    logging.warning(f'Error in calculating dff in {animal} {session}')
-                nb_df = self.nbm.align_B2N_dff_ID(bdf, dff_df, events, form='wide')
-                nb_df = self.nbm.extend_features(nb_df)
-                try:
+                    nb_df = self.nbm.align_B2N_dff_ID(bdf, dff_df, events, form='wide')
+                    nb_df = self.nbm.extend_features(nb_df)
                     sig_scores = neuro_series.diagnose_multi_channels(viz=False)
                     for sigch in sig_scores:
                         sigch_score_col = neuro_series.quality_metric + f'_{sigch}'
@@ -354,7 +351,7 @@ class NBExperiment:
                                       & (self.meta['session'] == session),
                                       sigch_score_col] = sig_scores[sigch]
                 except Exception:
-                    logging.warning('Error in calculating AUC-score, check signal')
+                    logging.warning('Error in calculating dff or AUC-score, check signal')
                 if laglist is not None:
                     nb_df = self.nbm.lag_wide_df_ID(nb_df, laglist)
                 all_nb_dfs.append(nb_df)
