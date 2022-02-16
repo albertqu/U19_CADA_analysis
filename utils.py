@@ -1384,3 +1384,14 @@ def df_melt_lagged_features(df, feat, id_vars, value_vars=None):
     df[f'{feat}_lag'] = df[f'{feat}_lag'].astype(np.int)
     df.drop(columns=f'{feat}_arg', inplace=True)
     return df
+
+
+def pds_is_valid(pds):
+    if pd.api.types.is_string_dtype(pds):
+        return ~(pds.isnull() | (pds == ''))
+    else:
+        return ~pds.isnull()
+
+
+def pds_neq(x, y):
+    return pds_is_valid(x) & pds_is_valid(y) & (x != y)

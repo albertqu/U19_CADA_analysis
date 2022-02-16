@@ -142,6 +142,36 @@ def organize_RR_structures(root, out):
         return flp_created
 
 
+def make_stim_blocks(n=20, p=0.25, zero=False):
+    # p: percentage of stimulation, p<0.5
+    """ Use this example to visualize:
+    import matplotlib.pyplot as plt
+    plt.stem(make_stim_blocks(20))
+    plt.xticks(np.arange(20)[4::5], np.arange(1, 21)[4::5])
+    """
+    if zero:
+        return np.concatenate([[0], make_stim_blocks(n, p)])
+    subN = int(n * p)
+    stim_seq = np.zeros(n)
+    if subN:
+        randInds = np.sort(np.random.choice(n-subN, subN, replace=False)) + np.arange(subN)
+        stim_seq[randInds] = 1
+    return stim_seq
+
+
+def make_long_stim_blocks(N, p=0.25, n=20):
+    all_stims = []
+    loops = N // n
+    tail = N % n
+    zero = False
+    for i in range(loops):
+        stim_seq = make_stim_blocks(n, p, zero)
+        zero = (stim_seq[-1] == 1)
+        all_stims.append(stim_seq)
+    all_stims.append(make_stim_blocks(tail, p, zero))
+    return np.concatenate(all_stims)
+
+
 if __name__ == '__main__':
     # archive_date = datetime.datetime.strptime("2019/05/31", "%Y/%m/%d")
     # src_folder = "/Volumes/Wilbrecht_file_server"

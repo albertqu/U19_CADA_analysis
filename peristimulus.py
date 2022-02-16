@@ -76,11 +76,12 @@ def align_activities_with_event(sigs, times, event_times, time_window, discrete=
                 # TODO: looking into the interpolation for better performance
                 # change to extrapolate
                 # TODO: compare np.nan vs "extrapolate"
-                if np.sum(rois) < len(time_window):
+                dtt = np.mean(np.diff(times)) # originally made the mistake assuming time_window having same sampling rate as sig_time
+                if np.sum(rois) < int(np.floor((time_window[-1] - time_window[0]) / dtt)):
                     logging.info(f"skipping {ik}th entry in event_times")
                 else:
                     result[ik] = interpolate.interp1d(times[rois] - align, sigs[rois],
-                                                    fill_value="extrapolate")(time_window)
+                                                      fill_value="extrapolate")(time_window)
             # TODO: proof read again
             return result
 

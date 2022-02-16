@@ -85,7 +85,7 @@ class NeuroBehaviorMat:
                 nb_df[f'{ev_neur(event)}_time'] = nb_df[f'{ev_neur(event)}_time'].str.extract(
                     f'{ev_neur(event)}' + '\|(?P<ts>-?(\d|\.)+)').ts
                 id_cols = id_cols + [f'{ev_neur(event)}_time', f'{ev_neur(event)}_{dff_cname}']
-                nb_df[f'{ev_neur(event)}_time'] = nb_df[f'{ev_neur(event)}_time'].astype(np.float)
+                nb_df[f'{ev_neur(event)}_time'] = nb_df[f'{ev_neur(event)}_time'].astype(float)
         self.nb_cols = nb_cols
         return nb_df
 
@@ -159,7 +159,7 @@ class NeuroBehaviorMat:
                                        value_name=f'{feat}_ZdFF')
                     nb_df[[f'{feat}_lag', f'{feat}_time']] = nb_df[f'{feat}_arg'].str.replace(feat, '').str.split(
                         r'|', expand=True)
-                    nb_df[f'{feat}_time'] = nb_df[f'{feat}_time'].astype(np.float)
+                    nb_df[f'{feat}_time'] = nb_df[f'{feat}_time'].astype(float)
                 else:
                     nb_df = nb_df.melt(id_vars=id_cols, value_vars=melt_cols, var_name=f'{feat}_arg',
                                        value_name=f'{feat}_value')
@@ -167,12 +167,12 @@ class NeuroBehaviorMat:
                     if '|' in sample_val:
                         nb_df[[f'{feat}_lag', f'{feat}_time']] = nb_df[f'{feat}_arg'].str.replace(feat, '').str.split(
                             r'|', expand=True)
-                        nb_df[f'{feat}_time'] = nb_df[f'{feat}_time'].astype(np.float)
+                        nb_df[f'{feat}_time'] = nb_df[f'{feat}_time'].astype(float)
                     else:
                         nb_df[f'{feat}_lag'] = nb_df[f'{feat}_arg'].str.replace(feat, '')
                 nb_df[f'{feat}_lag'] = nb_df[f'{feat}_lag'].apply(lambda x: x[1:-1].replace('t', ''))
                 nb_df.loc[nb_df[f'{feat}_lag'] == '', f'{feat}_lag'] = 0
-                nb_df[f'{feat}_lag'] = nb_df[f'{feat}_lag'].astype(np.int)
+                nb_df[f'{feat}_lag'] = nb_df[f'{feat}_lag'].astype(int)
                 nb_df.drop(columns=f'{feat}_arg', inplace=True)
                 uniq_lag = np.unique(nb_df[f'{feat}_lag'])
                 if (len(uniq_lag) == 1) and (uniq_lag[0] == 0):
