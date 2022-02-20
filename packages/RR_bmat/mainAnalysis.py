@@ -4,6 +4,7 @@
 import pandas as pd
 import list as ls
 import re
+import numpy as np
 from copy import deepcopy
 import classes as cl
 
@@ -57,6 +58,10 @@ def detect_keyword_in_event(events):
         elif string.__contains__('offer'):
             probability = re.findall('[0-9]+', string)[1]
             keyword = probability + '_offer'
+        elif string.__contains__('Stimulation On'):
+            keyword = 'stimulation on'
+        elif string.__contains__('Stimulation Off'):
+            keyword = 'stimulation off'
         elif string.__contains__('SHARP Accept') or string.__contains__('Enter'):
             keyword = 'enter'
         elif string.__contains__('Quit'):
@@ -307,6 +312,22 @@ def trial_merger(trials):
                         break
                 i += 1
                 check = check.prev
+        current_trial = current_trial.next
+
+
+def add_stimulation_events(trials, eventslist):
+    current_trial = trials.sentinel.next
+    events = np.array(eventslist)
+    while current_trial != trials.sentinel:
+        if current_trial.tone_onset:
+            start = current_trial.tone_onset
+            end = current_trial.exit
+            stim_index = np.where((events[:, 1].astype(float) > start) & (events[:, 1].astype(float) < end))
+            for i in stim_index[0]:
+                if events[i, 2].astype(int) == 99:
+                    current_trial.stimulation_on = events[i, 1]
+                elif events[i, 2].astype(int) == 199:
+                    current_trial.stimulation_off = events[i, 1]
         current_trial = current_trial.next
 
 

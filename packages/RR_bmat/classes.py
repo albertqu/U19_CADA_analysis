@@ -31,6 +31,8 @@ class Trial(Event_Node):
         self.enter = None
         self.firstEventNode = first_event
         self.tone_onset = None
+        self.stimulation_on = None
+        self.stimulation_off = None
         self.tone_prob = None
         self.restaurant = None
         self.T_Entry = None
@@ -54,6 +56,9 @@ class Trial(Event_Node):
         print()
         print("==tone_onset==")
         print('timestamp for when offer tone starts playing')
+        print()
+        print("==stimulation==")
+        print('0 as stimulation off and 1 otherwise')
         print()
         print('==T_Entry==')
         print('timestamp for sharp t junction entry')

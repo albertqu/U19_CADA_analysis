@@ -53,7 +53,9 @@ eventcodedict_partial ={1: 'Servo 1 open',
                         67: 'SHARP Entry R3',
                         68: 'SHARP Accept R3',
                         70: 'SHARP Entry R4',
-                        71: 'SHARP Accept R4'}
+                        71: 'SHARP Accept R4',
+                        99: 'Stimulation On',
+                        199: 'Stimulation Off'}
 
 eventcodedict_full = {1: 'Servo 1 open',
                       2: 'Servo 1 closed',
@@ -130,4 +132,6 @@ eventcodedict_full = {1: 'Servo 1 open',
                       73: 'R1 Reward Revealed',
                       74: 'R1 Reward Withheld',
                       75: 'R1 Quit',
-                      76: 'R1 Hard Reject'}
+                      76: 'R1 Hard Reject',
+                      99: 'Stimulation On',
+                      199: 'Stimulation Off'}
