@@ -495,12 +495,13 @@ class RRBehaviorMat(BehaviorMat):
         return write_bonsaiEvent_dll(events_list_partial)
 
     def todf(self, valid=True, comment=False):
-        # Careful of using todf if initialized with STAGE 0
+        # Don't use todf if initialized with STAGE 0
         # trial structure containing pseudotrials
         trials = trial_writer(self.eventlist)
         trial_info_filler(trials)
         trial_merger(trials)
         write_lap_block(trials)
+        add_stimulation_events(trials, events)
         trials_df = write_trial_to_df(trials)
         if valid:
             result_df = save_valid_trial(trials_df).reset_index(drop=True)
