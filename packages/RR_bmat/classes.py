@@ -1,3 +1,5 @@
+#author: Lexi Zhou
+
 class Event_Node:
     def __init__(self):
         self.prev = None

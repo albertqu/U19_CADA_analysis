@@ -3,10 +3,9 @@
 from mainAnalysis import *
 import os
 from clean_bonsai_output import *
-import numpy as np
 from eventcodedict import *
 
-input_folder = '/Users/lexizhou/Desktop/RRM030'
+input_folder = '/Users/lexizhou/Desktop/RRM040'
 
 
 def list_files(dir, type):
@@ -55,7 +54,7 @@ def write_trials(input_folder):
         trial_info_filler(trials)
         trial_merger(trials)
         write_lap_block(trials)
-        add_stimulation_events(trials, events_list_partial)
+        add_stimulation_events(trials, events)
 
         trials_df = write_trial_to_df(trials)
         trials_df.to_csv(pathPrefix + "/" + sessionname + "/" + "all_trials_" + sessionname + '.csv')
