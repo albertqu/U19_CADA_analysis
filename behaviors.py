@@ -481,13 +481,13 @@ class RRBehaviorMat(BehaviorMat):
         bonsai_output = pd.read_csv(logfile, sep=" ", index_col=False, names=names)[names]
         bonsai_output['timestamp'] = bonsai_output['timestamp'].map(strip).astype(float)
         self.time_aligner = lambda ts: (ts - bonsai_output.iloc[0, 0]) / 1000
+        self.events = preprocessing(logfile, eventcodedict_full)
         self.eventlist = self.initialize(logfile, stage=STAGE)
 
-    def initialize(self, logfile, stage=3):
+    def initialize(self, logfile, stage=1):
         if stage == 0:
             # Save raw bonsai output with event description --> raw behavior LOG human readable
-            events = preprocessing(logfile, eventcodedict_full)
-            return write_bonsaiEvent_dll(events)
+            return write_bonsaiEvent_dll(self.events)
         assert stage == 1, f'Unknown stage {stage}'
         # Save selected bonsai events --> cleaned behavior LOG, dropping nonsense
         events_partial = detect_keyword_in_event(preprocessing(logfile, eventcodedict_partial))
@@ -495,12 +495,13 @@ class RRBehaviorMat(BehaviorMat):
         return write_bonsaiEvent_dll(events_list_partial)
 
     def todf(self, valid=True, comment=False):
-        # Careful of using todf if initialized with STAGE 0
+        # Don't use todf if initialized with STAGE 0
         # trial structure containing pseudotrials
         trials = trial_writer(self.eventlist)
         trial_info_filler(trials)
         trial_merger(trials)
         write_lap_block(trials)
+        add_stimulation_events(trials, self.events)
         trials_df = write_trial_to_df(trials)
         if valid:
             result_df = save_valid_trial(trials_df).reset_index(drop=True)
