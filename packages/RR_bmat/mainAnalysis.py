@@ -32,16 +32,20 @@ def preprocessing(filepath, eventcodedict):
     events_list = bonsai_output_final.values.tolist()
 
     def restaurant_extractor(events_list):
-        prev = 4
-        for i in events_list:
-            if int(i[-1]) == 199 or int(i[-1]) == 99:
-                i.append(prev)
-            if len(i) <= 3:
-                integers = re.findall('[0-9]+', i[0])
+        for i in range(len(events_list)):
+            if int(events_list[i][-1]) == 199:
+                events_list[i].append(events_list[i-1][-1])
+            if int(events_list[i][-1]) == 99:
+                offer_index = [idx for idx, element in enumerate(events_list[i:i+4]) if element[0].__contains__('offer')][0]
+                integers = re.findall('[0-9]+', events_list[i+offer_index][0])
                 for j in integers:
                     if 5 > int(j) > 0:
-                        i.append(int(j))
-                        prev = j
+                        events_list[i].append(int(j))
+            if len(events_list[i]) <= 3:
+                integers = re.findall('[0-9]+', events_list[i][0])
+                for j in integers:
+                    if 5 > int(j) > 0:
+                        events_list[i].append(int(j))
 
 
     restaurant_extractor(events_list)
@@ -326,15 +330,18 @@ def add_stimulation_events(trials, eventslist):
             end = current_trial.exit
             stim_index = np.where((events[:, 1].astype(float) > start) & (events[:, 1].astype(float) < end))
             for i in stim_index[0]:
-                if i > 160:
-                    if 99 in events[i-5:i, 2].astype(int) and current_trial.stimulation_on is None:
-                        on_index = np.where(events[i-5:i, 2].astype(int) == 99)[0]
+                if 99 in events[i-5:i, 2].astype(int) and current_trial.stimulation_on is None:
+                    on_index = np.where(events[i-5:i, 2].astype(int) == 99)[0]
+                    if events[i-5+on_index, 3][0] == events[i, 3]:
                         current_trial.stimulation_on = events[i-5+on_index, 1][0]
-                    if 199 in events[i:i+5, 2].astype(int):
-                        if current_trial.stimulation_off is None and current_trial.stimulation_on:
-                            off_index = np.where(events[i:i+5, 2].astype(int) == 199)[0]
+                if 199 in events[i:i+5, 2].astype(int):
+                    if current_trial.stimulation_off is None and current_trial.stimulation_on:
+                        off_index = np.where(events[i:i+5, 2].astype(int) == 199)[0]
+                        if events[i+off_index, 3][0] == events[i, 3] and \
+                                (events[i+off_index, 1][0].astype(float) - float(current_trial.stimulation_on)) <= 2:
                             current_trial.stimulation_off = events[i+off_index, 1][0]
-                            # assert float(current_trial.stimulation_off) - float(current_trial.stimulation_on) <= 2
+            if current_trial.stimulation_off is None and current_trial.stimulation_on:
+                current_trial.stimulation_on = None
         current_trial = current_trial.next
 
 
