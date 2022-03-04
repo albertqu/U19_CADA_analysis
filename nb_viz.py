@@ -22,20 +22,10 @@ class RR_NBViz(NBVisualizer):
         super().__init__()
 
 
-def rr_psychometric(nb_df, animal, session):
-    """ Takes
-    """
+def rr_psychometric(reg_df, special_arg, suptitle=None):
     special_arg = ''
-    # Preparation of nb_df for data analysis
-    reg_df = nb_df[['animal', 'session', 'trial', 'tone_onset', 'T_Entry', 'choice', 'restaurant', 'tone_prob',
-                    'accept']].reset_index(drop=True)
-    reg_df['hall_time'] = reg_df['T_Entry'] - reg_df['tone_onset']
-    reg_df = df_select_kwargs(reg_df, hall_time=lambda s: (s >= 0))
-    reg_df = reg_df[reg_df['hall_time'] <= np.percentile(reg_df['hall_time'], 95)]
-
-    # Data modeling
     X = pd.concat([pd.get_dummies(reg_df['restaurant'].map({i: f'R{i}' for i in range(1, 5)})),
-                   reg_df['tone_prob']], axis=1)
+                reg_df['tone_prob']], axis=1)
     y = reg_df['accept'].values
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=RAND_STATE)
     # clf = LogisticRegression(random_state=0, class_weight='balanced').fit(X_train, y_train)
@@ -44,7 +34,6 @@ def rr_psychometric(nb_df, animal, session):
     y_pred = clf.fit(X, y).predict_proba(X)
 
     # Convert modeling result to interpretable dataframe
-    import itertools
     restaurants = [f'R{i}' for i in range(1, 5)]
     X_base = X.drop_duplicates().reset_index(drop=True)
     clf_psy = clf.fit(X, y)
@@ -59,19 +48,18 @@ def rr_psychometric(nb_df, animal, session):
     Xpsy_df['restaurant'] = X.iloc[:, :4].idxmax(axis=1)
     Xpsy_df['accept'] = y
     plot_df = Xpsy_df.groupby('logit', as_index=False).agg({'accept': 'mean'})
-    plot_df['err'] = Xpsy_df.groupby('logit', as_index=False).agg({'accept': lambda xs: np.std(xs) / np.sqrt(len(xs))})[
-        'accept']
+    plot_df['err'] = Xpsy_df.groupby('logit', as_index=False).agg({'accept': lambda xs: np.std(xs)/np.sqrt(len(xs))})['accept']
     # Plotting Psychometric curve
-    tone_palette = sns.color_palette('coolwarm', n_colors=4)
-    r_markers = ['o', 's', '+', 'x']
     plt.figure(figsize=(10, 10))
     ax = plt.gca()
     sns.set_context('talk')
     ax.errorbar(plot_df['logit'], plot_df['accept'], yerr=plot_df['err'], color='k', zorder=-1, ls='none')
     psydf_xy = psy_df[['logit', 'response']].sort_values('logit')
     ax.plot(psydf_xy['logit'], psydf_xy['response'], color='brown', zorder=0)
+    tone_palette = sns.color_palette('coolwarm', n_colors=4)
+    r_markers = ['o', 's', '+', 'x']
     for i in range(4):
-        r = f'R{i + 1}'
+        r = f'R{i+1}'
         for j, tone in enumerate([0, 20, 80, 100]):
             r_sel = psy_df['restaurant'] == r
             tone_sel = psy_df['tone_prob'] == tone
@@ -80,19 +68,20 @@ def rr_psychometric(nb_df, animal, session):
                     lab = f'{r}_{tone}'
                 else:
                     lab = tone
-                ax.scatter(psy_df.loc[r_sel & tone_sel, 'logit'], psy_df.loc[r_sel & tone_sel, 'response'],
-                           marker=r_markers[i], color=tone_palette[j], label=lab, zorder=1)
+                ax.scatter(psy_df.loc[r_sel&tone_sel, 'logit'], psy_df.loc[r_sel&tone_sel, 'response'],
+                            marker=r_markers[i], color=tone_palette[j], label=lab, zorder=1)
             else:
                 if j == 0:
-                    ax.scatter(psy_df.loc[r_sel & tone_sel, 'logit'], psy_df.loc[r_sel & tone_sel, 'response'],
-                               marker=r_markers[i], color=tone_palette[j], label=r, zorder=1)
-                ax.scatter(psy_df.loc[r_sel & tone_sel, 'logit'], psy_df.loc[r_sel & tone_sel, 'response'],
-                           marker=r_markers[i], color=tone_palette[j], zorder=1)
+                    ax.scatter(psy_df.loc[r_sel&tone_sel, 'logit'], psy_df.loc[r_sel&tone_sel, 'response'],
+                            marker=r_markers[i], color=tone_palette[j], label=r, zorder=1)
+                ax.scatter(psy_df.loc[r_sel&tone_sel, 'logit'], psy_df.loc[r_sel&tone_sel, 'response'],
+                            marker=r_markers[i], color=tone_palette[j], zorder=1)
     plt.legend(loc=4)
     plt.ylim([0, 1])
     sns.despine()
     animal = reg_df['animal'].unique()[0]
-    plt.suptitle(f'RR behavior {animal} {session}{special_arg}')
+    if suptitle is not None:
+        plt.suptitle(suptitle)
     ax.set_xlabel('action logit')
     ax.set_ylabel('Accept%')
 

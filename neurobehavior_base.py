@@ -1,6 +1,8 @@
 from neuro_series import *
 from peristimulus import *
 from abc import abstractmethod
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
 import logging
 logging.basicConfig(level=logging.INFO)
 #sns.set_context("talk")
@@ -204,6 +206,7 @@ class NeuroBehaviorMat:
         return pd.concat(all_dfs, axis=0)
 
 
+
 class PS_NBMat(NeuroBehaviorMat):
     behavior_events = ['center_in', 'center_out', 'side_in', 'outcome',
                        'zeroth_side_out', 'first_side_out', 'last_side_out']
@@ -272,6 +275,34 @@ class RR_NBMat(NeuroBehaviorMat):
                                    'trial_end': np.arange(-1, 1.001, 0.05),
                                    'exit': np.arange(-1, 1.001, 0.05)}
 
+    def fit_action_value_function(self, df):
+        # endogs
+        exog = 'accept'
+        to_convert = ['restaurant']
+        X = pd.concat([pd.get_dummies(df['restaurant']), df['tone_prob']], axis=1)
+        reg_df = pd.concat([X, df[to_convert]], axis=1)
+        y = df[exog].values
+        # Use held out dataset to evaluate score
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=RAND_STATE)
+        # clf = LogisticRegression(random_state=0, class_weight='balanced').fit(X_train, y_train)
+        clf = LogisticRegression(random_state=RAND_STATE).fit(X_train, y_train)
+        cv_score = clf.score(X_test, y_test)
+        # use full dataset to calculate action logits
+        clf_psy = clf.fit(X, y)
+        base_df = reg_df.drop_duplicates().reset_index(drop=True)
+        X_base = base_df.drop(columns=to_convert)
+        logits = X_base.values @ clf_psy.coef_.T + clf_psy.intercept_
+        base_df['action_logit'] = logits
+
+        def func(endog_df):
+            return endog_df.merge(base_df, how='left', on=list(endog_df.columns))['action_logit']
+
+        return {'score': cv_score, 'func': func, 'name': 'action_logit', 'debug': base_df}
+
+    def add_action_value_feature(self, df, endog_map):
+        endog = ['restaurant', 'tone_prob']
+        df[endog_map['name']] = endog_map['func'](df[endog])
+        return df
 
 
 #########################################################
