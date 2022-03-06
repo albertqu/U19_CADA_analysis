@@ -1,4 +1,5 @@
 from neuro_series import *
+from nb_viz import *
 from peristimulus import *
 from abc import abstractmethod
 from sklearn.model_selection import train_test_split
@@ -315,6 +316,7 @@ class NBExperiment:
     def __init__(self, folder=''):
         self.meta = None
         self.nbm = NeuroBehaviorMat()
+        self.nbviz = NBVisualizer(self)
         self.plot_path = folder
 
     def meta_safe_drop(self, nb_df, inplace=False):
@@ -612,6 +614,7 @@ class RR_Expr(NBExperiment):
         self.meta['cell_type'] = self.meta['animal_ID'].str.split('-', expand=True)[0]
         self.meta['session'] = self.meta['age'].apply(self.cvt_age_to_session)
         self.nbm = RR_NBMat()
+        self.nbviz = RR_NBViz(self)
 
         # # TODO: modify this later
         if ('trig_mode' not in self.meta.columns) and ('fp_recorded' in self.meta.columns):

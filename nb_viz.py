@@ -11,15 +11,51 @@ from sklearn.linear_model import LogisticRegression
 # Utils
 from utils import df_select_kwargs
 
+
 class NBVisualizer:
 
-    def __init__(self):
+    def __init__(self, expr):
+        self.expr = expr
         pass
 
-class RR_NBViz(NBVisualizer):
 
-    def __init__(self):
-        super().__init__()
+class RR_NBViz(NBVisualizer):
+    def __init__(self, expr):
+        super().__init__(expr)
+        self.expr = expr
+
+    def psychometric(self, nb_df):
+        # setting up data
+        reg_df = nb_df[
+            ['animal', 'session', 'trial', 'tone_onset', 'T_Entry', 'choice', 'restaurant', 'tone_prob', 'accept',
+             'stimulation_on', 'stimulation_off']].reset_index(drop=True)
+        reg_df['hall_time'] = reg_df['T_Entry'] - reg_df['tone_onset']
+        reg_df['decision_time'] = reg_df['choice'] - reg_df['tone_onset']
+        reg_df = df_select_kwargs(reg_df, hall_time=lambda s: (s >= 0)).reset_index(drop=True)
+        reg_df = reg_df[reg_df['decision_time'] <= np.percentile(reg_df['decision_time'], 95)].reset_index(drop=True)
+        reg_df['restaurant'] = reg_df['restaurant'].map({i: f'R{i}' for i in range(1, 5)})
+
+        # compute action value
+        endog_map = self.expr.nbm.fit_action_value_function(reg_df[reg_df['stimulation_on'].isnull()].reset_index(drop=True))
+        reg_df = self.expr.nbm.add_action_value_feature(reg_df, endog_map)
+
+        fig = plt.figure(figsize=(10, 10))
+        ax = plt.gca()
+        sns.set_context('talk')
+
+        sns.regplot(x="action_logit", y="accept", data=reg_df[reg_df['stimulation_on'].isnull()], x_estimator=np.mean,
+                    logistic=True, n_boot=500, scatter_kws={"zorder": 0}, color='k', marker='', ax=ax)
+        sns.regplot(x="action_logit", y="accept", data=reg_df[~reg_df['stimulation_on'].isnull()], x_estimator=np.mean,
+                    logistic=True, n_boot=500, scatter_kws={"zorder": 0}, color='g', ax=ax)
+
+        slice_df = reg_df.loc[
+            reg_df['stimulation_on'].isnull(), ['restaurant', 'tone_prob', 'action_logit', 'accept']].reset_index(
+            drop=True)
+        plot_df = slice_df.groupby(['restaurant', 'tone_prob', 'action_logit'], as_index=False).agg({'accept': 'mean'})
+        sns.scatterplot(x='action_logit', y='accept', data=plot_df, style='restaurant', hue='tone_prob',
+                        palette='coolwarm', ax=ax, s=120, linewidth=0, zorder=10)
+        ax.set_ylim((0, 1.1))
+        return fig
 
 
 def rr_psychometric(reg_df, special_arg, suptitle=None):
