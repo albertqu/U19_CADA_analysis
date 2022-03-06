@@ -97,7 +97,7 @@ def chunk_helper_session(animal, session, folder, out_folder, duration=20*60):
 """####################################################
 ################### Data Structure ####################
 ####################################################"""
-def organize_RR_structures(root, out):
+def organize_RR_structures(root, out, fp=False):
     name_map = {'behavior': r"^RR_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
                 'FP': r"^FP_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
                 'FPTS': r"^FPTS_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv"}
@@ -109,10 +109,14 @@ def organize_RR_structures(root, out):
             if af.startswith('RRM'):
                 animal = af
                 animal_folder = oj(group_folder, af)
-                fp_folder = oj(animal_folder, 'photometry')
-                flipped = oj(animal_folder, r'LR flipped', 'photometry')
+                all_folders = [animal_folder]
+                if fp:
+                    fp_folder = oj(animal_folder, 'photometry')
+                    flipped = oj(animal_folder, r'LR flipped', 'photometry')
+                    all_folders.append(fp_folder)
+                    all_folders.append(flipped)
                 # TODO: later make method that save files in different folders
-                for src_fd in [animal_folder, fp_folder, flipped]:
+                for src_fd in all_folders:
                     if not os.path.exists(src_fd):
                         continue
                     for sf in os.listdir(src_fd):

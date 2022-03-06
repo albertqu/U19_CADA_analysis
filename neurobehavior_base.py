@@ -25,9 +25,8 @@ class NeuroBehaviorMat:
 
     # example id_vars: animal, session, trial,
     # make a state representation?
-    def __init__(self, neur_df=None, behavior_df=None):
-        self.neur_df = neur_df
-        self.behavior_df = behavior_df
+    def __init__(self, neural=True):
+        self.neural = neural
         # self.id_vars = id_vars
         self.event_time_windows = {}
         self.nb_cols = None
@@ -206,7 +205,6 @@ class NeuroBehaviorMat:
         return pd.concat(all_dfs, axis=0)
 
 
-
 class PS_NBMat(NeuroBehaviorMat):
     behavior_events = ['center_in', 'center_out', 'side_in', 'outcome',
                        'zeroth_side_out', 'first_side_out', 'last_side_out']
@@ -220,8 +218,8 @@ class PS_NBMat(NeuroBehaviorMat):
 
     id_vars = ['animal', 'session', 'roi']
 
-    def __init__(self, fp_series=None, behavior_df=None):
-        super().__init__(fp_series, behavior_df)
+    def __init__(self, neural=True):
+        super().__init__(neural)
         self.event_time_windows = {'center_in': np.arange(-1, 1.001, 0.05),
                                    'center_out': np.arange(-1, 1.001, 0.05),
                                    'outcome': np.arange(-0.5, 2.001, 0.05),
@@ -264,8 +262,10 @@ class RR_NBMat(NeuroBehaviorMat):
 
     id_vars = ['animal', 'session', 'roi']
 
-    def __init__(self, fp_series=None, behavior_df=None):
-        super().__init__(fp_series, behavior_df)
+    def __init__(self, neural=True):
+        super().__init__(neural)
+        if not neural:
+            self.id_vars = ['animal', 'session']
         self.event_time_windows = {'tone_onset': np.arange(-1, 1.001, 0.05),
                                    'T_Entry': np.arange(-1, 1.001, 0.05),
                                    'choice': np.arange(-1, 1.001, 0.05),
@@ -390,11 +390,63 @@ class NBExperiment:
         all_nb_df = pd.concat(all_nb_dfs, axis=0)
         return all_nb_df.merge(self.meta, how='left', on=['animal', 'session'])
 
-    def neural_sig_check(self, proj, **kwargs):
-        proj_f = lambda s: s.str.startswith(proj)
-        meta_sel = df_select_kwargs(self.meta, return_index=True, animal=proj_f, **kwargs)
+    def behavior_lagged_view(self, proj, laglist=None, **kwargs):
+        """
+        Given the project code specified in `proj`, look through metadata loaded through `self.info_name`
+        and merge all behavioral data. If specified, lag data according to `laglist`.
+        :param proj: 3 letter project code: e.g. 'UUM', 'RRM', 'BSD', 'JUV', 'FIP'
+        :param laglist: Dict[str, Dict]
+                            dictionary specifying all column features that need to be trial lagged.
+                            Each column is mapped to an additional dictionary:
+                             {'pre': [lags backward in time],
+                              'post': ['lags forward in time'],
+                              'long': [boolean for whether pivoting the df to a long-form df]}
+        :param kwargs: provide additional conditions on what sessions to include through selecting certain
+        variable value in metadata
+        :return: all_nb_df: pd.DataFrame
+                    dataframe containing neural and behavior data
+        E.g.
+        ```{python}
+        pse_rrm = PS_Expr(data_root)
+        laglist = {'action': {'pre': 2, 'post': 3},
+                   'rewarded': {'pre': 2, 'post': 3},
+                   f'outcome_neur': {'pre': 2, 'post': 3, 'long': True}
+        laglist.update({ev: {'pre': 1, 'post': 1} for ev in pse_rrm.nbm.behavior_events})
+        nb_df_rrm = pse_rrm.align_lagged_view('RRM', ['outcome'], laglist=None, cell_type='A2A')
+        ```
+        """
+        proj_sel = self.meta['animal'].str.startswith(proj)
+        meta_sel = df_select_kwargs(self.meta, return_index=True, **kwargs)
+        all_bdfs = []
 
-        for animal, session in self.meta.loc[meta_sel, ['animal', 'session']].values:
+        for animal, session in self.meta.loc[meta_sel & proj_sel, ['animal', 'session']].values:
+            try:
+                bmat, _ = self.load_animal_session(animal, session)
+            except Exception:
+                logging.warning(f'Error in {animal} {session}')
+                bmat, ps_series = None, None
+
+            if bmat is None:
+                logging.info(f'skipping {animal} {session}')
+            else:
+                try:
+                    bdf = bmat.todf()
+                    all_bdfs.append(bdf)
+                except Exception:
+                    logging.warning(f'Error in calculating dff or AUC-score for {animal}, {session}, check signal')
+
+        all_bdf = pd.concat(all_bdfs, axis=0)
+        final_bdf = all_bdf.merge(self.meta, how='left', on=['animal', 'session'])
+        if 'stimulation_on' in all_bdf.columns:
+            final_bdf.loc[final_bdf['opto_stim'] != 1, 'stimulation_on'] = None
+            final_bdf.loc[final_bdf['opto_stim'] != 1, 'stimulation_off'] = None
+        return final_bdf
+
+    def neural_sig_check(self, proj, **kwargs):
+        proj_sel = self.meta['animal'].str.startswith(proj)
+        meta_sel = df_select_kwargs(self.meta, return_index=True, **kwargs)
+
+        for animal, session in self.meta.loc[meta_sel & proj_sel, ['animal', 'session']].values:
             try:
                 _, neuro_series = self.load_animal_session(animal, session)
                 qual_check_folder = oj(self.plot_path, 'FP_quality_check')
@@ -562,8 +614,8 @@ class RR_Expr(NBExperiment):
         self.nbm = RR_NBMat()
 
         # # TODO: modify this later
-        if 'trig_mode' not in self.meta.columns:
-            self.meta['trig_mode'] = 'TRIG1'
+        if ('trig_mode' not in self.meta.columns) and ('fp_recorded' in self.meta.columns):
+            self.meta.loc[self.meta['fp_recorded'] == 1, 'trig_mode'] = 'TRIG1'
 
     def cvt_age_to_session(self, age):
         DIG_LIMIT = 2  # limit the digits allowed for age representation (max 99)
@@ -663,3 +715,13 @@ class RR_Expr(NBExperiment):
                             if registers == len(ftypes):
                                 return results if len(results) > 1 else results[ift]
         return results if len(results) > 1 else list(results.values())[0]
+
+
+class RR_Opto(RR_Expr):
+
+    info_name = 'rr_opto_subset.csv'
+    spec_name = 'rr_animal_specs.csv'
+
+    def __init__(self, folder, **kwargs):
+        super().__init__(folder, **kwargs)
+        self.nbm = RR_NBMat(neural=False)
