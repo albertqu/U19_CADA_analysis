@@ -36,6 +36,21 @@ class NeuroBehaviorMat:
     def extend_features(self, nb_df, *args, **kwargs):
         return nb_df
 
+    def merge_rois_wide(self, df, pivot_col):
+        id_cols = self.id_vars
+
+        ind_ics = list(np.setdiff1d(id_cols, [pivot_col]))
+        nb_cols = [c for c in df.columns if ('_neur' in c) and ('|' in c)]
+        pivot_values = df[pivot_col].unique()
+        # print(ind_ics, pivot_values)
+
+        result_df = df.loc[df[pivot_col] == pivot_values[0]].drop(columns=pivot_col)
+        result_df.rename(columns={nbc: f'{pivot_values[0]}--{nbc}' for nbc in nb_cols}, inplace=True)
+        for i, pv in enumerate(pivot_values):
+            slice_df = df.loc[df[pivot_col] == pv, ind_ics + nb_cols].reset_index(drop=True)
+            slice_df.rename(columns={nbc: f'{pv}--{nbc}' for nbc in nb_cols}, inplace=True)
+            result_df = result_df.merge(slice_df, how='left', on=ind_ics)
+
     def align_B2N_dff_ID(self, behavior_df, neur_df, events, form='wide'):
         # align behavior to neural on a single session basis, DO NOT use it across multiple sessions
         # event_windows: dictionary with event to window series
@@ -124,7 +139,7 @@ class NeuroBehaviorMat:
                     assert feat in nb_df.columns, f'unknown option {feat}'
                 cols_to_shifts = [feat]
                 colf = te_colf
-
+            print(cols_to_shifts)
             values_to_shifts = nb_df[cols_to_shifts]
             shifted = []
             shifted_cols = []
