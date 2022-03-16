@@ -146,6 +146,14 @@ def organize_RR_structures(root, out, fp=False):
         return flp_created
 
 
+def organize_RR_local(root, out, category):
+    name_map = {'behavior': r"^RR_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
+                'FP': r"^FP_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
+                'FPTS': r"^FPTS_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
+                'video': r"^RR_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
+                'vidTS': r"^RR_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv"}
+    pass
+
 def make_stim_blocks(n=20, p=0.25, zero=False):
     # p: percentage of stimulation, p<0.5
     """ Use this example to visualize:

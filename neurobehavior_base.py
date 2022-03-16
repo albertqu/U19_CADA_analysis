@@ -37,6 +37,12 @@ class NeuroBehaviorMat:
         return nb_df
 
     def merge_rois_wide(self, df, pivot_col):
+        # nb_df must be of wide form: meaning each trial must only have 1
+        id_cols = self.id_vars
+        ind_ics = list(np.setdiff1d(id_cols, [pivot_col]))
+        return self.apply_to_idgroups(df, self.merge_rois_wide_ID, id_vars=ind_ics, pivot_col=pivot_col)
+
+    def merge_rois_wide_ID(self, df, pivot_col):
         id_cols = self.id_vars
 
         ind_ics = list(np.setdiff1d(id_cols, [pivot_col]))
@@ -139,7 +145,6 @@ class NeuroBehaviorMat:
                     assert feat in nb_df.columns, f'unknown option {feat}'
                 cols_to_shifts = [feat]
                 colf = te_colf
-            print(cols_to_shifts)
             values_to_shifts = nb_df[cols_to_shifts]
             shifted = []
             shifted_cols = []
