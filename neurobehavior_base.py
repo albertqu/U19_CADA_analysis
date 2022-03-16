@@ -129,7 +129,7 @@ class NeuroBehaviorMat:
                 return np.concatenate([[sif(ft, i, mode) for ft in fts] for i in range(1, lag + 1)])
 
             if '_neur' in feat:
-                feat_ev = feat.split('_')[0]
+                feat_ev = '_'.join(feat.split('_')[:-1])
                 assert feat in self.nb_cols, f'event selected {feat_ev} not aligned yet'
                 cols_to_shifts = self.nb_cols[feat]
                 colf = neur_colf
