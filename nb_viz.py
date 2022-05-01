@@ -270,3 +270,13 @@ def df_wide_heatmap(data=None, event=None, sort_cols=None, id_cols=None, nbmat=N
 
 def nb_df_reorder_column(nb_df, column, orders):
     return pd.concat([nb_df[nb_df[column] == order] for order in orders], axis=0)
+
+
+def plot_nb_df_rr(nb_df, data_cols, idvars):
+    nb_df_plot = nb_df[data_cols + idvars]
+    nb_df_neur = pd.melt(nb_df_plot, id_vars=idvars, value_vars=data_cols,var_name='hemi_event_time', value_name='dZF')
+    nb_df_neur[['hemi', 'event_time']] = nb_df_neur['hemi_event_time'].str.split('--', expand=True)
+    nb_df_neur[['event', 'neur_time']] = nb_df_neur['event_time'].str.split('|', expand=True)
+    nb_df_neur['neur_time'] = nb_df_neur['neur_time'].astype(np.float)
+    sns.relplot(data=nb_df_neur[nb_df_neur['event'] == 'T_Entry'], col='hemi',
+                x='neur_time', y='dZF', row='animal', kind='line', hue='decision')

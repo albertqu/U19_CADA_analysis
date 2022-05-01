@@ -47,6 +47,8 @@ function out = generate_modeling_all()
     matfile = [root 'probswitch_modeling_output.mat'];
     iter_results = load(matfile);
     [modeling_map, animals] = get_modeling_vars();
+    
+    % modeling results: store in table: K, x, logpost, loglik, bic, aic (indexed by model, animal)
     for i=1:length(modeling_map)
         animal = animals{i};
         fns = fieldnames(iter_results);

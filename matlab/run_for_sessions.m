@@ -19,18 +19,16 @@ function [out] = run_for_sessions()
 end
 
 function [out] = run_for_sessions_csv()
-%     folder = 'Z:\2ABT\ProbSwitch';
-    folder = '/Volumes/Wilbrecht_file_server/2ABT/ProbSwitch';
-    csvfile = fullfile(folder, 'probswitch_neural_subset_RRM.csv');
+    folder = 'Z:\2ABT\ProbSwitch';
+%     folder = '/Volumes/Wilbrecht_file_server/2ABT/ProbSwitch'
+%     csvfile = fullfile(folder, 'probswitch_neural_subset_RRM.csv');
+    csvfile = fullfile(folder, 'probswitch_neural_subset_BSD.csv');
     expr_tb = readtable(csvfile);
-    targ_etb = expr_tb(expr_tb.recorded==1, :);
+    targ_etb = expr_tb((expr_tb.recorded==1) & strcmp(expr_tb.epoch, 'Probswitch'), :);
     for i=1:height(targ_etb)
         ani_name = char(targ_etb.animal{i});
-        if startsWith(ani_name, 'RRM')
-            animal = char(targ_etb.animal{i});
-        else
-            animal = char(targ_etb.animal_ID{i});
-        end
+        animal = char(targ_etb.animal{i});
+        animal1 = get_animal_id(char(targ_etb.animal_ID{i}));
         age = char(targ_etb.age(i));
         if mod(age, 1) == 0
             session = sprintf('p%d', age);
@@ -43,10 +41,16 @@ function [out] = run_for_sessions_csv()
                 session = sprintf('p%d_session%s', floor(age), char(splt(end)));
             end
         end
+        disp(['trying ' animal ' ' session]);
         try
             exper_extract_behavior_data(folder, animal, session, 'bonsai');
         catch
             disp([animal '_' session '_error']);
+        end
+        try
+            exper_extract_behavior_data(folder, animal1, session, 'bonsai');
+        catch
+            disp([animal1 '_' session '_error']);
         end
     end     
 end
