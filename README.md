@@ -84,6 +84,22 @@ Different utility functions for analysis, including, loading, preprocessing, sim
 Utility functions for dimensionality reduction models and classifier/regression models
 
 
+## NeuroBehaviorMat syntax
+`NBM` object manipulates trial-organized neural-behavioral `pd.DataFrame` that contains the following columns:
+* id columns: `animal, session, trial` and `roi` (in presence of trial aligned `ContSeries` features)
+* event/trial features: numerous information regarding the behavior trial, i.e., reward information, 
+animal's decision
+* aligned `ContSeries` columns: `{event}_{series}|{time}`, e.g. `outcome_neur|-0.5`, neural series aligned 
+to `outcome` event at 0.5 before the event. or `choice_pose|0`, pose series aligned to when animal makes 
+motor choice decisions. 
+
+It contains methods that manipulates neural-behavioral data that are organized by trials in 
+following manners:
+* align objects of type `ContSeries` to list of timestamps organized in trial structure
+* trial-lag feature columns, including neuroseries `lag_wide_df`
+
+
+
 ## Event Type Naming System (ETNS)
 More specific details in documenations in `behaviors.py`
 ### Behavior Times
