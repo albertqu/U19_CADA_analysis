@@ -19,21 +19,18 @@ function [out] = run_for_sessions()
 end
 
 function [out] = run_sessions_modeling_csv()
-    folder = 'D:\U19\data';
-    outfolder = 'D:\U19\data';
+    folder = 'Z:\2ABT\ProbSwitch';
 %     folder = '/Volumes/Wilbrecht_file_server/2ABT/ProbSwitch'
 %     csvfile = fullfile(folder, 'probswitch_neural_subset_RRM.csv');
     csvfile = fullfile(folder, 'probswitch_neural_subset_BSD.csv');
     expr_tb = readtable(csvfile);
-    catalog = expr_tb(strcmp(expr_tb.epoch, 'Probswitch') & (expr_tb.session_num ~= 0), {'animal_ID', 'animal', 'age', 'session_num'});
+    catalog = expr_tb(strcmp(expr_tb.epoch, 'Probswitch') & (expr_tb.session_num ~= 0), {'animal', 'age', 'session_num'});
     all_animals = unique(catalog.animal);
     for i=1:length(all_animals)
-        catalog.a_i(strcmp(catalog.animal, all_animals{i})) = i;
-    end
+        catalog.a_i(strcmp(all_anima))
     catalog = renamevars(catalog, {'session_num'}, {'s_j'});
-    
     behavior_folder = fullfile(folder, 'BSDML_exper');
-    outpath = fullfile(outfolder, 'BSDML_processed');
+    outpath = fullfile(folder, 'BSDML_processed');
     catalog.session = cell(height(catalog), 1);
     for k=1:height(catalog)
         catalog.session{k} = age2session(catalog.age(k));
