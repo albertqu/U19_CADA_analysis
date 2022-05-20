@@ -19,8 +19,8 @@ function [out] = run_for_sessions()
 end
 
 function [out] = run_sessions_modeling_csv()
-    folder = 'D:\U19\data';
-    outfolder = 'D:\U19\data';
+    folder = 'Z:\2ABT\ProbSwitch';
+    outfolder = 'Z:\2ABT\ProbSwitch';
 %     folder = '/Volumes/Wilbrecht_file_server/2ABT/ProbSwitch'
 %     csvfile = fullfile(folder, 'probswitch_neural_subset_RRM.csv');
     csvfile = fullfile(folder, 'probswitch_neural_subset_BSD.csv');
