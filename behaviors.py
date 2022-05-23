@@ -567,7 +567,7 @@ class PSBehaviorMat(BehaviorMat):
         self.choice_sides = None
         self.trialN = len(hfile['out/outcome'])
         self.modeling_id = modeling_id
-        self.folder = os.path.join(*hfname.split(os.path.sep)[:-1])
+        self.folder = os.path.join(os.sep, *hfname.split(os.path.sep)[:-1])  # DEFAULT absolute path
         self.eventlist = self.initialize_PSEnode(hfile, stage=STAGE)
         self.correct_port = self.get_correct_port_side(hfile)
         self.time_aligner = interpolate.interp1d(np.array(hfile['out/digital_LV_time']).ravel(),
