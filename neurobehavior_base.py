@@ -333,11 +333,12 @@ class NBExperiment:
     info_name = None
     spec_name = None
 
-    def __init__(self, folder=''):
+    def __init__(self, folder='', modeling_id=None):
         self.meta = None
         self.nbm = NeuroBehaviorMat()
         self.nbviz = NBVisualizer(self)
         self.plot_path = folder
+        self.modeling_id = modeling_id
 
     def meta_safe_drop(self, nb_df, inplace=False):
         subcols = list(np.setdiff1d(nb_df.columns, self.meta.columns))
@@ -482,8 +483,8 @@ class PS_Expr(NBExperiment):
     info_name = 'probswitch_neural_subset.csv'
     spec_name = 'probswitch_animal_specs.csv'
 
-    def __init__(self, folder, **kwargs):
-        super().__init__(folder)
+    def __init__(self, folder, modeling_id=None, **kwargs):
+        super().__init__(folder, modeling_id)
         self.folder = folder
         pathlist = folder.split(os.sep)[:-1] + ['plots']
         self.plot_path = oj(os.sep, *pathlist)
@@ -544,7 +545,7 @@ class PS_Expr(NBExperiment):
 
         hfile = h5py.File(filemap['behaviorLOG'], 'r')
         animal_alias = self.meta.loc[self.meta[arg_type] == animal_arg, 'animal'].values[0]
-        bmat = PSBehaviorMat(animal_alias, session, hfile, STAGE=1)
+        bmat = PSBehaviorMat(animal_alias, session, hfile, STAGE=1, modeling_id=self.modeling_id)
         fp_file = filemap['FP']
         fp_timestamps = filemap['FPTS']
 
@@ -616,8 +617,8 @@ class RR_Expr(NBExperiment):
     info_name = 'rr_neural_subset.csv'
     spec_name = 'rr_animal_specs.csv'
 
-    def __init__(self, folder, **kwargs):
-        super().__init__(folder)
+    def __init__(self, folder, modeling_id=None, **kwargs):
+        super().__init__(folder, modeling_id)
         self.folder = folder
         pathlist = folder.split(os.sep)[:-1] + ['plots']
         self.plot_path = oj(os.sep, *pathlist)
