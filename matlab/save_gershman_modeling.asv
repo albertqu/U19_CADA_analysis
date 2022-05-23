@@ -16,13 +16,14 @@ function save_gershman_modeling(folder, catalog, outpath)
 %     load(fullfile(root, 'compiled_probswitch_data_09122020.mat'),'data');
     [results, bms_results]= fit_models(data);
     sparts = split(data_fname, '_');
-    sparts2 = split(sparts{end}, '.');
+    sparts2 = split(sparts{2}, '.');
     timestamp = sparts2{1};
     %  stability test (potentially multiple runs?)
-    save(fullfile(outpath, ['gmodeling_results_' sparts{end}]), '-v7.3','results');
-    save(fullfile(outpath, ['gmodeling_results_bms_' sparts{end}]), '-v7.3', 'bms_results');
+    save(fullfile(outpath, ['gmodeling_results_' sparts{2}]), '-v7.3','results');
+    save(fullfile(outpath, ['gmodeling_results_bms_' sparts{2}]), '-v7.3', 'bms_results');
     toc
     
     % Step 3: split modeling results to animal/session folders (save_modeling_vals)
-    melt_modeling_out(outpath, results, data, catalog, timestamp);
+    
+    
 end

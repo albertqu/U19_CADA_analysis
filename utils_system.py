@@ -154,6 +154,18 @@ def organize_RR_local(root, out, category):
                 'vidTS': r"^RR_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv"}
     pass
 
+
+def rename_dir_files_recursive(root, namemap):
+    for p in os.listdir(root):
+        pname = os.path.join(root, p)
+        if os.path.isdir(pname):
+            rename_dir_files_recursive(pname, namemap)
+        for name in namemap:
+            if name in p:
+                newpname = os.path.join(root, p.replace(name, namemap[name]))
+                os.rename(pname, newpname)
+
+
 def make_stim_blocks(n=20, p=0.25, zero=False):
     # p: percentage of stimulation, p<0.5
     """ Use this example to visualize:

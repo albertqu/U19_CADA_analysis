@@ -98,7 +98,15 @@ def get_animal_session_data():
     pass
 
 
+def reorganize_BSD_filenames():
+    root = r"Z:\2ABT\ProbSwitch\BSDML_exper"
+    namemap = {"D1-R34_RT": "BSD011",
+               "D1-R34_LT":	"BSD012",
+               "D1-R35_RV":	"BSD013"}
+    from utils_system import rename_dir_files_recursive
+    rename_dir_files_recursive(root, namemap)
+
+
 class BSDML_Expr:
     # EXPERIMENT specific loading
     file_template = {}
-

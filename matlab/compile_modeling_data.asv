@@ -45,7 +45,6 @@ function [data, data_fname] = compile_modeling_data(folder, catalog, outpath)
         trials = trials-length(no_choice_idx);
         a_i = catalog.a_i(ij);
         s_j = catalog.s_j(ij);
-        session = s_j*ones(1,trials);
         for k = 1:trials
             %Matrix of reward history at chosen port (only one can be nonzero at
             %each trial)
@@ -66,8 +65,8 @@ function [data, data_fname] = compile_modeling_data(folder, catalog, outpath)
                 undocumented = [undocumented; rewarded_portside(k), rewarded(k)];
             end
         end
-        fprintf('ij:%d, a_i: %d\n', ij, a_i);
-        data(a_i).s = [data(a_i).s session];
+        disp()
+        data(a_i).s = [data(a_i).s s_j];
         data(a_i).a = [data(a_i).a chosenport];
         rewarded(rewarded==1.1) = 0; % correct_unrewarded_idx (omission)
         rewarded(rewarded==2) = 0; % incorrect_idx
