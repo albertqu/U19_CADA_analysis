@@ -570,9 +570,10 @@ class PSBehaviorMat(BehaviorMat):
         self.folder = os.path.join(os.sep, *hfname.split(os.path.sep)[:-1])  # DEFAULT absolute path
         self.eventlist = self.initialize_PSEnode(hfile, stage=STAGE)
         self.correct_port = self.get_correct_port_side(hfile)
-        self.time_aligner = interpolate.interp1d(np.array(hfile['out/digital_LV_time']).ravel(),
-                                                 np.array(hfile['out/exper_LV_time']).ravel(),
-                                                 fill_value="extrapolate")
+        if 'digital_LV_time' in hfile['out']:
+            self.time_aligner = interpolate.interp1d(np.array(hfile['out/digital_LV_time']).ravel(),
+                                                     np.array(hfile['out/exper_LV_time']).ravel(),
+                                                     fill_value="extrapolate")
 
         switch_inds = np.full(self.trialN, False)
         switch_inds[1:] = self.correct_port[1:] != self.correct_port[:-1]
@@ -586,6 +587,8 @@ class PSBehaviorMat(BehaviorMat):
                 block_number[i] = block_number[i - 1] + 1
         self.block_num = block_number
         self.t_in_block = t_in_block
+        self.prebswitch_num = self.get_prebswitch_num(switch_inds)
+
 
     def __str__(self):
         return f"BehaviorMat({self.animal}_{self.session}, tau={self.tau})"
@@ -596,6 +599,17 @@ class PSBehaviorMat(BehaviorMat):
         res = np.full(len(portside), 'right')
         res[portside == 2] = 'left'
         return res
+
+    def get_prebswitch_num(self, switch_inds):
+        prebswitch_num = np.full(len(switch_inds), np.nan)
+        prebswitch_num[switch_inds] = 0
+        switch_on = False
+        for i in range(1, len(switch_inds)):
+            j = len(switch_inds) - 1 - i
+            if prebswitch_num[j] != 0:
+                if ~np.isnan(prebswitch_num[j + 1]):
+                    prebswitch_num[j] = prebswitch_num[j + 1] - 1
+        return prebswitch_num
 
     def get_modeling_pdf(self):
         # model_file = encode_to_filename(folder, animal, session, ['modeling'])
@@ -748,6 +762,7 @@ class PSBehaviorMat(BehaviorMat):
         result_df['action'] = pd.Categorical([""] * self.trialN, ['left', 'right'], ordered=False)
         result_df['rewarded'] = np.zeros(self.trialN, dtype=bool)
         result_df['trial_in_block'] = self.t_in_block
+        result_df['prebswitch_num'] = self.prebswitch_num
         result_df['block_num'] = self.block_num
         result_df['state'] = pd.Categorical(self.correct_port, ordered=False)
         result_df['quality'] = pd.Categorical(["normal"] * self.trialN, ['missed', 'abort', 'normal'],
