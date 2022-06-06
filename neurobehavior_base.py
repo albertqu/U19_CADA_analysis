@@ -241,6 +241,8 @@ class PS_NBMat(NeuroBehaviorMat):
 
     def __init__(self, neural=True):
         super().__init__(neural)
+        if not self.neural:
+            self.id_vars = self.id_vars[:-1]
         self.event_time_windows = {'center_in': np.arange(-1, 1.001, 0.05),
                                    'center_out': np.arange(-1, 1.001, 0.05),
                                    'outcome': np.arange(-0.5, 2.001, 0.05),
