@@ -66,17 +66,16 @@ class FPSeries:
                 iso_sig = self.neural_df[roi.replace(ch, self.params['control'])].values
                 if method == 'dZF_jove':
                     assert zscore, 'isosbestic jove is always zscored'
-                    dff = get_zdFF(iso_sig, rec_sig, smooth_win=int(self.params['fr']), remove=0)
+                    dff = get_zdFF(iso_sig, rec_sig, remove=0)
                 elif method == 'dZF_jove_raw':
                     assert zscore, 'isosbestic jove is always zscored'
-                    dff = get_zdFF(iso_sig, rec_sig, smooth_win=int(self.params['fr']), remove=0, use_raw=True)
+                    dff = get_zdFF(iso_sig, rec_sig, remove=0, use_raw=True)
                 elif method == 'dZF_jove_old':
                     assert zscore, 'isosbestic jove is always zscored'
-                    dff = get_zdFF_old(iso_sig, rec_sig, smooth_win=int(self.params['fr']), remove=0)
+                    dff = get_zdFF_old(iso_sig, rec_sig, remove=0)
                 elif method == 'ZdF_jove_old':
                     assert zscore, 'isosbestic jove is always zscored'
-                    dff = get_zdFF_old(iso_sig, rec_sig,
-                                       smooth_win=int(self.params['fr']), remove=0, raw=True)
+                    dff = get_zdFF_old(iso_sig, rec_sig, remove=0, raw=True)
                     dff = (dff - np.mean(dff)) / np.std(dff)
                 else:
                     dff = raw_fluor_to_dff(rec_time, rec_sig, iso_time, iso_sig,
@@ -168,9 +167,8 @@ class FPSeries:
             for roi in self.sig_channels[ch]:
                 raw_reference = self.neural_df[roi.replace(ch, control_ch)].values
                 raw_signal = self.neural_df[roi].values
-
-                fig, sig_score, _ = FP_quality_visualization(raw_reference, raw_signal, time_axis,
-                                                             fr=self.params['fr'], drop_frame=200,
+                # do not smooth based on frame rate
+                fig, sig_score, _ = FP_quality_visualization(raw_reference, raw_signal, time_axis, drop_frame=200,
                                                              time_unit=self.params['time_unit'],
                                                              sig_channel=ch, control_channel=control_ch,
                                                              roi=roi, tag=fig_tag, viz=viz)

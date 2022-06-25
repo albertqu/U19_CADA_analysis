@@ -33,6 +33,10 @@ class NeuroBehaviorMat:
         self.nb_cols = None
         self.nb_lag_cols = None
 
+    def series_time(self, event, t):
+        ev_neur = lambda ev: ev + '_neur'
+        return f'{ev_neur(event)}|{t * self.time_multiplier :.2f}'
+
     def extend_features(self, nb_df, *args, **kwargs):
         return nb_df
 
@@ -483,6 +487,7 @@ class PS_Expr(NBExperiment):
     spec_name = 'probswitch_animal_specs.csv'
 
     def __init__(self, folder, **kwargs):
+        # age and animal_ID must be filled
         super().__init__(folder)
         self.folder = folder
         pathlist = folder.split(os.sep)[:-1] + ['plots']

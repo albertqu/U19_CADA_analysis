@@ -11,21 +11,29 @@ function [out] = exper_extract_behavior_data(folder, animal, session, mode)
         lvttlf = char(fnamesFP{1});
         lvtsf = char(fnamesFP{2});
         
-        % TODO: change this later
-        out_session_folder = fullfile(out_path, animal, session);
-        if ~exist(out_session_folder, 'dir')
-            mkdir(out_session_folder);
-        end
-        for j=3:4
-            fp_sep = regexp(fnamesFP{j}, filesep, 'split');
-            if ~exist(fullfile(out_session_folder, fp_sep{end}), 'file')
-                copyfile(fnamesFP{j}, out_session_folder);
+        if isempty(fnamesEXP{1})
+            fprintf('cannot file file for %s, %s\n', animal, session);
+        else
+            % TODO: change this later
+            out_session_folder = fullfile(out_path, animal, session);
+            if ~exist(out_session_folder, 'dir')
+                mkdir(out_session_folder);
             end
-        end
-        blog_f = fullfile(out_session_folder, [animal, '_', session, '_', 'behaviorLOG.mat']);
-        if ~exist(blog_f, 'file')
-            out = exper_extract_beh_data_bonsai(folder, experf, lvttlf, lvtsf, [animal '_' session]);
-            save(blog_f, '-v7.3', 'out');
+            if ~isempty(fnamesFP{3})
+                for j=3:4
+                    fp_sep = regexp(fnamesFP{j}, filesep, 'split');
+                    if ~exist(fullfile(out_session_folder, fp_sep{end}), 'file')
+                        copyfile(fnamesFP{j}, out_session_folder);
+                    end
+                end
+            end
+            blog_f = fullfile(out_session_folder, [animal, '_', session, '_', 'behaviorLOG.mat']);
+            if ~exist(blog_f, 'file')
+                out = exper_extract_beh_data_bonsai(folder, experf, lvttlf, lvtsf, [animal '_' session]);
+                save(blog_f, '-v7.3', 'out');
+            else
+                fprintf('Skipping %s %s\n', animal, session);
+            end
         end
     else
         out = exper_extract_behavior_data_chris(folder, fnames);
@@ -39,58 +47,62 @@ function [out] = exper_extract_beh_data_bonsai(folder, experf, lvttlf, lvtsf, se
     % digital_LV_on_time and exper_LV_on_time. 
     % fill in automatic filepath filling
     behavior = load(experf);
-    exper = behavior.exper;
-    Analog_LV_fileID = fopen(lvttlf);
-    Analog_LV = fread(Analog_LV_fileID,'double');
-    Analog_LV_timestamp = readmatrix(lvtsf);
-    Analog_LV_timestamp = Analog_LV_timestamp(:,1);
-    
+    exper = behavior.exper;  
     %% Obtain behavior times from exper structure
     trial_event_mat = get_2AFC_ITI_EventTimes(behavior);
     
-    %% Using Analog_LV and Analog_LV_time to align with exper timestamps
-    %% Correct Computer Times (Analog & FP)
-    Analog_LV_time = correct_LV_timestamps(Analog_LV_timestamp);
-    
-    
-    %% Sync trial_event time & FP time
-    % Analog LV
-    %%figure(783);clf
-    LV_threshold=(max(Analog_LV) + min(Analog_LV)) / 2;    % volt (0~5 V)
-    Digital_LV=Analog_LV>LV_threshold;
-    Digital_LV_on_time=Analog_LV_time(find([0;diff(Digital_LV)]>0));
-    Digital_LV_off_time=Analog_LV_time(find([0;diff(Digital_LV)]<0));
-    % sanity check LV duration=24ms
-    % plot(LV_off_time-LV_on_time);shg
+    if ~isempty(lvttlf)
+        Analog_LV_fileID = fopen(lvttlf);
+        Analog_LV = fread(Analog_LV_fileID,'double');
+        Analog_LV_timestamp = readmatrix(lvtsf);
+        Analog_LV_timestamp = Analog_LV_timestamp(:,1);
 
-    % find LV time in exper
-    n_trial_events=length(exper.rpbox.param.trial_events.value);
-    valid_LV_event=find(prod((exper.rpbox.param.trial_events.value(:,3:5)-repmat([17 8 44],n_trial_events,1))==0,2));
-    Von_event=find(prod((exper.rpbox.param.trial_events.value(:,3:5)-repmat([44 8 48],n_trial_events,1))==0,2));
-    LVon_event=valid_LV_event.*NaN;
-    for k=1:length(LVon_event)
-        LVon_event(k)=Von_event(find(Von_event>valid_LV_event(k),1,'first'));
+        %% Using Analog_LV and Analog_LV_time to align with exper timestamps
+        %% Correct Computer Times (Analog & FP)
+        Analog_LV_time = correct_LV_timestamps(Analog_LV_timestamp);
+
+
+        %% Sync trial_event time & FP time
+        % Analog LV
+        %%figure(783);clf
+        LV_threshold=(max(Analog_LV) + min(Analog_LV)) / 2;    % volt (0~5 V)
+        Digital_LV=Analog_LV>LV_threshold;
+        Digital_LV_on_time=Analog_LV_time(find([0;diff(Digital_LV)]>0));
+        Digital_LV_off_time=Analog_LV_time(find([0;diff(Digital_LV)]<0));
+        % sanity check LV duration=24ms
+        % plot(LV_off_time-LV_on_time);shg
+
+        % find LV time in exper
+        n_trial_events=length(exper.rpbox.param.trial_events.value);
+        valid_LV_event=find(prod((exper.rpbox.param.trial_events.value(:,3:5)-repmat([17 8 44],n_trial_events,1))==0,2));
+        Von_event=find(prod((exper.rpbox.param.trial_events.value(:,3:5)-repmat([44 8 48],n_trial_events,1))==0,2));
+        LVon_event=valid_LV_event.*NaN;
+        for k=1:length(LVon_event)
+            LVon_event(k)=Von_event(find(Von_event>valid_LV_event(k),1,'first'));
+        end
+        Expert_LV_on_time=exper.rpbox.param.trial_events.value(LVon_event,2);
+
+
+        % sanity check Expert_LV_on (in ms) is close to LV_on_time (in ms)
+        LV1_on_time=Digital_LV_on_time(1:2:end);
+        if length(LV1_on_time)~=length(Expert_LV_on_time) %need to go back and fix
+            mod_LV1_on_time = LV1_on_time;
+            mod_LV1_on_time = mod_LV1_on_time(length(mod_LV1_on_time)-length(Expert_LV_on_time)+1:end);
+            disp('Extra LV_on_time detected. Assuming these are valve test before the behavior session. Please double check!!!');
+            LV1_on_time = mod_LV1_on_time;
+        end
     end
-    Expert_LV_on_time=exper.rpbox.param.trial_events.value(LVon_event,2);
-
-
-    % sanity check Expert_LV_on (in ms) is close to LV_on_time (in ms)
-    LV1_on_time=Digital_LV_on_time(1:2:end);
-    if length(LV1_on_time)~=length(Expert_LV_on_time) %need to go back and fix
-        mod_LV1_on_time = LV1_on_time;
-        mod_LV1_on_time = mod_LV1_on_time(length(mod_LV1_on_time)-length(Expert_LV_on_time)+1:end);
-        disp('Extra LV_on_time detected. Assuming these are valve test before the behavior session. Please double check!!!');
-        LV1_on_time = mod_LV1_on_time;
-    end
-    
+        
     %interF = griddedInterpolant(LV1_on_time, Expert_LV_on_time, 'linear');
     out.trial_event_mat = trial_event_mat;
     counted_trial=exper.odor_2afc.param.countedtrial.value;
     out.outcome = exper.odor_2afc.param.result.value(1:counted_trial);
     out.port_side = exper.odor_2afc.param.port_side.value(1:counted_trial);
     out.cue_port_side = exper.odor_2afc.param.cue_port_side.value(1:counted_trial);
-    out.exper_LV_time = Expert_LV_on_time;
-    out.digital_LV_time = LV1_on_time; 
+    if ~isempty(lvttlf)
+        out.exper_LV_time = Expert_LV_on_time;
+        out.digital_LV_time = LV1_on_time; 
+    end
     
 end
 

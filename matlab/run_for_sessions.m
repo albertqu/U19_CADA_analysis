@@ -1,10 +1,8 @@
 function [out] = run_for_sessions()
     %folder = '/Volumes/Wilbrecht_file_server/2ABT/ProbSwitch';
     folder = 'Z:\2ABT\ProbSwitch';
-    animals = {'D1-R35_RV', 'D1-R34_RT', 'RRM026'};
-    sessions = {{'p150', 'p151', 'p152', 'p155', 'p156', 'p157', 'p158'},
-        {'p149', 'p150', 'p151', 'p154', 'p155', 'p156', 'p157', 'p158'},
-        {'p202', 'p203'}};
+    animals = {'BSD011', 'BSD013'};
+    sessions = {{'p239'}, {'p240'}};
     for i=1:length(animals)
         for j=1:length(sessions{i})
             animal = char(animals{i});
@@ -47,7 +45,8 @@ function [out] = run_for_sessions_csv()
 %     csvfile = fullfile(folder, 'probswitch_neural_subset_RRM.csv');
     csvfile = fullfile(folder, 'probswitch_neural_subset_BSD.csv');
     expr_tb = readtable(csvfile);
-    targ_etb = expr_tb((expr_tb.recorded==1) & strcmp(expr_tb.epoch, 'Probswitch'), :);
+%     targ_etb = expr_tb((expr_tb.recorded==1) & strcmp(expr_tb.epoch, 'Probswitch'), :);
+    targ_etb = expr_tb(strcmp(expr_tb.epoch, 'Probswitch'), :);
     for i=1:height(targ_etb)
         ani_name = char(targ_etb.animal{i});
         animal = char(targ_etb.animal{i});
@@ -70,10 +69,13 @@ function [out] = run_for_sessions_csv()
         catch
             disp([animal '_' session '_error']);
         end
-        try
-            exper_extract_behavior_data(folder, animal1, session, 'bonsai');
-        catch
-            disp([animal1 '_' session '_error']);
+        if ~contains(animal, 'BSD')
+            fprintf('trying alternative naming for %s %s\n', animal1, session);
+            try
+                exper_extract_behavior_data(folder, animal1, session, 'bonsai');
+            catch
+                disp([animal1 '_' session '_error']);
+            end
         end
     end     
 end

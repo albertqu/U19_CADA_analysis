@@ -99,7 +99,8 @@ def get_animal_session_data():
 
 
 def reorganize_BSD_filenames():
-    root = r"Z:\2ABT\ProbSwitch\BSDML_exper"
+    # root = r"Z:\2ABT\ProbSwitch\BSDML_exper"
+    root = r"Z:\2ABT\ProbSwitch\BSDML_FP\barrier"
     namemap = {"D1-R34_RT": "BSD011",
                "D1-R34_LT":	"BSD012",
                "D1-R35_RV":	"BSD013"}
