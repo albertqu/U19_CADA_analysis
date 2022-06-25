@@ -363,6 +363,7 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
     """
     filename = path_prefix_free(filename)
     # case exper
+
     mBMat = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_(?P<T>\d+)_(?P<DN>[-&\w]+)_("
                       r"?P<A>p\d+)(?P<SP>[-&\w]*)\.mat", filename)
     # case processed behavior
@@ -417,17 +418,16 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
         options = mBIN.groupdict()
         oS = ""
         ftype = "bin_mat"
+
     else:
         #TODO: print("Warning! Certain sessions have inconsistent naming! needs more through check")
         # case csv
         #todo: merge cage id and earpoke
-        """A2A-16B-1_RT_ChR2_switch_no_cue_LH_p147_red_2020-03-17T15_38_40.csv"""
-        channels = ['keystrokes', "MetaData", "NIDAQ_Ai0_timestamp", "red", "green", "FP", 'FPTS']
+        channels = ['keystrokes', "MetaData", "NIDAQ_Ai0_timestamp", "NIDAQ_Ai0_Binary_Matrix",
+                    "red", "green", "FP", 'FPTS']
         for c in channels:
-            mCSV = re.match(
-                r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_(?P<DN>[-&\w]+)_(?P<H>[LR]H)_"
-                r"(?P<A>p\d+)(?P<SP>[-&\w]*)" + f"_{c}" + r"(?P<S>_session\d+_|_?)(?P<T>\d{4}-?\d{2}-?\d{2})T"
-                r"(?P<TD>[_\d]+)\.csv", filename)
+            mCSV = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>\d{2,}[-\w*]*)_(?P<EP>[A-Z]{2})_(?P<DN>[-&\w]+)_(?P<H>([LR]H_)?)(?P<A>p\d+)(?P<SP>[-&\w]*)" +
+                            f"_{c}(?P<BSC>(_(BSC)\d)?)" + r"(?P<S>_session\d+_|_?)(?P<T>\d{4}-?\d{2}-?\d{2})T(?P<TD>[_\d]+)\.[(csv)|\d+]", filename)
 
             if mCSV is not None:
                 options = mCSV.groupdict()
@@ -592,10 +592,8 @@ timestamps: **Drug-ID_Earpoke_DNAME_Hemi_Age_(NIDAQ_Ai0_timestamps)Time[special]
         """A2A-16B-1_RT_ChR2_switch_no_cue_LH_p147_red_2020-03-17T15_38_40.csv"""
         channels = ['keystrokes', "MetaData", "NIDAQ_Ai0_timestamp", "red", "green", "FP", 'FPTS']
         for c in channels:
-            mCSV = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>(\d|\w){3,}[-\w*]*)_(?P<EP>[A-Z]{2})_(?P<DN>[-&\w]+)_(?P<H>([LR]H_)?)"
-                r"(?P<A>p\d+)(?P<SP>[-&\w]*)" + f"_{c}" + r"(?P<S>_session\d+_|_?)(?P<T>\d{4}-?\d{2}-?\d{2})T"
-                r"(?P<TD>[_\d]+)\.csv", filename)
-
+            mCSV = re.match(r"^(?P<GEN>\w{2,3})-(?P<ID>(\d|\w){3,}[-\w*]*)_(?P<EP>[A-Z]{2})_(?P<DN>[-&\w]+)_(?P<H>([LR]H_)?)(?P<A>p\d+)(?P<SP>[-&\w]*)" +
+                            f"_{c}(?P<BSC>(_(BSC)\d)?)" + r"(?P<S>_session\d+_|_?)(?P<T>\d{4}-?\d{2}-?\d{2})T(?P<TD>[_\d]+)\.[(csv)|\d+]", filename)
             if mCSV is not None:
                 options = mCSV.groupdict()
                 ftype = c

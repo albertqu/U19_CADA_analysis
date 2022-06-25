@@ -553,21 +553,27 @@ class PSBehaviorMat(BehaviorMat):
     # event_features = 'reward', 'action',
     # trial_features = 'quality', 'struct_complex', 'explore_complex', 'BLKNo', 'CPort'
     # Always use efficient coding
-    def __init__(self, animal, session, hfile, tau=np.inf, STAGE=1):
+    def __init__(self, animal, session, hfile, tau=np.inf, STAGE=1, modeling_id=None):
         super().__init__(animal, session)
         self.tau = tau
         if isinstance(hfile, str):
             print("For pipeline loaded hdf5 is recommended for performance")
             hfile = h5py.File(hfile, 'r')
+            hfname = hfile
+        else:
+            hfname = hfile.filename
         self.animal = animal
         self.session = session
         self.choice_sides = None
         self.trialN = len(hfile['out/outcome'])
+        self.modeling_id = modeling_id
+        self.folder = os.path.join(os.sep, *hfname.split(os.path.sep)[:-1])  # DEFAULT absolute path
         self.eventlist = self.initialize_PSEnode(hfile, stage=STAGE)
         self.correct_port = self.get_correct_port_side(hfile)
-        self.time_aligner = interpolate.interp1d(np.array(hfile['out/digital_LV_time']).ravel(),
-                                                 np.array(hfile['out/exper_LV_time']).ravel(),
-                                                 fill_value="extrapolate")
+        if 'digital_LV_time' in hfile['out']:
+            self.time_aligner = interpolate.interp1d(np.array(hfile['out/digital_LV_time']).ravel(),
+                                                     np.array(hfile['out/exper_LV_time']).ravel(),
+                                                     fill_value="extrapolate")
 
         switch_inds = np.full(self.trialN, False)
         switch_inds[1:] = self.correct_port[1:] != self.correct_port[:-1]
@@ -581,6 +587,8 @@ class PSBehaviorMat(BehaviorMat):
                 block_number[i] = block_number[i - 1] + 1
         self.block_num = block_number
         self.t_in_block = t_in_block
+        self.prebswitch_num = self.get_prebswitch_num(switch_inds)
+
 
     def __str__(self):
         return f"BehaviorMat({self.animal}_{self.session}, tau={self.tau})"
@@ -591,6 +599,46 @@ class PSBehaviorMat(BehaviorMat):
         res = np.full(len(portside), 'right')
         res[portside == 2] = 'left'
         return res
+
+    def get_prebswitch_num(self, switch_inds):
+        prebswitch_num = np.full(len(switch_inds), np.nan)
+        prebswitch_num[switch_inds] = 0
+        switch_on = False
+        for i in range(1, len(switch_inds)):
+            j = len(switch_inds) - 1 - i
+            if prebswitch_num[j] != 0:
+                if ~np.isnan(prebswitch_num[j + 1]):
+                    prebswitch_num[j] = prebswitch_num[j + 1] - 1
+        return prebswitch_num
+
+    def get_modeling_pdf(self):
+        # model_file = encode_to_filename(folder, animal, session, ['modeling'])
+        animal, session, modeling_id = self.animal, self.session, self.modeling_id
+        model_file = os.path.join(self.folder, f'{animal}_{session}_modeling_{modeling_id}.hdf5')
+        # BRL_latents_rpe = model_file['BRL']['latent']
+        hfile = h5py.File(model_file, 'r')
+        all_data = []
+        all_data_names = []
+        for mdl in hfile:
+            dataset = hfile[mdl]
+            for latent in dataset:
+                data = np.array(dataset[latent])
+                if mdl == 'RAW':
+                    data = data.T
+                    data_name = ['RAW_'+latent]
+                elif len(data.shape) == 3:
+                    orig_shape = data.shape[:2]
+                    data = np.reshape(data, (-1, data.shape[-1]), order='C')
+                    data_name = [f'{mdl}_{latent}{i}{j}' for i in range(1, orig_shape[0]+1) for j in range(1, orig_shape[1]+1)]
+                elif data.shape[0] > 1:
+                    data_name = [f"{mdl}_{latent}{i}" for i in range(1, data.shape[0]+1)]
+                else:
+                    data_name = [f"{mdl}_{latent}"]
+                data = data.T
+                all_data.append(data)
+                all_data_names.append(data_name)
+        modeling_pdf = pd.DataFrame(np.hstack(all_data), columns=np.concatenate(all_data_names))
+        return modeling_pdf
 
     def initialize_PSEnode(self, hfile, stage=1):
         code_map = self.code_map
@@ -714,6 +762,7 @@ class PSBehaviorMat(BehaviorMat):
         result_df['action'] = pd.Categorical([""] * self.trialN, ['left', 'right'], ordered=False)
         result_df['rewarded'] = np.zeros(self.trialN, dtype=bool)
         result_df['trial_in_block'] = self.t_in_block
+        result_df['prebswitch_num'] = self.prebswitch_num
         result_df['block_num'] = self.block_num
         result_df['state'] = pd.Categorical(self.correct_port, ordered=False)
         result_df['quality'] = pd.Categorical(["normal"] * self.trialN, ['missed', 'abort', 'normal'],
@@ -753,6 +802,12 @@ class PSBehaviorMat(BehaviorMat):
 
         result_df['struct_complex'] = struct_complexity
         result_df['explore_complex'] = result_df['first_side_out'].values != result_df['last_side_out'].values
+        if self.modeling_id:
+            mdf = self.get_modeling_pdf()
+            action_sel = ~result_df.action.isnull()
+            assert np.sum(action_sel) == len(mdf), f'modeling dimension mismatch for {self.animal}, {self.session}'
+            result_df.loc[action_sel, list(mdf.columns)] = mdf.values
+
         return result_df
 
 

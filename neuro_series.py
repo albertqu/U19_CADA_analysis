@@ -264,6 +264,8 @@ class BonsaiPS1Hemi2Ch(BonsaiFP3001):
               'ignore_channels': []}
 
     def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0'):
+        if pd.isnull(trig_mode):
+            trig_mode = 'BSC1'
         super().__init__(data_file, ts_file, trig_mode, animal, session)
 
 
