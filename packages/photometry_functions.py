@@ -15,14 +15,17 @@ import numpy as np
 from sklearn.linear_model import Lasso
 import itertools
 import pandas as pd
+import scipy
 
 from sklearn.model_selection import train_test_split
 from utils_models import ksplit_X_y, simple_metric, fp_corrected_metric
 from functools import partial
 
+from utils_signal import robust_filter
+
 
 def jove_fit_reference(reference, signal, smooth_win=10, remove=200,
-                       use_raw=True, lambd=5e4, porder=1, itermax=50):
+                       use_raw=True, lambd=5e4, porder=1, itermax=50, robust_base=False):
     '''
     Calculates z-score dF/F signal based on fiber photometry calcium-independent
     and calcium-dependent signals
@@ -49,8 +52,12 @@ def jove_fit_reference(reference, signal, smooth_win=10, remove=200,
     smoothened_reference = smooth_signal(reference, smooth_win)
     smoothened_signal = smooth_signal(signal, smooth_win)
     # Find the baseline
-    r_base=airPLS(smoothened_reference.T,lambda_=lambd,porder=porder,itermax=itermax)
-    s_base=airPLS(smoothened_signal,lambda_=lambd,porder=porder,itermax=itermax)
+    if robust_base:
+        r_base = scipy.ndimage.percentile_filter(smoothened_reference, 50, size=400)
+        s_base = robust_filter(smoothened_signal, window=200, buffer=False, method=12)[:, 0]
+    else:
+        r_base=airPLS(smoothened_reference.T,lambda_=lambd,porder=porder,itermax=itermax)
+        s_base=airPLS(smoothened_signal,lambda_=lambd,porder=porder,itermax=itermax)
     # Remove the baseline and the beginning of the recordings
     if use_raw:
         reference = (raw_reference[remove:] - r_base[remove:])
@@ -120,6 +127,7 @@ def jove_preprocess(reference, signal, smooth_win=10, remove=200,
 
 def jove_find_best_param(reference, signal, smooth_win=10, remove=200,
                   use_raw=True, itermax=50, k_split=5):
+    ## TODO: deprecated could lead to non-smooth filtering
     # Integrate vflow for future
     param_grid = {'lambd': [5e1, 5e2, 5e3, 5e4, 5e5], 'porder': [1, 2]}
     params = list(param_grid.keys())
@@ -137,7 +145,7 @@ def jove_find_best_param(reference, signal, smooth_win=10, remove=200,
         results = []
         for k_X, k_y in ksplit_X_y(X, y, k_split):
             k_X_train, k_X_test, k_y_train, k_y_test = train_test_split(k_X, k_y, test_size=0.3, shuffle=False)
-            lin = Lasso(alpha=0.0001,precompute=True,max_iter=1000,
+            lin = Lasso(alpha=0.0001, precompute=True, max_iter=1000,
                         positive=True, random_state=9999, selection='random')
             lin.fit(k_X_train, k_y_train)
             k_y_pred = lin.predict(k_X_test).ravel()

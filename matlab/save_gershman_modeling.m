@@ -24,5 +24,5 @@ function save_gershman_modeling(folder, catalog, outpath)
     toc
     
     % Step 3: split modeling results to animal/session folders (save_modeling_vals)
-    melt_modeling_out(outpath, results, data, catalog, timestamp);
+    melt_modeling_out(outpath, results, data, catalog, timestamp, 1);
 end
