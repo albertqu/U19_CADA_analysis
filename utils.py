@@ -1102,11 +1102,110 @@ def raw_signal_visualize(FP_415_time, FP_415_signal, FP_470_time, FP_470_signal)
     axes[1].set_ylabel('Fluorescence (demeaned)')
 
 
-def FP_viz_whole_session(raw_reference, raw_signal, ftime, interval=600, drop_frame=200,
-                         time_unit='s', sig_channel='470nm', control_channel='415nm',
-                         roi='470nm', tag='', viz=True):
+def FP_quality_visualization(raw_reference, raw_signal, ftime, initial_time=300, drop_frame=200,
+                             time_unit='s', sig_channel='470nm', control_channel='415nm',
+                             roi='470nm', roc_method='QDA', tag='', viz=True):
     # Assuming signal has already been properly dropped
     ## TODO: check edge case when there is linalg error leading to auc-roc method error
+
+    ch, control_ch = sig_channel, control_channel
+    roi_string = roi.replace(ch, '')
+    if roi_string:
+        roi_string = roi_string + '_'
+    else:
+        roi_string = 'ROI_'
+    roi_title = roi_string.replace('_', ' ')
+
+    # result_df, pgrid = jove_find_best_param(raw_reference, raw_signal, smooth_win=int(fr), use_raw=False, remove=0)
+    # z_reference, z_signal, z_reference_fitted = jove_fit_reference(raw_reference, raw_signal, smooth_win=int(fr),
+    #                                                                use_raw=False, remove=0, **pgrid)
+    z_reference, z_signal, z_reference_fitted = jove_fit_reference(raw_reference, raw_signal,
+                                                                   use_raw=False, remove=0)
+    sig_dict = {'reference': z_reference, 'signal': z_signal, 'fitted_ref': z_reference_fitted}
+    # selector = z_signal >= (np.median(z_signal) + np.std(z_signal))
+    selector = np.abs(z_signal - np.median(z_signal)) >= np.std(z_signal)
+    auc_score = auc_roc_2dist(z_reference_fitted[selector], z_signal[selector], roc_method)
+    # if not viz:
+    #     return None, auc_score, sig_dict
+    # selector = np.full(len(z_signal), 1, dtype=bool)
+    print(f'Selected {100 * np.sum(selector) / len(selector):.4f}% data')
+    # Plot two channels against each other
+    fig = None
+    if viz:
+        fig = plt.figure(figsize=(20, 9))
+        gs = GridSpec(nrows=4, ncols=3)
+        ax0 = fig.add_subplot(gs[0, :])
+        min_time = np.min(ftime)
+        segment_sel = ftime <= (min_time + initial_time)
+
+        segment_time = ftime[segment_sel][drop_frame:] - min_time
+        normalize = lambda xs: (xs - np.mean(xs)) / np.std(xs)
+        sig_segment = normalize(raw_signal[segment_sel][drop_frame:])
+        ref_segment = normalize(raw_reference[segment_sel][drop_frame:])
+        ax0.plot(segment_time, sig_segment, label=ch)
+        ax0.plot(segment_time, ref_segment, label=control_ch)
+        ax0.set_ylabel(f'{roi_string}Z(RawF)')
+        ax0.set_title(f'{roi_title.title()}Raw {ch} Contrasted With Control (First {initial_time / 60:.2f} Min)')
+        ax0.legend()
+
+        ax01 = fig.add_subplot(gs[1, :])
+        max_time = np.max(ftime)
+        segment_sel1 = ftime >= (max_time - initial_time)
+        segment_time1 = ftime[segment_sel1] - min_time
+        sig_segment1 = normalize(raw_signal[segment_sel1])
+        ref_segment1 = normalize(raw_reference[segment_sel1])
+        ax01.plot(segment_time1, sig_segment1, label=ch)
+        ax01.plot(segment_time1, ref_segment1, label=control_ch)
+        ax01.set_ylabel(f'{roi_string}Z(RawF)')
+        ax01.set_title(f'{roi_title.title()}Raw {ch} Contrasted With Control (Last {initial_time / 60:.2f} Min)')
+        ax01.legend()
+
+        ax1 = fig.add_subplot(gs[2, :])
+        ax1.plot(segment_time, z_signal[segment_sel][drop_frame:], label=f"Z({ch})")
+        # ax1.plot(segment_time, z_reference[segment_sel][drop_frame:], label=control_ch)
+        ax1.plot(segment_time, z_reference_fitted[segment_sel][drop_frame:], label='~' + control_ch)
+        ax1.set_ylabel(f'{roi_string}Z(F)')
+        ax1.set_xlabel(f'Rel. Time ({time_unit})')
+        ax1.set_title(f'{roi_title.title()}Z {ch} Contrasted With Control (First {initial_time / 60:.2f} Min)')
+        ax1.legend()
+
+        # Plot scatter plot visualization of two channels
+        ax2 = fig.add_subplot(gs[3, 0])
+        ax2.plot(z_reference[selector], z_signal[selector], 'b.')
+        ax2.plot(z_reference, z_reference_fitted, 'r--', linewidth=1.5)
+        ax2.set_xlabel(f'{control_ch} values')
+        ax2.set_ylabel(f'{ch} values')
+        ax3 = fig.add_subplot(gs[3, 1])
+
+        sns.histplot(z_reference_fitted[selector], label=control_ch, kde=False, ax=ax3, color='b')
+        # sns.histplot(z_reference_fitted[selector], label=control_ch, kde=True, ax=ax1, color='b')
+        sns.histplot(z_signal[selector], label=ch, kde=False, ax=ax3, color='r')
+        ax3.legend()
+        sns.despine()
+
+        ax4 = fig.add_subplot(gs[3, 2])
+        sns.histplot(z_signal[selector] - z_reference_fitted[selector], kde=True, ax=ax4)
+        ax4.legend(['diff(470, ~415)'])
+        sns.despine()
+        if tag:
+            tag = tag + ' '
+        plt.subplots_adjust(hspace=0.4)
+        fig.suptitle(f'{tag}{ch} {roi_title}auc-roc score ({roc_method}): {auc_score:.4f}', fontsize='xx-large')
+
+    return fig, auc_score, sig_dict
+
+
+def FP_viz_whole_session(raw_reference, raw_signal, ftime, interval=600, drop_frame=200,
+                         time_unit='s', sig_channel='470nm', control_channel='415nm',
+                         roi='470nm', tag=''):
+    # Assuming signal has already been properly dropped
+    ## TODO: check edge case when there is linalg error leading to auc-roc method error
+    smooth_win, lambd, porder, itermax = 10, 5e4, 1, 50
+    smoothened_reference = smooth_signal(raw_reference, smooth_win)
+    smoothened_signal = smooth_signal(raw_signal, smooth_win)
+    # Find the baseline
+    r_base = airPLS(smoothened_reference.T, lambda_=lambd, porder=porder, itermax=itermax)
+    s_base = airPLS(smoothened_signal.T, lambda_=lambd, porder=porder, itermax=itermax)
 
     ch, control_ch = sig_channel, control_channel
     roi_string = roi.replace(ch, '')
@@ -1122,7 +1221,8 @@ def FP_viz_whole_session(raw_reference, raw_signal, ftime, interval=600, drop_fr
     min_time, max_time = np.min(ftime), np.max(ftime)
     nseq = int(np.ceil((max_time - min_time) / interval))
     nrow = int(np.ceil(nseq / 3))
-    fig, axes = plt.subplots(nrows=nrow, ncols=3, figsize=(21, nrow))
+    all_lw, ref_off = 0.8, 2.5
+    fig, axes = plt.subplots(nrows=nrow, ncols=3, figsize=(21, 2 * nrow))
 
     for i in range(nseq):
         start = min_time + i * interval
@@ -1130,20 +1230,25 @@ def FP_viz_whole_session(raw_reference, raw_signal, ftime, interval=600, drop_fr
         segment_sel = (ftime <= end) & (ftime >= start)
         segment_time = ftime[segment_sel][drop_frame:] - min_time
         normalize = lambda xs: (xs - np.mean(xs)) / np.std(xs)
-        sig_segment = normalize(raw_signal[segment_sel][drop_frame:])
-        ref_segment = normalize(raw_reference[segment_sel][drop_frame:])
-        smooth_win, lambd, porder, itermax = 10, 5e4, 1, 50
-        smoothened_reference = smooth_signal(ref_segment, smooth_win)
-        smoothened_signal = smooth_signal(sig_segment, smooth_win)
-        # Find the baseline
-        r_base = airPLS(smoothened_reference.T, lambda_=lambd, porder=porder, itermax=itermax)
-        s_base = airPLS(smoothened_reference.T, lambda_=lambd, porder=porder, itermax=itermax)
-        axes.ravel()[i].plot(segment_time, sig_segment, label=ch, color=palettes['sig'][0])
-        axes.ravel()[i].plot(segment_time, ref_segment, label=control_ch, color=palettes['ref'][0])
-        axes.ravel()[i].plot(segment_time, s_base, label=ch, color=palettes['sig'][1])
-        axes.ravel()[i].plot(segment_time, r_base, label=control_ch, color=palettes['ref'][1])
+        normalize_wms = lambda xs, m, s: (xs - m) / s
+        # sig_segment = normalize(raw_signal[segment_sel][drop_frame:])
+        sig_segment = raw_signal[segment_sel][drop_frame:]
+        ssm, sss = np.mean(sig_segment), np.std(sig_segment)
+        sig_segment = (sig_segment - ssm) / sss
+        ref_segment = raw_reference[segment_sel][drop_frame:]
+        rsm, rss = np.mean(ref_segment), np.std(ref_segment)
+        ref_segment = (ref_segment - rsm) / rss
+        sb_segment = (s_base[segment_sel][drop_frame:] - ssm) / sss
+        rb_segment = (r_base[segment_sel][drop_frame:] - rsm) / rss
+
+        axes.ravel()[i].plot(segment_time, sig_segment, label=ch, lw=all_lw, color=palettes['sig'][0])
+        axes.ravel()[i].plot(segment_time, ref_segment - ref_off, label=control_ch, lw=all_lw, color=palettes['ref'][0])
+        axes.ravel()[i].plot(segment_time, sb_segment, label=ch + '_trend', lw=all_lw, color=palettes['sig'][1])
+        axes.ravel()[i].plot(segment_time, rb_segment - ref_off, label=control_ch + '_trend', lw=all_lw,
+                             color=palettes['ref'][1])
         axes.ravel()[i].set_ylabel(f'{roi_string}Z(RawF)')
         axes.ravel()[i].set_xlabel(f'Rel. Time ({time_unit})')
+        axes.ravel()[i].set_xlim([start - min_time - 0.05 * interval, end - min_time + 0.05 * interval])
         pend = 'th'
         if i == 0:
             pend = 'st'
@@ -1151,75 +1256,15 @@ def FP_viz_whole_session(raw_reference, raw_signal, ftime, interval=600, drop_fr
             pend = 'nd'
         axes.ravel()[i].set_title(
             f'{roi_title.title()}Raw {ch} Contrasted With Control ({i + 1}{pend} {interval / 60:.2f} Min)')
-        axes.ravel()[i].legend()
-
-    sns.despine()
-
-    if tag:
-        tag = tag + ' '
-    plt.subplots_adjust(hspace=0.3)
-    fig.suptitle(f'{tag}{ch} {roi_title} raw signal visualization', fontsize='xx-large')
-
-    return fig
-
-
-def FP_viz_whole_session(raw_reference, raw_signal, ftime, interval=600, drop_frame=200,
-                         time_unit='s', sig_channel='470nm', control_channel='415nm',
-                         roi='470nm', tag='', viz=True):
-    # Assuming signal has already been properly dropped
-    ## TODO: check edge case when there is linalg error leading to auc-roc method error
-
-    ch, control_ch = sig_channel, control_channel
-    roi_string = roi.replace(ch, '')
-    if roi_string:
-        roi_string = roi_string + '_'
-    else:
-        roi_string = 'ROI_'
-    roi_title = roi_string.replace('_', ' ')
-
-    palettes = {'sig': sns.color_palette('icefire')[:2],
-                'ref': sns.color_palette('icefire')[-2][::-1]}
-
-    min_time, max_time = np.min(ftime), np.max(ftime)
-    nseq = int(np.ceil((max_time - min_time) / interval))
-    nrow = int(np.ceil(nseq / 3))
-    fig, axes = plt.subplots(nrows=nrow, ncols=3, figsize=(21, nrow))
-    
-    for i in range(nseq):
-        start = min_time + i * interval
-        end = min_time + (i+1) * interval
-        segment_sel = (ftime <= end) & (ftime >=start)
-        segment_time = ftime[segment_sel][drop_frame:] - min_time
-        normalize = lambda xs: (xs - np.mean(xs)) / np.std(xs)
-        sig_segment = normalize(raw_signal[segment_sel][drop_frame:])
-        ref_segment = normalize(raw_reference[segment_sel][drop_frame:])
-        smooth_win, lambd, porder, itermax=10, 5e4, 1, 50
-        smoothened_reference = smooth_signal(ref_segment, smooth_win)
-        smoothened_signal = smooth_signal(sig_segment, smooth_win)
-        # Find the baseline
-        r_base = airPLS(smoothened_reference.T, lambda_=lambd, porder=porder, itermax=itermax)
-        s_base = airPLS(smoothened_reference.T, lambda_=lambd, porder=porder, itermax=itermax)
-        axes.ravel()[i].plot(segment_time, sig_segment, label=ch, color=palettes['sig'][0])
-        axes.ravel()[i].plot(segment_time, ref_segment, label=control_ch, color=palettes['ref'][0])
-        axes.ravel()[i].plot(segment_time, s_base, label=ch, color=palettes['sig'][1])
-        axes.ravel()[i].plot(segment_time, r_base, label=control_ch, color=palettes['ref'][1])
-        axes.ravel()[i].set_ylabel(f'{roi_string}Z(RawF)')
-        axes.ravel()[i].set_xlabel(f'Rel. Time ({time_unit})')
-        pend = 'th'
         if i == 0:
-            pend = 'st'
-        elif i == 1:
-            pend = 'nd'
-        axes.ravel()[i].set_title(f'{roi_title.title()}Raw {ch} Contrasted With Control ({i+1}{pend} {interval / 60:.2f} Min)')
-        axes.ravel()[i].legend()
+            axes.ravel()[i].legend()
 
     sns.despine()
 
     if tag:
         tag = tag + ' '
-    plt.subplots_adjust(hspace=0.3)
+    plt.subplots_adjust(hspace=0.7)
     fig.suptitle(f'{tag}{ch} {roi_title} raw signal visualization', fontsize='xx-large')
-
     return fig
 
 

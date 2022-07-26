@@ -417,7 +417,7 @@ class NBExperiment:
                 logging.info(f'skipping {animal} {session}')
             else:
                 try:
-                    bdf, dff_df = bmat.todf(), neuro_series.calculate_dff(method='dZF_jove')
+                    bdf, dff_df = bmat.todf(), neuro_series.calculate_dff(method='ZdF_jove')
                     nb_df = self.nbm.align_B2N_dff_ID(bdf, dff_df, events, form='wide')
                     nb_df = self.nbm.extend_features(nb_df)
                     sig_scores = neuro_series.diagnose_multi_channels(viz=False)
