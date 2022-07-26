@@ -1161,6 +1161,53 @@ def FP_quality_visualization(raw_reference, raw_signal, ftime, initial_time=300,
     return fig, auc_score, sig_dict
 
 
+def FP_viz_whole_session(raw_reference, raw_signal, ftime, interval=600, drop_frame=200,
+                         time_unit='s', sig_channel='470nm', control_channel='415nm',
+                         roi='470nm', tag='', viz=True):
+    # Assuming signal has already been properly dropped
+    ## TODO: check edge case when there is linalg error leading to auc-roc method error
+
+    ch, control_ch = sig_channel, control_channel
+    roi_string = roi.replace(ch, '')
+    if roi_string:
+        roi_string = roi_string + '_'
+    else:
+        roi_string = 'ROI_'
+    roi_title = roi_string.replace('_', ' ')
+
+    palettes = {ch: sns.color_palette('icefire')[:2],
+                control_ch: sns.color_palette('icefire')[-2][::-1]}
+
+
+
+
+    min_time, max_time = np.min(ftime), np.max(ftime)
+    nseq = int(np.ceil((max_time - min_time) / interval))
+    nrow = int(np.ceil(nseq / 3))
+    fig, axes = plt.subplots(nrows=nrow, ncols=3, figsize=(21, nrow))
+    
+    for i in range(nseq):
+        start = min_time + i * interval
+        end = min_time + (i+1) * interval
+        segment_sel = (ftime <= end) & (ftime >=start)
+        segment_time = ftime[segment_sel][drop_frame:] - min_time
+        normalize = lambda xs: (xs - np.mean(xs)) / np.std(xs)
+        sig_segment = normalize(raw_signal[segment_sel][drop_frame:])
+        ref_segment = normalize(raw_reference[segment_sel][drop_frame:])
+        axes.ravel()[i].plot(segment_time, sig_segment, label=ch)
+        axes.ravel()[i].plot(segment_time, ref_segment, label=control_ch)
+        axes.ravel()[i].set_ylabel(f'{roi_string}Z(RawF)')
+        axes.ravel()[i].set_title(f'{roi_title.title()}Raw {ch} Contrasted With Control (First {interval / 60:.2f} Min)')
+        axes.ravel()[i].legend()
+
+    sns.despine()
+
+    if tag:
+        tag = tag + ' '
+    plt.subplots_adjust(hspace=0.3)
+    fig.suptitle(f'{tag}{ch} {roi_title} raw signal visualization', fontsize='xx-large')
+
+    return fig
 
 
 #############################################################
