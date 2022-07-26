@@ -187,6 +187,8 @@ class FPSeries:
                     fig.savefig(oj(animal_folder,
                                    f'{animal}_{session}_{roi}_quality_{self.quality_metric}.png'))
                     fig2.savefig(oj(animal_folder, f'{animal}_{session}_{roi}_raw_whole_session.png'))
+                    plt.close(fig)
+                    plt.close(fig2)
                 sig_scores[roi] = sig_score
         return sig_scores
 
