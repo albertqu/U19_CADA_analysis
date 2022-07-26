@@ -98,3 +98,6 @@ model = linear_model.OLS(y, X).fit()
 from sklearn.preprocessing import PolynomialFeatures
 #generating interaction terms
 x_interaction = PolynomialFeatures(2, interaction_only=True, include_bias=False).fit_transform(X)
+
+
+
