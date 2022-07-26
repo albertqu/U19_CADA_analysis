@@ -186,7 +186,7 @@ class FPSeries:
                         os.makedirs(animal_folder)
                     fig.savefig(oj(animal_folder,
                                    f'{animal}_{session}_{roi}_quality_{self.quality_metric}.png'))
-                    fig2.savefig(oj(animal_folder, f'raw_whole_session_{animal}_{session}_{roi}.png'))
+                    fig2.savefig(oj(animal_folder, f'{animal}_{session}_{roi}_raw_whole_session.png'))
                 sig_scores[roi] = sig_score
         return sig_scores
 
