@@ -1133,7 +1133,7 @@ def FP_quality_visualization(raw_reference, raw_signal, ftime, initial_time=300,
     fig = None
     if viz:
         fig = plt.figure(figsize=(20, 9))
-        gs = GridSpec(nrows=3, ncols=3)
+        gs = GridSpec(nrows=4, ncols=3)
         ax0 = fig.add_subplot(gs[0, :])
         min_time = np.min(ftime)
         segment_sel = ftime <= (min_time + initial_time)
@@ -1148,7 +1148,19 @@ def FP_quality_visualization(raw_reference, raw_signal, ftime, initial_time=300,
         ax0.set_title(f'{roi_title.title()}Raw {ch} Contrasted With Control (First {initial_time / 60:.2f} Min)')
         ax0.legend()
 
-        ax1 = fig.add_subplot(gs[1, :])
+        ax01 = fig.add_subplot(gs[1, :])
+        max_time = np.max(ftime)
+        segment_sel1 = ftime >= (max_time - initial_time)
+        segment_time1 = ftime[segment_sel1] - min_time
+        sig_segment1 = normalize(raw_signal[segment_sel1])
+        ref_segment1 = normalize(raw_reference[segment_sel1])
+        ax01.plot(segment_time1, sig_segment1, label=ch)
+        ax01.plot(segment_time1, ref_segment1, label=control_ch)
+        ax01.set_ylabel(f'{roi_string}Z(RawF)')
+        ax01.set_title(f'{roi_title.title()}Raw {ch} Contrasted With Control (Last {initial_time / 60:.2f} Min)')
+        ax01.legend()
+
+        ax1 = fig.add_subplot(gs[2, :])
         ax1.plot(segment_time, z_signal[segment_sel][drop_frame:], label=f"Z({ch})")
         # ax1.plot(segment_time, z_reference[segment_sel][drop_frame:], label=control_ch)
         ax1.plot(segment_time, z_reference_fitted[segment_sel][drop_frame:], label='~' + control_ch)
@@ -1158,12 +1170,12 @@ def FP_quality_visualization(raw_reference, raw_signal, ftime, initial_time=300,
         ax1.legend()
 
         # Plot scatter plot visualization of two channels
-        ax2 = fig.add_subplot(gs[2, 0])
+        ax2 = fig.add_subplot(gs[3, 0])
         ax2.plot(z_reference[selector], z_signal[selector], 'b.')
         ax2.plot(z_reference, z_reference_fitted, 'r--', linewidth=1.5)
         ax2.set_xlabel(f'{control_ch} values')
         ax2.set_ylabel(f'{ch} values')
-        ax3 = fig.add_subplot(gs[2, 1])
+        ax3 = fig.add_subplot(gs[3, 1])
 
         sns.histplot(z_reference_fitted[selector], label=control_ch, kde=False, ax=ax3, color='b')
         # sns.histplot(z_reference_fitted[selector], label=control_ch, kde=True, ax=ax1, color='b')
@@ -1171,13 +1183,13 @@ def FP_quality_visualization(raw_reference, raw_signal, ftime, initial_time=300,
         ax3.legend()
         sns.despine()
 
-        ax4 = fig.add_subplot(gs[2, 2])
+        ax4 = fig.add_subplot(gs[3, 2])
         sns.histplot(z_signal[selector] - z_reference_fitted[selector], kde=True, ax=ax4)
         ax4.legend(['diff(470, ~415)'])
         sns.despine()
         if tag:
             tag = tag + ' '
-        plt.subplots_adjust(hspace=0.3)
+        plt.subplots_adjust(hspace=0.4)
         fig.suptitle(f'{tag}{ch} {roi_title}auc-roc score ({roc_method}): {auc_score:.4f}', fontsize='xx-large')
 
     return fig, auc_score, sig_dict
@@ -1185,7 +1197,7 @@ def FP_quality_visualization(raw_reference, raw_signal, ftime, initial_time=300,
 
 def FP_viz_whole_session(raw_reference, raw_signal, ftime, interval=600, drop_frame=200,
                          time_unit='s', sig_channel='470nm', control_channel='415nm',
-                         roi='470nm', tag='', viz=True):
+                         roi='470nm', tag=''):
     # Assuming signal has already been properly dropped
     ## TODO: check edge case when there is linalg error leading to auc-roc method error
     smooth_win, lambd, porder, itermax = 10, 5e4, 1, 50

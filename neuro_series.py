@@ -67,6 +67,10 @@ class FPSeries:
                 if method == 'dZF_jove':
                     assert zscore, 'isosbestic jove is always zscored'
                     dff = get_zdFF(iso_sig, rec_sig, remove=0)
+                elif method == 'ZdF_jove':
+                    assert zscore, 'isosbestic jove is always zscored'
+                    dff = get_zdFF(iso_sig, rec_sig, remove=0)
+                    dff = (dff - np.median(dff)) / np.std(dff)
                 elif method == 'dZF_jove_raw':
                     assert zscore, 'isosbestic jove is always zscored'
                     dff = get_zdFF(iso_sig, rec_sig, remove=0, use_raw=True)
@@ -172,6 +176,9 @@ class FPSeries:
                                                              time_unit=self.params['time_unit'],
                                                              sig_channel=ch, control_channel=control_ch,
                                                              roi=roi, tag=fig_tag, viz=viz)
+                fig2 = FP_viz_whole_session(raw_reference, raw_signal, time_axis, interval=600, drop_frame=200,
+                                            time_unit=self.params['time_unit'], sig_channel=ch, control_channel=control_ch,
+                                            roi=roi, tag=fig_tag)
                 if fig is not None and plot_path is not None:
                     animal_folder = oj(plot_path, self.animal)
                     animal, session = self.animal, self.session
@@ -179,6 +186,7 @@ class FPSeries:
                         os.makedirs(animal_folder)
                     fig.savefig(oj(animal_folder,
                                    f'{animal}_{session}_{roi}_quality_{self.quality_metric}.png'))
+                    fig2.savefig(oj(animal_folder, f'raw_whole_session_{animal}_{session}_{roi}.png'))
                 sig_scores[roi] = sig_score
         return sig_scores
 
