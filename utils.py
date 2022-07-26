@@ -777,6 +777,28 @@ def denoise_quasi_uniform(sig, times, method='wiener'):
         raise NotImplementedError(f'Unknown method {method}')
 
 
+def robust_filter(ys, method=12, window=200, optimize_window=2, buffer=False):
+    """
+    First 2 * windows re-estimate with mode filter
+    To avoid edge effects as beginning, it uses mode filter; better solution: specify initial conditions
+    Return:
+        dff: np.ndarray (T, 2)
+            col0: dff
+            col1: boundary scale for noise level
+    """
+    if method < 10:
+        mf, mDC = median_filter(window, method)
+    else:
+        mf, mDC = std_filter(window, method%10, buffer=buffer)
+    opt_w = int(np.rint(optimize_window * window))
+    # prepend
+    init_win_ys = ys[:opt_w]
+    prepend_ys = init_win_ys[opt_w-1:0:-1]
+    ys_pp = np.concatenate([prepend_ys, ys])
+    f0 = np.array([(mf(ys_pp, i), mDC.get_dev()) for i in range(len(ys_pp))])[opt_w-1:]
+    return f0
+
+
 def f0_filter_sig(xs, ys, method=12, window=200, optimize_window=2, edge_method='prepend', buffer=False,
                   **kwargs):
     """
