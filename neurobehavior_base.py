@@ -467,6 +467,9 @@ class NBExperiment:
         for animal, session in self.meta.loc[meta_sel & proj_sel, ['animal', 'session']].values:
             try:
                 bmat, _ = self.load_animal_session(animal, session)
+                if self.modeling_id and (bmat.modeling_id is None):
+                   print(f'Skipping {animal} {session} lacking model#{self.modeling_id}')
+                   continue
             except Exception:
                 logging.warning(f'Error in {animal} {session}')
                 bmat, ps_series = None, None

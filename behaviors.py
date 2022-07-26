@@ -1,4 +1,5 @@
 # System
+import os.path
 from abc import abstractmethod
 
 # Data
@@ -568,6 +569,10 @@ class PSBehaviorMat(BehaviorMat):
         self.trialN = len(hfile['out/outcome'])
         self.modeling_id = modeling_id
         self.folder = os.path.join(os.sep, *hfname.split(os.path.sep)[:-1])  # DEFAULT absolute path
+        animal, session, modeling_id = self.animal, self.session, self.modeling_id
+        model_file = os.path.join(self.folder, f'{animal}_{session}_modeling_{modeling_id}.hdf5')
+        if not os.path.exists(model_file):
+            self.modeling_id = None
         self.eventlist = self.initialize_PSEnode(hfile, stage=STAGE)
         self.correct_port = self.get_correct_port_side(hfile)
         if 'digital_LV_time' in hfile['out']:
@@ -588,7 +593,6 @@ class PSBehaviorMat(BehaviorMat):
         self.block_num = block_number
         self.t_in_block = t_in_block
         self.prebswitch_num = self.get_prebswitch_num(switch_inds)
-
 
     def __str__(self):
         return f"BehaviorMat({self.animal}_{self.session}, tau={self.tau})"
