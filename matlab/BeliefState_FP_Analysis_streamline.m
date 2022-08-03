@@ -1,4 +1,3 @@
-%%% Analyze RR Photometry Data
 clear global
 warning('off','MATLAB:unknownElementsNowStruc');
 warning('off','MATLAB:timer:incompatibleTimerLoad');

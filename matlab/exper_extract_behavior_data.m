@@ -36,7 +36,45 @@ function [out] = exper_extract_behavior_data(folder, animal, session, mode)
             end
         end
     else
-        out = exper_extract_behavior_data_chris(folder, fnames);
+        % extract behavior mat
+        data_path = fullfile(folder, 'Chris_Raw');
+        out_path = fullfile(folder, 'Chris_processed');
+        fnamesFP = get_session_files(data_path, animal, session,  {'green', 'red', 'Binary_Matrix', 'timestamp', 'MetaData'}, 'animal');
+        fnamesEXP = get_session_files(data_path, animal, session, {'exper'}, 'animal');
+        experf = char(fnamesEXP{1});
+        lvttlf = char(fnamesFP{3});
+        lvtsf = char(fnamesFP{4});
+        
+        % TODO: change this later
+        out_session_folder = fullfile(out_path, animal, session);
+        if ~exist(out_session_folder, 'dir')
+            mkdir(out_session_folder);
+        end
+        if ~isempty(fnamesFP{1})
+            % handle FP data
+            green = fnamesFP{1};
+            red = fnamesFP{2};
+            meta = fnamesFP{5};
+            green_splits = split(green, filesep);
+            green_name = replace(green_splits{end}, 'green', 'greenC');
+            red_splits = split(red, filesep);
+            red_name = replace(red_splits{end}, 'red', 'redC');
+            green_f = fullfile(out_session_folder, green_name);
+            if ~exist(green_f, 'file')
+                [green_data, red_data] = revamp_chris_FP_data(green, red, meta);
+                writetable(array2table(green_data), green_f, 'WriteVariableNames',0);
+                writetable(array2table(red_data), fullfile(out_session_folder, red_name), 'WriteVariableNames',0); 
+            else
+                fprintf('Skipping FP %s %s\n', animal, session);
+            end
+        end
+        blog_f = fullfile(out_session_folder, [animal, '_', session, '_', 'behaviorLOG.mat']);
+        if ~exist(blog_f, 'file')
+            out = exper_extract_beh_data_bonsai(folder, experf, lvttlf, lvtsf, [animal '_' session]);
+            save(blog_f, '-v7.3', 'out');
+        else
+            fprintf('Skipping behavior %s %s\n', animal, session);
+        end
     end
 end
     
@@ -106,8 +144,28 @@ function [out] = exper_extract_beh_data_bonsai(folder, experf, lvttlf, lvtsf, se
     
 end
 
+function [green_data, red_data] = revamp_chris_FP_data(green, red, MetaData)
+    
+    green = readmatrix(green); %readmatrix is preferred
+    red = readmatrix(red);
+    if ~isempty(MetaData)
+        MetaData = readmatrix(MetaData);
+    end
+    
+    green = green(:,1:2);
+    red = red(:,1:2);
+    % double check about metadata
+    green_time = correct_FP_timestamps(green, MetaData);
+    red_time = correct_FP_timestamps(red, MetaData); % check if MetaData is good for both
+    % Without metadata, ~(50-25)ms jitters still exist (possibly dropped frames)
+    green(:, 1) = green_time;
+    red(:, 1) = red_time;
+    green_data = green;
+    red_data = red;
+end
 
-function [out] = exper_extract_behavior_data_chris(folder, FP_Data)
+
+function [out] = exper_extract_behavior_data_chris_old(folder, FP_Data)
     green = FP_Data{i}{j}{1};
     red = FP_Data{i}{j}{2};
     fileID = FP_Data{i}{j}{3};

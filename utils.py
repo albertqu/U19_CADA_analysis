@@ -109,7 +109,7 @@ def check_FP_contain_dff_method(fp, methods, sig='DA'):
         return np.all([f'{sig}/dff/{m}' in hf for m in methods])
 
 
-def get_sources_from_csvs(csvfiles, window=400, aux_times=None, tags=None, show=False):
+def get_sources_from_csvs(csvfiles, window=400, delim=None, aux_times=None, tags=None, show=False):
     """
     Extract sources from a list of csvfiles, with csvfile[0] be channels with cleaniest
     TODO: potentially use the fact that 415 has the same timestamps to speed up the process
@@ -119,15 +119,16 @@ def get_sources_from_csvs(csvfiles, window=400, aux_times=None, tags=None, show=
     """
     if isinstance(csvfiles, str):
         csvfiles = [csvfiles]
-
+    if delim is None:
+        delim = " "
     try:
-        pdf = pd.read_csv(csvfiles[0], delimiter=" ", names=['time', 'calcium'], usecols=[0, 1])
+        pdf = pd.read_csv(csvfiles[0], delimiter=delim, names=['time', 'calcium'], usecols=[0, 1])
         FP_times = [None] * len(csvfiles)
         FP_signals = [None] * len(csvfiles)
         for i in range(len(csvfiles)):
             csvfile = csvfiles[i]
             # Signal Sorting
-            pdf = pd.read_csv(csvfile, delimiter=" ", names=['time', 'calcium'], usecols=[0, 1])
+            pdf = pd.read_csv(csvfile, delimiter=delim, names=['time', 'calcium'], usecols=[0, 1])
             FP_times[i] = pdf.time.values
             FP_signals[i] = pdf.calcium.values
         if aux_times:

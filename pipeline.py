@@ -1,5 +1,8 @@
+import os
+
 from modeling import *
 from peristimulus import *
+import shutil
 import seaborn as sns
 from scipy.stats import spearmanr, shapiro
 from sklearn.linear_model import LogisticRegressionCV
@@ -104,8 +107,57 @@ def reorganize_BSD_filenames():
     namemap = {"D1-R34_RT": "BSD011",
                "D1-R34_LT":	"BSD012",
                "D1-R35_RV":	"BSD013"}
+
+    # namemap = {'A2A-15B_RT': 'BSD002',
+    #            'A2A-15B-B_RT': 'BSD002',
+    #            'A2A-16B-1_RT': 'BSD003',
+    #            'A2A-16B_RT': 'BSD003',
+    #            'A2A-16B-1_TT': 'BSD004',
+    #            'A2A-16B_TT': 'BSD004',
+    #            'D1-27H_LT':	'BSD005'
+    #            }
+    namemap = {'A2A-15B_RT': 'BSD002',
+               'A2A-15B-B_RT': 'BSD002',
+               'D1-27H_LT':	'BSD005'
+               }
     from utils_system import rename_dir_files_recursive
     rename_dir_files_recursive(root, namemap)
+
+
+def reorganize_BSD_Chris_filenames():
+    # root = r"Z:\2ABT\ProbSwitch\BSDML_exper"
+    root = r"Z:\Alumni\Chris Hall\Belief State"
+    outpath = r'Z:\2ABT\ProbSwitch\Chris_Raw'
+    folders = [os.path.join(root, 'BeliefState_FP_FCcomp'),
+               os.path.join(root, 'FP_BeliefState_SMAcomp'),
+               os.path.join(root, 'BeliefState_ProbSwitch')]
+
+    # namemap = {'A2A-15B_RT': 'BSD002',
+    #            'A2A-15B-B_RT': 'BSD002',
+    #            'A2A-16B-1_RT': 'BSD003',
+    #            'A2A-16B_RT': 'BSD003',
+    #            'A2A-16B-1_TT': 'BSD004',
+    #            'A2A-16B_TT': 'BSD004',
+    #            'D1-27H_LT':	'BSD005'
+    #            }
+    namemap = {'A2A-15B_RT': 'BSD002',
+               'A2A-15B-B_RT': 'BSD002',
+               'D1-27H_LT':	'BSD005'
+               }
+    for animal in namemap:
+        alias = namemap[animal]
+        animal_folder = os.path.join(outpath, alias)
+        if not os.path.exists(animal_folder):
+            os.makedirs(animal_folder)
+        for folder in folders:
+            for f in os.listdir(folder):
+                if (animal in f):
+                    new_fname = f.replace(animal, alias)
+                    options = decode_from_filename(f)
+                    if options is None:
+                        print('Error with', f)
+                    print(options['animal'], options['session'], options['H'])
+                    # shutil.copy2(os.path.join(folder, f), os.path.join(animal_folder, new_fname))
 
 
 class BSDML_Expr:
