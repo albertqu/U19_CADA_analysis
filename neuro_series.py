@@ -62,7 +62,7 @@ class FPSeries:
         """
         Requires:
             self.sig_channels: for each channel, outline rois,
-                e.g. {'415nm': ['green', 'red'], '470nm': ['green', 'red']}
+                e.g. {'415nm': ['green_415nm', 'red_415nm'], '470nm': ['green_470nm'], '560nm': ['red_560nm']}
             self.neural_df: output from self.merge_channels, pd.DataFrame with columns ['time'] + rois
 
         Returns: ZdF: making it method dependent, and store in a class variable
@@ -114,7 +114,7 @@ class FPSeries:
         # drop 200 frames, and then use ctrl timestamps
         # TODO: need a more rigorous check to make sure the jitter between times are within 50ms
         for ch in self.neural_dfs:
-            if np.max(self.neural_dfs[ch].time) != self.neural_dfs[ch].time[-1]:
+            if np.max(self.neural_dfs[ch].time) != self.neural_dfs[ch].time.values[-1]:
                 logging.warning(f"max time not the same as the last frame time in {str(self)}, check data")
         drop_fr = 200
         if ts_resamp_opt == 'lossy_ctrl':
@@ -148,9 +148,9 @@ class FPSeries:
                     sigtime = neural_dfs[src].time
                     assert np.all(np.diff(sigtime) > 0), 'signal reverse order'
                     if src == min_ch:
-                        neural_df[src] = sig[drop_fr:]
+                        neural_df[src_roi] = sig[drop_fr:]
                     else:
-                        neural_df[src] = interpolate.interp1d(sigtime, sig, fill_value='extrapolate')(time_axis)
+                        neural_df[src_roi] = interpolate.interp1d(sigtime, sig, fill_value='extrapolate')(time_axis)
             neural_df = pd.DataFrame(neural_df)
             self.neural_df = neural_df
         else:

@@ -708,7 +708,7 @@ class RR_Expr(NBExperiment):
             session_sel = self.meta['session'] == session
             trig_mode = self.meta.loc[(self.meta[arg_type] == animal_arg) & session_sel, 'trig_mode'].values[0]
             rr_series = BonsaiRR2Hemi2Ch(fp_file, fp_timestamps, trig_mode, animal_alias, session)
-            rr_series.merge_channels()
+            rr_series.merge_channels(ts_resamp_opt='interp')
             rr_series.realign_time(bmat)
         else:
             rr_series = None
