@@ -140,17 +140,18 @@ class FPSeries:
             neural_dfs = self.neural_dfs
             min_ch = min(neural_dfs.keys(), key=lambda k: np.max(neural_dfs[k].time))
             time_axis = neural_dfs[min_ch].time[drop_fr:]
-            neural_df = {'time': time_axis}
+            neural_df = {'time': time_axis.values}
             for src in neural_dfs:
                 src_rois = [c for c in neural_dfs[src].columns if c != 'time']
                 for src_roi in src_rois:
-                    sig = neural_dfs[src][src_roi]
-                    sigtime = neural_dfs[src].time
+                    sig = neural_dfs[src][src_roi].values
+                    sigtime = neural_dfs[src].time.values
                     assert np.all(np.diff(sigtime) > 0), 'signal reverse order'
                     if src == min_ch:
                         neural_df[src_roi] = sig[drop_fr:]
                     else:
                         neural_df[src_roi] = interpolate.interp1d(sigtime, sig, fill_value='extrapolate')(time_axis)
+            # when dataframe is created from dfs indexes are kept
             neural_df = pd.DataFrame(neural_df)
             self.neural_df = neural_df
         else:
