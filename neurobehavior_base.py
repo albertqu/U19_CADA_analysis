@@ -276,10 +276,10 @@ class PS_NBMat(NeuroBehaviorMat):
             self.id_vars = self.id_vars[:-1]
         self.event_time_windows = {'center_in': np.arange(-1, 1.001, 0.05),
                                    'center_out': np.arange(-1, 1.001, 0.05),
-                                   'outcome': np.arange(-0.5, 2.001, 0.05),
-                                   'side_in': np.arange(-0.5, 2.001, 0.05),
-                                   'zeroth_side_out': np.arange(-0.5, 1.001, 0.05),
-                                   'first_side_out': np.arange(-0.5, 1.001, 0.05),
+                                   'outcome': np.arange(-0.5, 1.001, 0.05),
+                                   'side_in': np.arange(-0.5, 1.001, 0.05),
+                                   'zeroth_side_out': np.arange(-0.5, 2.001, 0.05),
+                                   'first_side_out': np.arange(-0.5, 2.001, 0.05),
                                    'last_side_out': np.arange(-0.5, 1.001, 0.05)}
 
     def get_perc_trial_in_block(self, nb_df):

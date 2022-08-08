@@ -193,9 +193,10 @@ class FPSeries:
                                                              time_unit=self.params['time_unit'],
                                                              sig_channel=ch, control_channel=control_ch,
                                                              roi=roi, tag=fig_tag, viz=viz)
-                fig2 = FP_viz_whole_session(raw_reference, raw_signal, time_axis, interval=600, drop_frame=200,
-                                            time_unit=self.params['time_unit'], sig_channel=ch, control_channel=control_ch,
-                                            roi=roi, tag=fig_tag)
+                if viz:
+                    fig2 = FP_viz_whole_session(raw_reference, raw_signal, time_axis, interval=600, drop_frame=200,
+                                                time_unit=self.params['time_unit'], sig_channel=ch, control_channel=control_ch,
+                                                roi=roi, tag=fig_tag)
                 if fig is not None and plot_path is not None:
                     animal_folder = oj(plot_path, self.animal)
                     animal, session = self.animal, self.session
