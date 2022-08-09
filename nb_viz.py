@@ -210,11 +210,11 @@ def df_long_heatmap(data=None, event=None, sort_cols=None, id_cols=None, **kwarg
     pass
 
 
-def df_wide_heatmap(data=None, event=None, sort_cols=None, id_cols=None, nbmat=None, **kwargs):
-    if ('cmap' not in kwargs) or (kwargs['cmap'] is None):
+def df_wide_heatmap(data=None, event=None, sort_cols=None, id_cols=None, nbmat=None, cmap=None, **kwargs):
+    if cmap is None:
         cmap_opt = 'Greys_r'
     else:
-        cmap_opt = kwargs['cmap']
+        cmap_opt = cmap
     ax = plt.gca()
     data_original = data
     data = data.reset_index(drop=True)
