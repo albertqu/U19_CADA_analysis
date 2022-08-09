@@ -145,7 +145,7 @@ class NeuroBehaviorMat:
                 colf = neur_colf
             else:
                 if not ((feat in self.trial_features + self.behavior_events) or (feat in self.event_features)):
-                    print(f'Lagging derived feature {feat}, can lead to unexpected behavior')
+                    # print(f'Lagging derived feature {feat}, can lead to unexpected behavior')
                     assert feat in nb_df.columns, f'unknown option {feat}'
                 cols_to_shifts = [feat]
                 colf = te_colf
