@@ -141,7 +141,7 @@ def trial_av_vline_timedots(data=None, event=None, sort_order=None, id_cols=None
     events = nbmat.behavior_events
     ev_colors = sns.color_palette("hls", len(events))
     event_cmap = {events[i]: ev_colors[i] for i in range(len(events))}
-    evt_cont_map = {'outcome': ['center_in', 'center_out', 'outcome', 'first_side_out'],
+    evt_cont_map = {'outcome': ['center_in', 'center_out', 'outcome', 'first_side_out', 'center_in{t+1}'],
                     'center_out': ['first_side_out{t-1}', 'center_in', 'center_out', 'outcome'],
                     'first_side_out': ['outcome', 'first_side_out', 'center_in{t+1}']}
     # first drop duplicates due to lagging operations
