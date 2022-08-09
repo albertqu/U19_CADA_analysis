@@ -50,12 +50,23 @@ class FPSeries:
         if self.params['time_unit'] == 'ms':
             ts = ts / 1000
 
+    def __str__(self):
+        return f"FP({self.animal},{self.session})"
+
     def calculate_dff(self, method, zscore=True, **kwargs):
         # for all of the channels, calculate df using the method specified
         # TODO: add visualization technique by plotting the approximated
         # baseline against signal channels
         # Currently use original time stamps
         # method designed for lossy_ctrl merge channels method
+        """
+        Requires:
+            self.sig_channels: for each channel, outline rois,
+                e.g. {'415nm': ['green_415nm', 'red_415nm'], '470nm': ['green_470nm'], '560nm': ['red_560nm']}
+            self.neural_df: output from self.merge_channels, pd.DataFrame with columns ['time'] + rois
+
+        Returns: ZdF: making it method dependent, and store in a class variable
+        """
         dff_name_map = {'iso_jove_dZF': 'jove'}
         iso_time = self.neural_df['time']
         dff_dfs = {'time': iso_time}
@@ -87,14 +98,14 @@ class FPSeries:
                     prefix = 'ZdFF_' if zscore else 'dFF_'
                     method = prefix + method
                 meas_name = 'ZdFF' if zscore else 'dFF'
-                dff_dfs[roi +'_ ' +meas_name] = dff
+                dff_dfs[roi +'_' +meas_name] = dff
                 dff_dfs['method'] = [method] * len(dff)
 
         dff_df = pd.DataFrame(dff_dfs)
         id_labls = ['time', 'method']
         meas = np.setdiff1d(dff_df.columns, id_labls)
         melted = pd.melt(dff_df, id_vars=id_labls, value_vars=meas, var_name='roi', value_name=meas_name)
-        melted['roi'] = melted['roi'].str.replace('_ ' +meas_name, '')
+        melted['roi'] = melted['roi'].str.replace('_' +meas_name, '')
         return melted
 
     def merge_channels(self, ts_resamp_opt='lossy_ctrl'):
@@ -102,6 +113,9 @@ class FPSeries:
         # if unsatisfied with the direct merge we should interpolate
         # drop 200 frames, and then use ctrl timestamps
         # TODO: need a more rigorous check to make sure the jitter between times are within 50ms
+        for ch in self.neural_dfs:
+            if np.max(self.neural_dfs[ch].time) != self.neural_dfs[ch].time.values[-1]:
+                logging.warning(f"max time not the same as the last frame time in {str(self)}, check data")
         drop_fr = 200
         if ts_resamp_opt == 'lossy_ctrl':
             min_len = min(len(self.neural_dfs[ch]) for ch in self.neural_dfs)
@@ -124,17 +138,20 @@ class FPSeries:
                 logging.warning('warning! significant deviation from 50ms in final sampling interval')
         elif ts_resamp_opt == 'interp':
             neural_dfs = self.neural_dfs
-            min_ch = min(neural_dfs.keys(), key=lambda k: len(neural_dfs[k]))
+            min_ch = min(neural_dfs.keys(), key=lambda k: np.max(neural_dfs[k].time))
             time_axis = neural_dfs[min_ch].time[drop_fr:]
-            neural_df = {'time': time_axis}
+            neural_df = {'time': time_axis.values}
             for src in neural_dfs:
-                sig = neural_dfs[src][src]
-                sigtime = neural_dfs[src].time
-                assert np.all(np.diff(sigtime) > 0), 'signal reverse order'
-                if src == min_ch:
-                    neural_df[src] = sig[drop_fr:]
-                else:
-                    neural_df[src] = interpolate.interp1d(sigtime, sig, fill_value='extrapolate')(time_axis)
+                src_rois = [c for c in neural_dfs[src].columns if c != 'time']
+                for src_roi in src_rois:
+                    sig = neural_dfs[src][src_roi].values
+                    sigtime = neural_dfs[src].time.values
+                    assert np.all(np.diff(sigtime) > 0), 'signal reverse order'
+                    if src == min_ch:
+                        neural_df[src_roi] = sig[drop_fr:]
+                    else:
+                        neural_df[src_roi] = interpolate.interp1d(sigtime, sig, fill_value='extrapolate')(time_axis)
+            # when dataframe is created from dfs indexes are kept
             neural_df = pd.DataFrame(neural_df)
             self.neural_df = neural_df
         else:
@@ -176,9 +193,10 @@ class FPSeries:
                                                              time_unit=self.params['time_unit'],
                                                              sig_channel=ch, control_channel=control_ch,
                                                              roi=roi, tag=fig_tag, viz=viz)
-                fig2 = FP_viz_whole_session(raw_reference, raw_signal, time_axis, interval=600, drop_frame=200,
-                                            time_unit=self.params['time_unit'], sig_channel=ch, control_channel=control_ch,
-                                            roi=roi, tag=fig_tag)
+                if viz:
+                    fig2 = FP_viz_whole_session(raw_reference, raw_signal, time_axis, interval=600, drop_frame=200,
+                                                time_unit=self.params['time_unit'], sig_channel=ch, control_channel=control_ch,
+                                                roi=roi, tag=fig_tag)
                 if fig is not None and plot_path is not None:
                     animal_folder = oj(plot_path, self.animal)
                     animal, session = self.animal, self.session
@@ -196,8 +214,8 @@ class FPSeries:
 class BonsaiFP3001(FPSeries):
     # Currently this just works for RR, extend to probswitch later by exploring raw data
 
-    fp_flags = {'TRIG1': {'410nm' :1, '470nm' :6},
-                'TRIG3': {'410nm' :1, '470nm' :2, '560nm' :4}}
+    fp_flags = {'TRIG1': {'410nm': 1, '470nm': 6},
+                'TRIG3': {'410nm': 1, '470nm': 2, '560nm': 4}}
 
     rois = []
 

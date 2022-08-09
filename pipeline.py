@@ -142,8 +142,16 @@ def reorganize_BSD_Chris_filenames():
     #            }
     namemap = {'A2A-15B_RT': 'BSD002',
                'A2A-15B-B_RT': 'BSD002',
-               'D1-27H_LT':	'BSD005'
-               }
+               'A2A-16B-1_RT': 'BSD003',
+               'A2A-16B_RT': 'BSD003',
+               'A2A-16B-1_TT': 'BSD004',
+               'A2A-16B_TT': 'BSD004',
+               'D1-27H_LT':	'BSD005',
+               'A2A-19B_LT': 'BSD006',
+               'A2A-19B_RT': 'BSD007',
+               'A2A-19B_RV': 'BSD008',
+               'D1-28B_LT': 'BSD009'}
+
     for animal in namemap:
         alias = namemap[animal]
         animal_folder = os.path.join(outpath, alias)
@@ -153,11 +161,14 @@ def reorganize_BSD_Chris_filenames():
             for f in os.listdir(folder):
                 if (animal in f):
                     new_fname = f.replace(animal, alias)
-                    options = decode_from_filename(f)
-                    if options is None:
-                        print('Error with', f)
-                    print(options['animal'], options['session'], options['H'])
-                    # shutil.copy2(os.path.join(folder, f), os.path.join(animal_folder, new_fname))
+                    target_file = os.path.join(animal_folder, new_fname)
+                    if not os.path.exists(target_file):
+                        options = decode_from_filename(f)
+                        if options is None:
+                            print('Error with', f)
+                        # else:
+                        #     print(options['animal'], options['session'], options['H'])
+                        shutil.copy2(os.path.join(folder, f), os.path.join(animal_folder, new_fname))
 
 
 class BSDML_Expr:

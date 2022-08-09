@@ -209,6 +209,33 @@ class NeuroBehaviorMat:
         # nb_df must be of wide form: meaning each trial must only have 1
         return self.apply_to_idgroups(nb_df, self.lag_wide_df_ID, features=features)
 
+    def register_roi_ID(self, nb_df, virus_map=None):
+        default_virus_map = {'jRGECO1a': 'red', 'dLight1.3b': 'green'}
+        if virus_map is None:
+            virus_map = default_virus_map
+        # TODO: currently only works with Chris Probswitch
+        assert np.all([len(np.unique(nb_df[v])) == 1 for v in self.id_vars]), 'not unique'
+        assert 'roi' in self.id_vars, 'nb_df must have roi'
+        roi = nb_df.loc[0, 'roi']
+        roi_splits = roi.split('_')
+        assert len(roi_splits) > 1, 'register ID only works with full ROIs'
+        if len(roi_splits) == 2:
+            roi_splits = [nb_df.loc[0, 'hemi']] + roi_splits
+        roi_opt = roi_splits[0]
+        color_opt = roi_splits[1]
+        virus_args = nb_df.loc[0, f'{roi_opt}_virus'].split('/')
+        virus = ''
+        for varg in virus_args:
+            if virus_map[varg] == color_opt:
+                virus = varg
+        region = nb_df.loc[0, f'{roi_opt}_region']
+        nb_df['virus'] = virus
+        nb_df['region'] = region
+        return nb_df
+
+    def register_roi(self, nb_df, virus_map=None):
+        return self.apply_to_idgroups(nb_df, self.register_roi_ID, virus_map=virus_map)
+
     def apply_to_idgroups(self, nb_df, func, id_vars=None, *args, **kwargs):
         """ func: must takes in nb_df,
         *args, **kwargs: additional argument for func
@@ -249,10 +276,10 @@ class PS_NBMat(NeuroBehaviorMat):
             self.id_vars = self.id_vars[:-1]
         self.event_time_windows = {'center_in': np.arange(-1, 1.001, 0.05),
                                    'center_out': np.arange(-1, 1.001, 0.05),
-                                   'outcome': np.arange(-0.5, 2.001, 0.05),
-                                   'side_in': np.arange(-0.5, 2.001, 0.05),
-                                   'zeroth_side_out': np.arange(-0.5, 1.001, 0.05),
-                                   'first_side_out': np.arange(-0.5, 1.001, 0.05),
+                                   'outcome': np.arange(-0.5, 1.001, 0.05),
+                                   'side_in': np.arange(-0.5, 1.001, 0.05),
+                                   'zeroth_side_out': np.arange(-0.5, 2.001, 0.05),
+                                   'first_side_out': np.arange(-0.5, 2.001, 0.05),
                                    'last_side_out': np.arange(-0.5, 1.001, 0.05)}
 
     def get_perc_trial_in_block(self, nb_df):
@@ -708,7 +735,7 @@ class RR_Expr(NBExperiment):
             session_sel = self.meta['session'] == session
             trig_mode = self.meta.loc[(self.meta[arg_type] == animal_arg) & session_sel, 'trig_mode'].values[0]
             rr_series = BonsaiRR2Hemi2Ch(fp_file, fp_timestamps, trig_mode, animal_alias, session)
-            rr_series.merge_channels()
+            rr_series.merge_channels(ts_resamp_opt='interp')
             rr_series.realign_time(bmat)
         else:
             rr_series = None
