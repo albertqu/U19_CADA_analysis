@@ -211,6 +211,10 @@ def df_long_heatmap(data=None, event=None, sort_cols=None, id_cols=None, **kwarg
 
 
 def df_wide_heatmap(data=None, event=None, sort_cols=None, id_cols=None, nbmat=None, **kwargs):
+    if ('cmap' not in kwargs) or (kwargs['cmap'] is None):
+        cmap_opt = 'Greys_r'
+    else:
+        cmap_opt = kwargs['cmap']
     ax = plt.gca()
     data_original = data
     data = data.reset_index(drop=True)
@@ -239,7 +243,7 @@ def df_wide_heatmap(data=None, event=None, sort_cols=None, id_cols=None, nbmat=N
     # if dend do data['dend'] = dendcluster
     heat_df = heat_df.sort_values(sort_cols)
     # ypos option
-    sns.heatmap(heat_df[heat_cols].values, ax=ax, yticklabels=False, cmap='Greys_r', **kwargs)
+    sns.heatmap(heat_df[heat_cols].values, ax=ax, yticklabels=False, cmap=cmap_opt, **kwargs)
     # else:
     #     sns.heatmap(heat_df[heat_cols].values, ax=ax, yticklabels=False, **kwargs)
     # heatmap start from top_left corner
