@@ -68,6 +68,7 @@ class NeuroBehaviorMat:
         # for raw fluorescence should first melt then compare
 
         """
+        TODO: check edge case when neural_df ends right around when behavior ends, making side_out + 2s impossible
         by default takes in neur_df
         Now method only supports alignment for single animal session, need to develop ID system
         Returns:
@@ -239,6 +240,14 @@ class NeuroBehaviorMat:
     def apply_to_idgroups(self, nb_df, func, id_vars=None, *args, **kwargs):
         """ func: must takes in nb_df,
         *args, **kwargs: additional argument for func
+        potentially replace with:
+        import pandas as pd
+        df = pd.DataFrame({'A': [2, 2, 3, 3, 4, 4, 4], 'B': [2, 2, 2,2, 3, 3, 3], 'C': np.arange(7)})
+        def func(x):
+            print(x)
+            return pd.DataFrame({'cs': [x['C'].mean(), x['C'].std(), x['C'].mean()**2], 'ctype': ['mean', 'std', 'quad']})
+
+        df.groupby(["A","B"]).apply(func).droplevel(2).reset_index()
         """
         #
         if id_vars is None:
@@ -255,6 +264,75 @@ class NeuroBehaviorMat:
             all_dfs.append(func(nb_df[uniq_sel].reset_index(drop=True), *args, **kwargs))
         nb_df.drop(columns='combined', inplace=True)
         return pd.concat(all_dfs, axis=0)
+
+    def get_HPM(self, nb_df, outcome_col, reward_col, tmax=None, bin_size=5, dropend=False):
+        if nb_df[reward_col].dtype != bool:
+            nb_df = nb_df.dropna(subset=reward_col)
+            nb_df[reward_col] = nb_df[reward_col].astype(bool)
+        return self.apply_to_idgroups(nb_df, self.get_HPM_ID, outcome_col=outcome_col,
+                                      reward_col=reward_col, tmax=tmax, bin_size=bin_size, dropend=dropend)
+
+    def get_HPM_ID(self, nb_df, outcome_col, reward_col, tmax=None, bin_size=5, dropend=False):
+        """
+
+        bin_size: np.float
+            time bin size in minutes
+        """
+        # assuming input is NaN free: nb_df = nb_df.dropna(subset=[outcome_col, reward_col])
+        assert nb_df[reward_col].dtype == bool
+        assert np.all([len(np.unique(nb_df[v])) == 1 for v in self.id_vars]), 'not unique'
+        assert len(nb_df.trial) == len(np.unique(nb_df.trial)), 'suspect data is not in wide form'
+        nb_df_tmax = np.max(nb_df[self.behavior_events].values)
+        if tmax is None:
+            tmax= nb_df_tmax
+        # obtain tmax via fp_series: THINK more about the best way
+        hits = nb_df.loc[nb_df[reward_col], outcome_col]
+        # binning variables
+        bigbin = bin_size * 60  # int: seconds
+        first_bin_end = bigbin  # frame number: float
+
+        if dropend:
+            ebin = tmax+1
+        else:
+            ebin = int(np.ceil(tmax / bigbin)) * bigbin + 1
+        bins = np.arange(0, ebin, bigbin)  # in seconds
+        [hpm, xx] = np.histogram(hits, bins)
+
+        xx = xx[1:]
+        if not dropend:
+            last_binsize = (tmax - bins[-2])
+            hpm[-1] *= bigbin / last_binsize
+            xx[-1] = last_binsize + xx[-2]
+
+        hpm = hpm / bin_size
+        xx = np.around(xx / 60, 2)
+        rdf = pd.DataFrame({'time_bin': xx, 'HPM': hpm})
+        for v in self.id_vars:
+            rdf[v] = nb_df[v].unique()[0]
+        return rdf
+
+    def get_PC_ID(self, nb_df, bin_size=100, drop_end=True):
+
+        perf = np.arange(32)
+        n_trial = len(perf)
+
+        if drop_end:
+            k = int(np.floor(n_trial / bin_size))
+        else:
+            k = int(np.ceil(n_trial / bin_size))
+            perf = np.concatenate([perf, np.full(k * bin_size - n_trial, np.nan)])
+
+        perf_mat = perf.reshape((k, bin_size), order='C')
+
+        pc = np.nanmean(perf_mat, axis=1)
+        xs = np.arange(1, k + 1) * bin_size
+        if not drop_end:
+            xs[-1] = n_trial
+        rdf = pd.DataFrame({'time_bin': xs, 'HPM': pc})
+        for v in self.id_vars:
+            rdf[v] = nb_df[v].unique()[0]
+
+        return rdf
 
 
 class PS_NBMat(NeuroBehaviorMat):
@@ -607,6 +685,7 @@ class PS_Expr(NBExperiment):
             ps_series = BonsaiPS1Hemi2Ch(fp_file, fp_timestamps, trig_mode, animal_alias, session)
             ps_series.merge_channels()
             ps_series.realign_time(bmat)
+            bmat.adjust_tmax(ps_series)
         else:
             ps_series = None
         return bmat, ps_series
@@ -737,6 +816,7 @@ class RR_Expr(NBExperiment):
             rr_series = BonsaiRR2Hemi2Ch(fp_file, fp_timestamps, trig_mode, animal_alias, session)
             rr_series.merge_channels(ts_resamp_opt='interp')
             rr_series.realign_time(bmat)
+            bmat.adjust_tmax(rr_series)
         else:
             rr_series = None
         return bmat, rr_series
