@@ -127,6 +127,31 @@ def rr_psychometric(reg_df, special_arg, suptitle=None):
 ###############################################"""
 
 
+def get_sample_size_facegrid(data=None, row=None, col=None, hue=None, style=None, **kwargs):
+
+    def sample_size_recursive(data, categories, pre_arg=''):
+        if categories:
+            category = categories[0]
+            assert category in data.columns, f'DATA must contain category {category}'
+            for ctg in np.unique(data[category]):
+                ctg_arg = f'category={ctg}'
+                sample_size_recursive(data[data[category] == ctg], categories[1:],
+                                      pre_arg+', '+ctg_arg)
+        else:
+            sub_df = data[['animal', 'session', 'trial']].drop_duplicates()
+            n_animal = len(sub_df['animal'].unique())
+            n_trial = len(sub_df)
+            n_session = len(np.unique(sub_df['animal'] + sub_df['session']))
+            print(pre_arg + f': A:{n_animal}, S: {n_session}, T: {n_trial}')
+
+    prearg = ''
+    if col is not None:
+        prearg = f'{col}={data[col].unique()[0]}'
+    if row is not None:
+        prearg = prearg + f', {row}={data[row].unique()[0]}'
+    sample_size_recursive(data, [c for c in [hue, style] if c is not None], prearg)
+
+
 def trial_av_vline_timedots(data=None, event=None, sort_order=None, id_cols=None, y_pos=None, ylim0=None,
                             time_func=None, **kwargs):
     # assume ypos has no duplicates

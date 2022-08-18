@@ -311,9 +311,8 @@ class NeuroBehaviorMat:
             rdf[v] = nb_df[v].unique()[0]
         return rdf
 
-    def get_PC_ID(self, nb_df, bin_size=100, drop_end=True):
-
-        perf = np.arange(32)
+    def get_PC_ID(self, nb_df, reward_col, bin_size=100, drop_end=True):
+        perf = (nb_df[reward_col] == True).astype(np.float).values
         n_trial = len(perf)
 
         if drop_end:
@@ -376,17 +375,49 @@ class PS_NBMat(NeuroBehaviorMat):
         # disregard miss trials
         test_df = self.lag_wide_df(nb_df, {'action': {'pre': 1}}).reset_index(drop=True)
         test_df['switch_num'] = np.nan
-        test_df.loc[test_df['trial'] == 1, 'switch_num'] = 0
+        test_df.loc[(test_df['trial'] == 1) & (~test_df['action'].isnull()), 'switch_num'] = 0
         test_df.loc[(test_df['action{t-1}'] != test_df['action']) & (~test_df['action'].isnull()), 'switch_num'] = 0
         assert test_df.loc[0, 'trial'] == 1
         for i in range(test_df.shape[0]):
             if np.isnan(test_df.loc[i, 'switch_num']):
-                if pd.isnull(test_df.loc[i, 'action']):
-                    test_df.loc[i, 'switch_num'] = test_df.loc[i - 1, 'switch_num']
-                else:
+                if not pd.isnull(test_df.loc[i, 'action']):
                     test_df.loc[i, 'switch_num'] = test_df.loc[i - 1, 'switch_num'] + 1
         test_df.loc[test_df['trial'] == 1, 'switch_num'] = np.nan
         return test_df.drop(columns=['action{t-1}']).reset_index(drop=True)
+
+    def get_reward_number(self, nb_df):
+        # Treating miss as different reward outcome, disrupting reward sequence
+        ru_convert = lambda x: (x-0.5) * 2
+        test_df = self.lag_wide_df(nb_df, {'rewarded': {'pre': 1}}).reset_index(drop=True)
+        test_df['reward_num'] = np.nan
+        first_trial_sel = (test_df['trial'] == 1) & (~test_df['rewarded'].isnull())
+        test_df.loc[first_trial_sel, 'reward_num'] = (test_df.loc[first_trial_sel, 'rewarded'].astype(float) - 0.5) * 2
+        rew_change_sel = (test_df['rewarded{t-1}'] != test_df['rewarded']) & (~test_df['rewarded'].isnull())
+        test_df.loc[rew_change_sel, 'reward_num'] = (test_df.loc[rew_change_sel, 'rewarded'].astype(float) - 0.5) * 2
+        assert test_df.loc[0, 'trial'] == 1
+        for i in range(test_df.shape[0]):
+            if np.isnan(test_df.loc[i, 'reward_num']) and (not pd.isnull(test_df.loc[i, 'rewarded'])):
+                test_df.loc[i, 'reward_num'] = test_df.loc[i - 1, 'reward_num'] + ru_convert(float(test_df.loc[i, 'rewarded']))
+        return test_df.drop(columns=['rewarded{t-1}']).reset_index(drop=True)
+
+    def get_reward_switch_number(self, nb_df):
+        ru_convert = lambda x: (x - 0.5) * 2
+        test_df = self.lag_wide_df(nb_df, {'action': {'pre': 1}, 'rewarded': {'pre': 1}}).reset_index(drop=True)
+        test_df[['switch_num', 'reward_num']] = np.nan
+        test_df.loc[(test_df['trial'] == 1) & (~test_df['action'].isnull()), 'switch_num'] = 0
+        test_df.loc[(test_df['action{t-1}'] != test_df['action']) & (~test_df['action'].isnull()), 'switch_num'] = 0
+        first_trial_sel = (test_df['trial'] == 1) & (~test_df['rewarded'].isnull())
+        test_df.loc[first_trial_sel, 'reward_num'] = (test_df.loc[first_trial_sel, 'rewarded'].astype(float) - 0.5) * 2
+        rew_change_sel = (test_df['rewarded{t-1}'] != test_df['rewarded']) & (~test_df['rewarded'].isnull())
+        test_df.loc[rew_change_sel, 'reward_num'] = (test_df.loc[rew_change_sel, 'rewarded'].astype(float) - 0.5) * 2
+        assert test_df.loc[0, 'trial'] == 1
+        for i in range(test_df.shape[0]):
+            if np.isnan(test_df.loc[i, 'switch_num']) and (not pd.isnull(test_df.loc[i, 'action'])):
+                test_df.loc[i, 'switch_num'] = test_df.loc[i - 1, 'switch_num'] + 1
+            if np.isnan(test_df.loc[i, 'reward_num']) and (not pd.isnull(test_df.loc[i, 'rewarded'])):
+                test_df.loc[i, 'reward_num'] = test_df.loc[i - 1, 'reward_num'] + ru_convert(float(test_df.loc[i, 'rewarded']))
+        test_df.loc[test_df['trial'] == 1, 'switch_num'] = np.nan
+        return test_df.drop(columns=['action{t-1}', 'rewarded{t-1}']).reset_index(drop=True)
 
     def extend_features(self, nb_df, *args, **kwargs):
         nb_df = self.get_perc_trial_in_block(nb_df)

@@ -791,6 +791,7 @@ class PSBehaviorMat(BehaviorMat):
                     result_df.loc[node.trial_index(), 'rewarded'] = ('_rewarded' in node.saliency)
                     if node.saliency in ['missed', 'abort']:
                         result_df.loc[node.trial_index(), 'quality'] = node.saliency
+                        result_df.loc[node.trial_index(), 'rewarded'] = np.nan
                 elif node.event == 'side_out':
                     if node.trial % 1 == 0.5:
                         trial_ind = int(np.floor(node.trial)) - 1
