@@ -1,3 +1,5 @@
+import numpy as np
+
 from neuro_series import *
 from nb_viz import *
 from peristimulus import *
@@ -415,9 +417,38 @@ class PS_NBMat(NeuroBehaviorMat):
             if np.isnan(test_df.loc[i, 'switch_num']) and (not pd.isnull(test_df.loc[i, 'action'])):
                 test_df.loc[i, 'switch_num'] = test_df.loc[i - 1, 'switch_num'] + 1
             if np.isnan(test_df.loc[i, 'reward_num']) and (not pd.isnull(test_df.loc[i, 'rewarded'])):
-                test_df.loc[i, 'reward_num'] = test_df.loc[i - 1, 'reward_num'] + ru_convert(float(test_df.loc[i, 'rewarded']))
+                test_df.loc[i, 'reward_num'] = test_df.loc[i - 1, 'reward_num'] + ru_convert(
+                    float(test_df.loc[i, 'rewarded']))
         test_df.loc[test_df['trial'] == 1, 'switch_num'] = np.nan
+        test_df['switch'] = np.nan
+        test_df.loc[test_df['switch_num'] == 0, 'switch'] = True
+        test_df.loc[test_df['switch_num'] > 0, 'switch'] = False
         return test_df.drop(columns=['action{t-1}', 'rewarded{t-1}']).reset_index(drop=True)
+
+    def get_OHSH(self, nb_df):
+        test_df = self.lag_wide_df(nb_df, {'switch': {'pre': 2},
+                                           'rewarded': {'pre': 2}}).reset_index(drop=True)
+        key_cols = ['rewarded{t-1}', 'rewarded{t-2}', 'switch{t-1}', 'switch{t-2}']
+        nonancols = ~np.any(pd.isnull(test_df[key_cols[:2]].values), axis=1)
+        temp_df = test_df.loc[nonancols, key_cols[:2]].reset_index(drop=True)
+        temp_df[key_cols[:2]] = temp_df[key_cols[:2]].astype(bool)
+
+        temp_df.loc[temp_df['rewarded{t-2}'] & temp_df['rewarded{t-1}'], 'OH'] = 'RR'
+        temp_df.loc[(~temp_df['rewarded{t-2}']) & temp_df['rewarded{t-1}'], 'OH'] = 'UR'
+        temp_df.loc[(~temp_df['rewarded{t-2}']) & (~temp_df['rewarded{t-1}']), 'OH'] = 'UU'
+        temp_df.loc[temp_df['rewarded{t-2}'] & (~temp_df['rewarded{t-1}']), 'OH'] = 'RU'
+        test_df.loc[nonancols, 'OH'] = temp_df['OH'].values
+        # nonan cols for switch history
+        nonancols = ~np.any(pd.isnull(test_df[key_cols[-2:]].values), axis=1)
+        temp_df = test_df.loc[nonancols, key_cols[-2:]].reset_index(drop=True)
+        temp_df[key_cols[-2:]] = temp_df[key_cols[-2:]].astype(bool)
+
+        temp_df.loc[temp_df['switch{t-2}'] & temp_df['switch{t-1}'], 'SH'] = 'YY'
+        temp_df.loc[(~temp_df['switch{t-2}']) & temp_df['switch{t-1}'], 'SH'] = 'NY'
+        temp_df.loc[(~temp_df['switch{t-2}']) & (~temp_df['switch{t-1}']), 'SH'] = 'NN'
+        temp_df.loc[temp_df['switch{t-2}'] & (~temp_df['switch{t-1}']), 'SH'] = 'YN'
+        test_df.loc[nonancols, 'SH'] = temp_df['SH'].values
+        return test_df
 
     def extend_features(self, nb_df, *args, **kwargs):
         nb_df = self.get_perc_trial_in_block(nb_df)
