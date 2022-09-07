@@ -34,19 +34,24 @@ def preprocessing(filepath, eventcodedict):
     def restaurant_extractor(events_list):
         for i in range(len(events_list)):
             if int(events_list[i][-1]) == 199:
-                events_list[i].append(events_list[i-1][-1])
+                # back up to offer tone
+                for j in range(i-1, -1, -1):
+                    if '% offer' in events_list[j][0]:
+                        offer_index = j
+                        break
+                restaurant = re.findall('R[1-4]+', events_list[offer_index][0])[0]
+                events_list[i].append(int(restaurant[1:]))
             if int(events_list[i][-1]) == 99:
-                offer_index = [idx for idx, element in enumerate(events_list[i:i+4]) if element[0].__contains__('offer')][0]
-                integers = re.findall('[0-9]+', events_list[i+offer_index][0])
-                for j in integers:
-                    if 5 > int(j) > 0:
-                        events_list[i].append(int(j))
+                # forward to offer tone
+                for j in range(i+1, len(events_list)):
+                    if '% offer' in events_list[j][0]:
+                        offer_index = j
+                        break
+                restaurant = re.findall('R[1-4]+', events_list[offer_index][0])[0]
+                events_list[i].append(int(restaurant[1:]))
             if len(events_list[i]) <= 3:
-                integers = re.findall('[0-9]+', events_list[i][0])
-                for j in integers:
-                    if 5 > int(j) > 0:
-                        events_list[i].append(int(j))
-
+                restaurant = re.findall('R[1-4]+', events_list[i][0])[0]
+                events_list[i].append(int(restaurant[1:]))
 
     restaurant_extractor(events_list)
 
@@ -321,7 +326,7 @@ def trial_merger(trials):
         current_trial = current_trial.next
 
 
-def add_stimulation_events(trials, eventslist):
+def add_stimulation_events_old(trials, eventslist):
     current_trial = trials.sentinel.next
     events = np.array(eventslist)
     while current_trial != trials.sentinel:
@@ -342,6 +347,44 @@ def add_stimulation_events(trials, eventslist):
                             current_trial.stimulation_off = events[i+off_index, 1][0]
             if current_trial.stimulation_off is None and current_trial.stimulation_on:
                 current_trial.stimulation_on = None
+        current_trial = current_trial.next
+
+def add_stimulation_events(trials, eventslist):
+    """ Takes in DLL trials and add stimulation features when applicable in trial_node.stimulation_on/off
+    trials: DLL with trial structure
+    eventslist: list of event triples (ename, time, code)
+    """
+    START = eventslist[0][1]
+
+    def prev_trial_tone_onset(ctrial):
+        curr = ctrial.prev
+        while curr != trials.sentinel:
+            if curr.tone_onset:
+                return curr.tone_onset
+        return START
+
+    current_trial = trials.sentinel.next
+
+    def find_in_elist(start, elist, t):
+        for i in range(start, len(elist)):
+            if elist[i][1] == t:
+                return i
+    curr_eind = 0
+    while current_trial != trials.sentinel:
+        if current_trial.tone_onset:
+            # iterate on events
+            # find corresponding event in elist
+            prev_eind = curr_eind
+            curr_eind = find_in_elist(curr_eind, eventslist, current_trial.tone_onset)
+            # look backwards in time to find stimOn
+            for j in range(curr_eind-1, prev_eind - 1, -1):
+                if eventslist[j][2] == 99:
+                    current_trial.stimulation_on = eventslist[j][1]
+            # look forward in time to find stimOff
+            if current_trial.stimulation_on is not None:
+                for j in range(curr_eind + 1, len(eventslist)):
+                    if eventslist[j][2] == 199:
+                        current_trial.stimulation_off = eventslist[j][1]
         current_trial = current_trial.next
 
 

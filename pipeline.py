@@ -177,17 +177,20 @@ def reorganize_BSD_Chris_filenames():
 
 
 ## Restaurant rows
-def organize_RR_structures(root, out, fp=False):
+def organize_RR_structures(root, out=None, fp=False):
     from os.path import join as oj
     name_map = {'behavior': r"^RR_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
                 'FP': r"^FP_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
                 'FPTS': r"^FPTS_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv"}
+    animals = ['RRM039', 'RRM040', 'RRM042', 'RRM043', 'RRM044', 'RRM045']
+    if out is None:
+        out = oj(root, 'ArchT_raw')
     flp_created = []
     for group in ['D1', 'A2A']:
         print(group)
         group_folder = oj(root, group)
         for af in os.listdir(group_folder):
-            if af.startswith('RRM'):
+            if af.startswith('RRM') and af in animals:
                 animal = af
                 animal_folder = oj(group_folder, af)
                 all_folders = [animal_folder]
@@ -233,5 +236,6 @@ def organize_RR_local(root, out, category):
                 'FPTS': r"^FPTS_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
                 'video': r"^RR_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
                 'vidTS': r"^RR_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv"}
+
     pass
 
