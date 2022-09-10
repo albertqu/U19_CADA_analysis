@@ -311,7 +311,7 @@ def trial_vector_time_lag(vec, t):
     if np.issubdtype(dtype, np.bool_):
         oarr = np.zeros(len(vec), dtype=dtype)
     elif np.issubdtype(dtype, np.number):
-        oarr = np.full(len(vec), np.nan, dtype=np.float)
+        oarr = np.full(len(vec), np.nan, dtype=float)
     elif np.issubdtype(dtype, np.str_):
         oarr = np.full(len(vec), "", dtype=dtype)
     else:
@@ -518,8 +518,8 @@ class RRBehaviorMat(BehaviorMat):
         if not comment:
             result_df.drop(columns='comment', inplace=True)
         for ev in self.fields:
-            result_df[ev] = result_df[ev].astype(np.float)
-        result_df['tone_prob'] = result_df['tone_prob'].astype(np.float)
+            result_df[ev] = result_df[ev].astype(float)
+        result_df['tone_prob'] = result_df['tone_prob'].astype(float)
         old_cols = list(result_df.columns)
         result_df['animal'] = self.animal
         result_df['session'] = self.session
@@ -1138,7 +1138,7 @@ class BehaviorMatOld(BehaviorMat):
             event_nodes = event
         else:
             event_nodes = self.get_event_nodes(event, simple, saliency)
-        event_times = np.empty(len(event_nodes), dtype=np.float)
+        event_times = np.empty(len(event_nodes), dtype=float)
         trials = np.empty(len(event_nodes), dtype=np.int)
         for ien, enode in enumerate(event_nodes):
             event_times[ien], trials[ien] = enode.etime, enode.trial_index()
@@ -1500,7 +1500,7 @@ class BehaviorMatChris(BehaviorMat):
             event_nodes = event
         else:
             event_nodes = self.get_event_nodes(event, simple, saliency)
-        event_times = np.empty(len(event_nodes), dtype=np.float)
+        event_times = np.empty(len(event_nodes), dtype=float)
         trials = np.empty(len(event_nodes), dtype=np.int)
         for ien, enode in enumerate(event_nodes):
             event_times[ien], trials[ien] = enode.etime, enode.trial_index()

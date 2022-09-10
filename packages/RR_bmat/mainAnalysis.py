@@ -374,8 +374,8 @@ def resort_trial_DLL(trials):
         curr = cursor.next.tone_onset
         if curr is not None:
             if curr < prev:
-               float_up(trials, cursor.next)
-               freeze = True
+                float_up(trials, cursor.next)
+                freeze = True
             else:
                 prev = curr
         if freeze:
