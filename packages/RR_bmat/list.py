@@ -43,3 +43,13 @@ class DoublyLinkedList:
         new_first.prev = self.sentinel
         self.size += 1
 
+    def swap_nodes(self, a, b):
+        assert (a.next is b) and (b.prev is a)
+        up = a.prev
+        down = b.next
+        up.next = b
+        down.prev = a
+        a.next = down
+        b.prev = up
+        a.prev = b
+        b.next = a

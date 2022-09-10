@@ -349,6 +349,41 @@ def add_stimulation_events_old(trials, eventslist):
                 current_trial.stimulation_on = None
         current_trial = current_trial.next
 
+
+def resort_trial_DLL(trials):
+    # Function to sort trial doubly linked list so that tone_onsets are sorted from start to end
+    cursor = trials.sentinel.next
+    prev = cursor.tone_onset
+    while prev is None:
+        cursor = cursor.next
+        prev = cursor.tone_onset
+
+    def float_up(trials, node):
+        curr = node.prev
+        while curr != trials.sentinel:
+            if curr.tone_onset is None:
+                curr = curr.prev
+            else:
+                if node.tone_onset < curr.tone_onset:
+                    trials.swap_nodes(curr, node)
+                    curr = node.prev
+                else:
+                    break
+    freeze = False
+    while cursor.next != trials.sentinel:
+        curr = cursor.next.tone_onset
+        if curr is not None:
+            if curr < prev:
+               float_up(trials, cursor.next)
+               freeze = True
+            else:
+                prev = curr
+        if freeze:
+            freeze = False
+        else:
+            cursor = cursor.next
+
+
 def add_stimulation_events(trials, eventslist):
     """ Takes in DLL trials and add stimulation features when applicable in trial_node.stimulation_on/off
     trials: DLL with trial structure
