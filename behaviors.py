@@ -507,6 +507,7 @@ class RRBehaviorMat(BehaviorMat):
         trial_info_filler(trials)
         trial_merger(trials)
         write_lap_block(trials)
+        resort_trial_DLL(trials)
         add_stimulation_events(trials, self.events)
         trials_df = write_trial_to_df(trials)
         if valid:
