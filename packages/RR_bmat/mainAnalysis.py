@@ -359,13 +359,18 @@ def resort_trial_DLL(trials):
         prev = cursor.tone_onset
 
     def float_up(trials, node):
+        # float up if there is NaN above or nodes with LATER tone_onset
         curr = node.prev
         while curr != trials.sentinel:
             if curr.tone_onset is None:
-                curr = curr.prev
+                trials.swap_nodes(curr, node)
+                curr = node.prev
             else:
                 if node.tone_onset < curr.tone_onset:
+                    # try:
                     trials.swap_nodes(curr, node)
+                    # except:
+                    #     print(curr.tone_onset, node.tone_onset)
                     curr = node.prev
                 else:
                     break
