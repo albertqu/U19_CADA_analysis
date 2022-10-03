@@ -182,7 +182,7 @@ def organize_RR_structures(root, out=None, fp=False):
     name_map = {'behavior': r"^RR_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
                 'FP': r"^FP_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
                 'FPTS': r"^FPTS_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv"}
-    animals = ['RRM039', 'RRM040', 'RRM042', 'RRM043', 'RRM044', 'RRM045']
+    animals = ['RRM039', 'RRM040'] # 'RRM042', 'RRM043', 'RRM044', 'RRM045'
     if out is None:
         out = oj(root, 'ArchT_raw')
     flp_created = []

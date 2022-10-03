@@ -132,7 +132,8 @@ class NeuroBehaviorMat:
 
     # example id_vars: animal, session, trial,
     # make a state representation?
-    def __init__(self, neural=True):
+    def __init__(self, neural=True, expr=None):
+        self.expr = expr
         self.neural = neural
         # self.id_vars = id_vars
         self.event_time_windows = {}
@@ -526,8 +527,8 @@ class PS_NBMat(NeuroBehaviorMat):
 
     id_vars = ['animal', 'session', 'roi']
 
-    def __init__(self, neural=True):
-        super().__init__(neural)
+    def __init__(self, neural=True, expr=None):
+        super().__init__(neural, expr)
         if not self.neural:
             self.id_vars = self.id_vars[:-1]
         self.event_time_windows = {'center_in': np.arange(-1, 1.001, 0.05),
@@ -649,8 +650,8 @@ class RR_NBMat(NeuroBehaviorMat):
 
     id_vars = ['animal', 'session', 'roi']
 
-    def __init__(self, neural=True):
-        super().__init__(neural)
+    def __init__(self, neural=True, expr=None):
+        super().__init__(neural, expr)
         if not neural:
             self.id_vars = ['animal', 'session']
         self.event_time_windows = {'tone_onset': np.arange(-1, 1.001, 0.05),
@@ -701,7 +702,7 @@ class NBExperiment:
 
     def __init__(self, folder='', modeling_id=None):
         self.meta = None
-        self.nbm = NeuroBehaviorMat()
+        self.nbm = NeuroBehaviorMat(expr=self)
         self.nbviz = NBVisualizer(self)
         self.plot_path = folder
         self.modeling_id = modeling_id
@@ -825,7 +826,7 @@ class NBExperiment:
                     bdf = bmat.todf()
                     all_bdfs.append(bdf)
                 except Exception:
-                    logging.warning(f'Error in calculating dff or AUC-score for {animal}, {session}, check signal')
+                    logging.warning(f'Error in computing bmat for {animal}, {session}, check session')
 
         all_bdf = pd.concat(all_bdfs, axis=0)
         final_bdf = all_bdf.merge(self.meta, how='left', on=['animal', 'session'])
@@ -873,7 +874,7 @@ class PS_Expr(NBExperiment):
         self.meta['hemi'] = ''
         self.meta.loc[self.meta['plug_in'] == 'R', 'hemi'] = 'right'
         self.meta.loc[self.meta['plug_in'] == 'L', 'hemi'] = 'left'
-        self.nbm = PS_NBMat()
+        self.nbm = PS_NBMat(expr=self)
 
         # TODO: modify this later
         if 'trig_mode' not in self.meta.columns:
@@ -1004,7 +1005,7 @@ class RR_Expr(NBExperiment):
         # # self.meta.loc[self.meta['session_num']]
         self.meta['cell_type'] = self.meta['animal_ID'].str.split('-', expand=True)[0]
         self.meta['session'] = self.meta['age'].apply(self.cvt_age_to_session)
-        self.nbm = RR_NBMat()
+        self.nbm = RR_NBMat(expr=self)
         self.nbviz = RR_NBViz(self)
 
         # # TODO: modify this later
