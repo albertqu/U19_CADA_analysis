@@ -311,7 +311,7 @@ def trial_vector_time_lag(vec, t):
     if np.issubdtype(dtype, np.bool_):
         oarr = np.zeros(len(vec), dtype=dtype)
     elif np.issubdtype(dtype, np.number):
-        oarr = np.full(len(vec), np.nan, dtype=np.float)
+        oarr = np.full(len(vec), np.nan, dtype=float)
     elif np.issubdtype(dtype, np.str_):
         oarr = np.full(len(vec), "", dtype=dtype)
     else:
@@ -454,6 +454,7 @@ class BehaviorMat:
         self.animal = animal
         self.session = session
         self.time_aligner = lambda s: s # provides method to align timestamps
+        self.tmax = 0
 
     @abstractmethod
     def todf(self):
@@ -461,6 +462,9 @@ class BehaviorMat:
 
     def align_ts2behavior(self, timestamps):
         return self.time_aligner(timestamps)
+
+    def adjust_tmax(self, neuro_series):
+        return max(self.tmax, np.max(neuro_series.neur_df['time']))
 
 
 class RRBehaviorMat(BehaviorMat):
@@ -481,6 +485,7 @@ class RRBehaviorMat(BehaviorMat):
         strip = lambda t: t.replace(" ", "") if isinstance(t, str) else t
         bonsai_output = pd.read_csv(logfile, sep=" ", index_col=False, names=names)[names]
         bonsai_output['timestamp'] = bonsai_output['timestamp'].map(strip).astype(float)
+        self.tmax = np.max(bonsai_output['timestamp'].values)
         self.time_aligner = lambda ts: (ts - bonsai_output.iloc[0, 0]) / 1000
         self.events = preprocessing(logfile, eventcodedict_full)
         self.eventlist = self.initialize(logfile, stage=STAGE)
@@ -502,6 +507,7 @@ class RRBehaviorMat(BehaviorMat):
         trial_info_filler(trials)
         trial_merger(trials)
         write_lap_block(trials)
+        resort_trial_DLL(trials)
         add_stimulation_events(trials, self.events)
         trials_df = write_trial_to_df(trials)
         if valid:
@@ -513,14 +519,15 @@ class RRBehaviorMat(BehaviorMat):
         if not comment:
             result_df.drop(columns='comment', inplace=True)
         for ev in self.fields:
-            result_df[ev] = result_df[ev].astype(np.float)
-        result_df['tone_prob'] = result_df['tone_prob'].astype(np.float)
+            result_df[ev] = result_df[ev].astype(float)
+        result_df['tone_prob'] = result_df['tone_prob'].astype(float)
         old_cols = list(result_df.columns)
         result_df['animal'] = self.animal
         result_df['session'] = self.session
         result_df['trial'] = np.arange(1, result_df.shape[0]+1)
-
-        return result_df[['animal', 'session', 'trial'] + old_cols]
+        result_df = result_df[['animal', 'session', 'trial'] + old_cols]
+        result_df['tmax'] = self.tmax
+        return result_df
 
     def eventlist_to_df(self):
         # non-prefered method but use it for convenience
@@ -648,6 +655,7 @@ class PSBehaviorMat(BehaviorMat):
         code_map = self.code_map
         eventlist = PSENode(None, None, None, None)
         trial_event_mat = np.array(hfile['out/trial_event_mat'])
+        self.tmax = np.max(trial_event_mat[:, 1])
         trialN = len(hfile['out/outcome'])
         exp_complexity = np.full(trialN, True, dtype=bool)  # default true detect back to back
         struct_complexity = np.full(trialN, False, dtype=bool)  # default false detect double centers
@@ -784,6 +792,7 @@ class PSBehaviorMat(BehaviorMat):
                     result_df.loc[node.trial_index(), 'rewarded'] = ('_rewarded' in node.saliency)
                     if node.saliency in ['missed', 'abort']:
                         result_df.loc[node.trial_index(), 'quality'] = node.saliency
+                        result_df.loc[node.trial_index(), 'rewarded'] = np.nan
                 elif node.event == 'side_out':
                     if node.trial % 1 == 0.5:
                         trial_ind = int(np.floor(node.trial)) - 1
@@ -811,7 +820,7 @@ class PSBehaviorMat(BehaviorMat):
             action_sel = ~result_df.action.isnull()
             assert np.sum(action_sel) == len(mdf), f'modeling dimension mismatch for {self.animal}, {self.session}'
             result_df.loc[action_sel, list(mdf.columns)] = mdf.values
-
+        result_df['tmax'] = self.tmax
         return result_df
 
 
@@ -875,6 +884,7 @@ class BehaviorMatOld(BehaviorMat):
 #                'missed': 0, 'abort': 0}
 #         self.struct_complexity[0] = False
         trial_event_mat = np.array(hfile['out/itrial_event_mat'])
+        self.tmax = np.max(trial_event_mat[:, 1])
 
         # Parsing LinkedList
         prev_node = None
@@ -1129,7 +1139,7 @@ class BehaviorMatOld(BehaviorMat):
             event_nodes = event
         else:
             event_nodes = self.get_event_nodes(event, simple, saliency)
-        event_times = np.empty(len(event_nodes), dtype=np.float)
+        event_times = np.empty(len(event_nodes), dtype=float)
         trials = np.empty(len(event_nodes), dtype=np.int)
         for ien, enode in enumerate(event_nodes):
             event_times[ien], trials[ien] = enode.etime, enode.trial_index()
@@ -1491,7 +1501,7 @@ class BehaviorMatChris(BehaviorMat):
             event_nodes = event
         else:
             event_nodes = self.get_event_nodes(event, simple, saliency)
-        event_times = np.empty(len(event_nodes), dtype=np.float)
+        event_times = np.empty(len(event_nodes), dtype=float)
         trials = np.empty(len(event_nodes), dtype=np.int)
         for ien, enode in enumerate(event_nodes):
             event_times[ien], trials[ien] = enode.etime, enode.trial_index()

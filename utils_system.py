@@ -97,62 +97,6 @@ def chunk_helper_session(animal, session, folder, out_folder, duration=20*60):
 """####################################################
 ################### Data Structure ####################
 ####################################################"""
-def organize_RR_structures(root, out, fp=False):
-    name_map = {'behavior': r"^RR_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
-                'FP': r"^FP_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
-                'FPTS': r"^FPTS_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv"}
-    flp_created = []
-    for group in ['D1', 'A2A']:
-        print(group)
-        group_folder = oj(root, group)
-        for af in os.listdir(group_folder):
-            if af.startswith('RRM'):
-                animal = af
-                animal_folder = oj(group_folder, af)
-                all_folders = [animal_folder]
-                if fp:
-                    fp_folder = oj(animal_folder, 'photometry')
-                    flipped = oj(animal_folder, r'LR flipped', 'photometry')
-                    all_folders.append(fp_folder)
-                    all_folders.append(flipped)
-                # TODO: later make method that save files in different folders
-                for src_fd in all_folders:
-                    if not os.path.exists(src_fd):
-                        continue
-                    for sf in os.listdir(src_fd):
-                        match = None
-                        for ftype in name_map:
-                            mt = re.match(name_map[ftype], sf)
-                            if mt:
-                                match = mt
-                                break
-                        if match:
-                            session = match.groupdict()['D']
-                            session_out = oj(out, animal, session)
-                            if not os.path.exists(session_out):
-                                os.makedirs(session_out)
-                            target_file = oj(session_out, sf)
-                            if os.path.exists(target_file):
-                                continue
-                            else:
-                                print(f'Copying {animal} {session} {sf} to {session_out}')
-                                shutil.copyfile(oj(src_fd, sf), oj(session_out, sf))
-                                if ('flipped' in src_fd):
-                                    fname = oj(session_out, '.flp')
-                                    if not os.path.exists(fname):
-                                        with open(fname, 'w+') as wf:
-                                            print('creating .flp')
-                                            flp_created.append((animal, session))
-        return flp_created
-
-
-def organize_RR_local(root, out, category):
-    name_map = {'behavior': r"^RR_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
-                'FP': r"^FP_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
-                'FPTS': r"^FPTS_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
-                'video': r"^RR_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv",
-                'vidTS': r"^RR_(?P<D>Day\d+)_.*_ID-(?P<A>RRM\d+)_.*.csv"}
-    pass
 
 
 def rename_dir_files_recursive(root, namemap):

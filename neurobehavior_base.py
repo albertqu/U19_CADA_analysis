@@ -1,3 +1,5 @@
+import numpy as np
+
 from neuro_series import *
 from nb_viz import *
 from peristimulus import *
@@ -5,9 +7,113 @@ from abc import abstractmethod
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 import logging
+import sklearn
 logging.basicConfig(level=logging.INFO)
 #sns.set_context("talk")
 RAND_STATE = 230
+
+
+##################################################
+################### Preprocess ###################
+##################################################
+class NBM_Preprocessor:
+
+    def __init__(self, nbm, save_model=False):
+        self.save_model = save_model
+        self.model = None
+        self.nbm = nbm
+        self.RAND = self.nbm.RAND
+        pass
+
+    def transform(self):
+        pass
+
+    def get_neural_mat_wide(self, nb_df, **kwargs):
+        return nb_df
+
+
+    def get_neural_mat_wide_ID(self, nb_df, **kwargs):
+        # assuming optimal neural event alignment window
+        # dim-{i}: reduced dimension of the neural data session wise
+        for kw in kwargs:
+            if kw.startswith('dim-'):
+                dim_method = kw.split('-')[1]
+
+    def neural_dim_reduction(self, nb_df, event, method):
+        """
+        Input:
+            nb_df: pd.DataFrame
+                Neurobehavior data in wide form, where each row is one trial with behavior data and
+                behavior-aligned neural signals
+            event: str
+                event name with which neural signals should be aligned and performed dim reduction
+        Output:
+            df_LD: pd.DataFrame
+                dataframe containing dim reduced neural signals, with column names the corresponding
+                reduced neural signals
+        """
+        # Get columns of peri-event time-stamps for neural signals
+        ev_neur = self.nbm.default_ev_neur
+        if (ev_neur(event) in self.nbm.nb_cols) or (ev_neur(event) in self.nbm.nb_lag_cols):
+            colnames = [c for c in nb_df.columns if ev_neur(event) in c]
+            # colnames = self.nbm.nb_cols[ev_neur(event)]
+        else:
+            raise RuntimeError(f'Unknown event {event}')
+        X = nb_df[colnames].values
+        sorted_cols = np.sort(colnames)
+        t_start = sorted_cols[0].split('|')[1]
+        t_end = sorted_cols[-1].split('|')[1]
+        event_arg = ev_neur(event)
+
+        if method == 'mean':
+            df_LD = pd.DataFrame({f'{event_arg}_mean({t_start},{t_end})': np.mean(X, axis=1)})
+        elif method == 'peakridge':
+            # here a greedy version of the peak ridge is computed, where it is assumed that
+            # when \mu(X[i]) the summary stat is positive is the maximum, and the mininum
+            # when negative
+            mm = np.mean(X, axis=1)
+            pr = np.empty(X.shape[0])
+            pr[mm >= 0] = np.max(X[mm >= 0], axis=1)
+            pr[mm < 0] = np.min(X[mm < 0], axis=1)
+            df_LD = pd.DataFrame({f'{event_arg}_peakridge': pr})
+        elif method == 'conv_vtx':
+            ab = np.abs(X)
+            df_LD = pd.DataFrame({f'{event_arg}_conv_vtx':
+                                      X[np.arange(X.shape[0]), np.argmax(ab, axis=1)]})
+        elif method == 0:
+            df_LD = pd.DataFrame(X, columns=colnames)
+        else:
+            pca = sklearn.decomposition.PCA(n_components=method, whiten=True, random_state=self.RAND)
+            df_LD = pd.DataFrame(pca.fit_transform(X),
+                                 columns=[f'{event_arg}_PC{j + 1}' for j in range(method)])
+            if self.save_model:
+                self.model = pca
+        return df_LD
+
+
+def get_sample_size_facegrid(data=None, row=None, col=None, hue=None, style=None, **kwargs):
+
+    def sample_size_recursive(data, categories, pre_arg=''):
+        if categories:
+            category = categories[0]
+            assert category in data.columns, f'DATA must contain category {category}'
+            for ctg in np.unique(data[category]):
+                ctg_arg = f'category={ctg}'
+                sample_size_recursive(data[data[category] == ctg], categories[1:],
+                                      pre_arg+', '+ctg_arg)
+        else:
+            sub_df = data[['animal', 'session', 'trial']].drop_duplicates()
+            n_animal = len(sub_df['animal'].unique())
+            n_trial = len(sub_df)
+            n_session = len(np.unique(sub_df['animal'] + sub_df['session']))
+            print(pre_arg + f': A:{n_animal}, S: {n_session}, T: {n_trial}')
+
+    prearg = ''
+    if col is not None:
+        prearg = f'{col}={data[col].unique()[0]}'
+    if row is not None:
+        prearg = prearg + f', {row}={data[row].unique()[0]}'
+    sample_size_recursive(data, [c for c in [hue, style] if c is not None], prearg)
 
 
 ##################################################
@@ -26,15 +132,56 @@ class NeuroBehaviorMat:
 
     # example id_vars: animal, session, trial,
     # make a state representation?
-    def __init__(self, neural=True):
+    def __init__(self, neural=True, expr=None):
+        self.expr = expr
         self.neural = neural
         # self.id_vars = id_vars
         self.event_time_windows = {}
         self.nb_cols = None
         self.nb_lag_cols = None
 
+    def default_ev_neur(self, ev):
+        if '{' in ev:
+            ev1, lag = ev.split('{')
+            return f'{ev1}_neur' + '{' + lag
+        else:
+            return ev + '_neur'
+
+    def parse_nb_cols(self, nb_df, ev_neur_func=None):
+        # assume roi_long form
+        if ev_neur_func is None:
+            ev_neur = self.default_ev_neur
+        else:
+            ev_neur = ev_neur_func
+        lag_form = r'([-|\w]+)_neur({t-\d})|.*'
+        std_form = r'([-|\w]+)_neur|.*'
+        all_nbcols = [c for c in nb_df.columns if ('_neur' in c) and ('|' in c)]
+        nb_lag_cols = {}
+        nb_cols = {}
+        ignore_roi = lambda s: s.split('--')[1] if ('--' in s) else s
+        for c in all_nbcols:
+            lagm = re.match(lag_form, c)
+            stdm = re.match(std_form, c)
+            # print(c, lagm, stdm)
+            if r'{' in c:
+                evt, lag = lagm.group(1), lagm.group(2)[1:-1]
+                if ev_neur(evt) in nb_lag_cols:
+                    if lag in nb_lag_cols[ev_neur(evt)]:
+                        nb_lag_cols[ev_neur(evt)][lag].append(c)
+                    else:
+                        nb_lag_cols[ev_neur(evt)][lag] = [c]
+                else:
+                    nb_lag_cols[ev_neur(evt)] = {lag: [c]}
+            elif stdm:
+                evt = stdm.group(1)
+                if ev_neur(evt) in nb_cols:
+                    nb_cols[ev_neur(evt)].append(c)
+                else:
+                    nb_cols[ev_neur(evt)] = [c]
+        return nb_cols, nb_lag_cols
+
     def series_time(self, event, t):
-        ev_neur = lambda ev: ev + '_neur'
+        ev_neur = self.default_ev_neur
         return f'{ev_neur(event)}|{t * self.time_multiplier :.2f}'
 
     def extend_features(self, nb_df, *args, **kwargs):
@@ -68,6 +215,7 @@ class NeuroBehaviorMat:
         # for raw fluorescence should first melt then compare
 
         """
+        TODO: check edge case when neural_df ends right around when behavior ends, making side_out + 2s impossible
         by default takes in neur_df
         Now method only supports alignment for single animal session, need to develop ID system
         Returns:
@@ -239,6 +387,14 @@ class NeuroBehaviorMat:
     def apply_to_idgroups(self, nb_df, func, id_vars=None, *args, **kwargs):
         """ func: must takes in nb_df,
         *args, **kwargs: additional argument for func
+        potentially replace with:
+        import pandas as pd
+        df = pd.DataFrame({'A': [2, 2, 3, 3, 4, 4, 4], 'B': [2, 2, 2,2, 3, 3, 3], 'C': np.arange(7)})
+        def func(x):
+            print(x)
+            return pd.DataFrame({'cs': [x['C'].mean(), x['C'].std(), x['C'].mean()**2], 'ctype': ['mean', 'std', 'quad']})
+
+        df.groupby(["A","B"]).apply(func).droplevel(2).reset_index()
         """
         #
         if id_vars is None:
@@ -256,6 +412,107 @@ class NeuroBehaviorMat:
         nb_df.drop(columns='combined', inplace=True)
         return pd.concat(all_dfs, axis=0)
 
+    def get_HPM(self, nb_df, outcome_col, reward_col, tmax=None, bin_size=5, dropend=False):
+        if nb_df[reward_col].dtype != bool:
+            nb_df = nb_df.dropna(subset=reward_col)
+            nb_df[reward_col] = nb_df[reward_col].astype(bool)
+        return self.apply_to_idgroups(nb_df, self.get_HPM_ID, outcome_col=outcome_col,
+                                      reward_col=reward_col, tmax=tmax, bin_size=bin_size, dropend=dropend)
+
+    def get_HPM_ID(self, nb_df, outcome_col, reward_col, tmax=None, bin_size=5, dropend=False):
+        """
+
+        bin_size: np.float
+            time bin size in minutes
+        """
+        # assuming input is NaN free: nb_df = nb_df.dropna(subset=[outcome_col, reward_col])
+        assert nb_df[reward_col].dtype == bool
+        assert np.all([len(np.unique(nb_df[v])) == 1 for v in self.id_vars]), 'not unique'
+        assert len(nb_df.trial) == len(np.unique(nb_df.trial)), 'suspect data is not in wide form'
+        nb_df_tmax = np.max(nb_df[self.behavior_events].values)
+        if tmax is None:
+            tmax= nb_df_tmax
+        # obtain tmax via fp_series: THINK more about the best way
+        hits = nb_df.loc[nb_df[reward_col], outcome_col]
+        # binning variables
+        bigbin = bin_size * 60  # int: seconds
+        first_bin_end = bigbin  # frame number: float
+
+        if dropend:
+            ebin = tmax+1
+        else:
+            ebin = int(np.ceil(tmax / bigbin)) * bigbin + 1
+        bins = np.arange(0, ebin, bigbin)  # in seconds
+        [hpm, xx] = np.histogram(hits, bins)
+
+        xx = xx[1:]
+        if not dropend:
+            last_binsize = (tmax - bins[-2])
+            hpm[-1] *= bigbin / last_binsize
+            xx[-1] = last_binsize + xx[-2]
+
+        hpm = hpm / bin_size
+        xx = np.around(xx / 60, 2)
+        rdf = pd.DataFrame({'time_bin': xx, 'HPM': hpm})
+        for v in self.id_vars:
+            rdf[v] = nb_df[v].unique()[0]
+        return rdf
+
+    def get_PC_ID(self, nb_df, reward_col, bin_size=100, drop_end=True):
+        perf = (nb_df[reward_col] == True).astype(np.float).values
+        n_trial = len(perf)
+
+        if drop_end:
+            k = int(np.floor(n_trial / bin_size))
+        else:
+            k = int(np.ceil(n_trial / bin_size))
+            perf = np.concatenate([perf, np.full(k * bin_size - n_trial, np.nan)])
+
+        perf_mat = perf.reshape((k, bin_size), order='C')
+
+        pc = np.nanmean(perf_mat, axis=1)
+        xs = np.arange(1, k + 1) * bin_size
+        if not drop_end:
+            xs[-1] = n_trial
+        rdf = pd.DataFrame({'time_bin': xs, 'HPM': pc})
+        for v in self.id_vars:
+            rdf[v] = nb_df[v].unique()[0]
+
+        return rdf
+
+    def dim_reduce_aligned_neural(self, nb_df, event, start=0, end=1.001):
+
+        def align_time_in(s, start, end):
+            t = float(s.split('|')[1])
+            return (t >= start) & (t < end)
+
+        dropcols_pca = [c for c in self.nb_cols[self.default_ev_neur(event)] if (not align_time_in(c, start, end))]
+
+        # find relevant columns, also save dropcols
+        dimred_cols = [c for c in self.nb_cols[self.default_ev_neur(event)] if align_time_in(c, start, end)]
+
+
+        # find rows with nonan columns
+        nonansels = ~np.any(np.isnan(nb_df[dimred_cols].values), axis=1)
+        # subset valid rows, reset index and dim reduce
+        data_df = nb_df.loc[nonansels, self.id_vars+dimred_cols].reset_index(drop=True)
+
+        # save data with nonan
+
+        dim_red1 = self.apply_to_idgroups(data_df, NBM_Preprocessor(self).neural_dim_reduction, event=event,
+                                             method=3).reset_index(drop=True)
+        dim_red2 = self.apply_to_idgroups(data_df, NBM_Preprocessor(self).neural_dim_reduction, event=event,
+                                             method='mean').reset_index(drop=True)
+        nb_df.loc[nonansels, list(dim_red1.columns)+list(dim_red2.columns)] = pd.concat([dim_red1, dim_red2], axis=1).values
+        return nb_df
+
+    def debase_gradient(self, nb_df, event):
+        debase = True
+        if debase:
+            targ_cols = self.nb_cols[event + '_neur']
+            zero_col = [c for c in targ_cols if (float(c.split('|')[1]) == 0)][0]
+            nb_df[targ_cols] = nb_df[targ_cols].values - nb_df[zero_col].values[:, np.newaxis]
+
 
 class PS_NBMat(NeuroBehaviorMat):
     behavior_events = ['center_in', 'center_out', 'side_in', 'outcome',
@@ -270,8 +527,8 @@ class PS_NBMat(NeuroBehaviorMat):
 
     id_vars = ['animal', 'session', 'roi']
 
-    def __init__(self, neural=True):
-        super().__init__(neural)
+    def __init__(self, neural=True, expr=None):
+        super().__init__(neural, expr)
         if not self.neural:
             self.id_vars = self.id_vars[:-1]
         self.event_time_windows = {'center_in': np.arange(-1, 1.001, 0.05),
@@ -298,17 +555,78 @@ class PS_NBMat(NeuroBehaviorMat):
         # disregard miss trials
         test_df = self.lag_wide_df(nb_df, {'action': {'pre': 1}}).reset_index(drop=True)
         test_df['switch_num'] = np.nan
-        test_df.loc[test_df['trial'] == 1, 'switch_num'] = 0
+        test_df.loc[(test_df['trial'] == 1) & (~test_df['action'].isnull()), 'switch_num'] = 0
         test_df.loc[(test_df['action{t-1}'] != test_df['action']) & (~test_df['action'].isnull()), 'switch_num'] = 0
         assert test_df.loc[0, 'trial'] == 1
         for i in range(test_df.shape[0]):
             if np.isnan(test_df.loc[i, 'switch_num']):
-                if pd.isnull(test_df.loc[i, 'action']):
-                    test_df.loc[i, 'switch_num'] = test_df.loc[i - 1, 'switch_num']
-                else:
+                if not pd.isnull(test_df.loc[i, 'action']):
                     test_df.loc[i, 'switch_num'] = test_df.loc[i - 1, 'switch_num'] + 1
         test_df.loc[test_df['trial'] == 1, 'switch_num'] = np.nan
         return test_df.drop(columns=['action{t-1}']).reset_index(drop=True)
+
+    def get_reward_number(self, nb_df):
+        # Treating miss as different reward outcome, disrupting reward sequence
+        ru_convert = lambda x: (x-0.5) * 2
+        test_df = self.lag_wide_df(nb_df, {'rewarded': {'pre': 1}}).reset_index(drop=True)
+        test_df['reward_num'] = np.nan
+        first_trial_sel = (test_df['trial'] == 1) & (~test_df['rewarded'].isnull())
+        test_df.loc[first_trial_sel, 'reward_num'] = (test_df.loc[first_trial_sel, 'rewarded'].astype(float) - 0.5) * 2
+        rew_change_sel = (test_df['rewarded{t-1}'] != test_df['rewarded']) & (~test_df['rewarded'].isnull())
+        test_df.loc[rew_change_sel, 'reward_num'] = (test_df.loc[rew_change_sel, 'rewarded'].astype(float) - 0.5) * 2
+        assert test_df.loc[0, 'trial'] == 1
+        for i in range(test_df.shape[0]):
+            if np.isnan(test_df.loc[i, 'reward_num']) and (not pd.isnull(test_df.loc[i, 'rewarded'])):
+                test_df.loc[i, 'reward_num'] = test_df.loc[i - 1, 'reward_num'] + ru_convert(float(test_df.loc[i, 'rewarded']))
+        return test_df.drop(columns=['rewarded{t-1}']).reset_index(drop=True)
+
+    def get_reward_switch_number(self, nb_df):
+        ru_convert = lambda x: (x - 0.5) * 2
+        test_df = self.lag_wide_df(nb_df, {'action': {'pre': 1}, 'rewarded': {'pre': 1}}).reset_index(drop=True)
+        test_df[['switch_num', 'reward_num']] = np.nan
+        test_df.loc[(test_df['trial'] == 1) & (~test_df['action'].isnull()), 'switch_num'] = 0
+        test_df.loc[(test_df['action{t-1}'] != test_df['action']) & (~test_df['action'].isnull()), 'switch_num'] = 0
+        first_trial_sel = (test_df['trial'] == 1) & (~test_df['rewarded'].isnull())
+        test_df.loc[first_trial_sel, 'reward_num'] = (test_df.loc[first_trial_sel, 'rewarded'].astype(float) - 0.5) * 2
+        rew_change_sel = (test_df['rewarded{t-1}'] != test_df['rewarded']) & (~test_df['rewarded'].isnull())
+        test_df.loc[rew_change_sel, 'reward_num'] = (test_df.loc[rew_change_sel, 'rewarded'].astype(float) - 0.5) * 2
+        assert test_df.loc[0, 'trial'] == 1
+        for i in range(test_df.shape[0]):
+            if np.isnan(test_df.loc[i, 'switch_num']) and (not pd.isnull(test_df.loc[i, 'action'])):
+                test_df.loc[i, 'switch_num'] = test_df.loc[i - 1, 'switch_num'] + 1
+            if np.isnan(test_df.loc[i, 'reward_num']) and (not pd.isnull(test_df.loc[i, 'rewarded'])):
+                test_df.loc[i, 'reward_num'] = test_df.loc[i - 1, 'reward_num'] + ru_convert(
+                    float(test_df.loc[i, 'rewarded']))
+        test_df.loc[test_df['trial'] == 1, 'switch_num'] = np.nan
+        test_df['switch'] = np.nan
+        test_df.loc[test_df['switch_num'] == 0, 'switch'] = True
+        test_df.loc[test_df['switch_num'] > 0, 'switch'] = False
+        return test_df.drop(columns=['action{t-1}', 'rewarded{t-1}']).reset_index(drop=True)
+
+    def get_OHSH(self, nb_df):
+        test_df = self.lag_wide_df(nb_df, {'switch': {'pre': 2},
+                                           'rewarded': {'pre': 2}}).reset_index(drop=True)
+        key_cols = ['rewarded{t-1}', 'rewarded{t-2}', 'switch{t-1}', 'switch{t-2}']
+        nonancols = ~np.any(pd.isnull(test_df[key_cols[:2]].values), axis=1)
+        temp_df = test_df.loc[nonancols, key_cols[:2]].reset_index(drop=True)
+        temp_df[key_cols[:2]] = temp_df[key_cols[:2]].astype(bool)
+
+        temp_df.loc[temp_df['rewarded{t-2}'] & temp_df['rewarded{t-1}'], 'OH'] = 'RR'
+        temp_df.loc[(~temp_df['rewarded{t-2}']) & temp_df['rewarded{t-1}'], 'OH'] = 'UR'
+        temp_df.loc[(~temp_df['rewarded{t-2}']) & (~temp_df['rewarded{t-1}']), 'OH'] = 'UU'
+        temp_df.loc[temp_df['rewarded{t-2}'] & (~temp_df['rewarded{t-1}']), 'OH'] = 'RU'
+        test_df.loc[nonancols, 'OH'] = temp_df['OH'].values
+        # nonan cols for switch history
+        nonancols = ~np.any(pd.isnull(test_df[key_cols[-2:]].values), axis=1)
+        temp_df = test_df.loc[nonancols, key_cols[-2:]].reset_index(drop=True)
+        temp_df[key_cols[-2:]] = temp_df[key_cols[-2:]].astype(bool)
+
+        temp_df.loc[temp_df['switch{t-2}'] & temp_df['switch{t-1}'], 'SH'] = 'YY'
+        temp_df.loc[(~temp_df['switch{t-2}']) & temp_df['switch{t-1}'], 'SH'] = 'NY'
+        temp_df.loc[(~temp_df['switch{t-2}']) & (~temp_df['switch{t-1}']), 'SH'] = 'NN'
+        temp_df.loc[temp_df['switch{t-2}'] & (~temp_df['switch{t-1}']), 'SH'] = 'YN'
+        test_df.loc[nonancols, 'SH'] = temp_df['SH'].values
+        return test_df
 
     def extend_features(self, nb_df, *args, **kwargs):
         nb_df = self.get_perc_trial_in_block(nb_df)
@@ -332,8 +650,8 @@ class RR_NBMat(NeuroBehaviorMat):
 
     id_vars = ['animal', 'session', 'roi']
 
-    def __init__(self, neural=True):
-        super().__init__(neural)
+    def __init__(self, neural=True, expr=None):
+        super().__init__(neural, expr)
         if not neural:
             self.id_vars = ['animal', 'session']
         self.event_time_windows = {'tone_onset': np.arange(-1, 1.001, 0.05),
@@ -384,7 +702,7 @@ class NBExperiment:
 
     def __init__(self, folder='', modeling_id=None):
         self.meta = None
-        self.nbm = NeuroBehaviorMat()
+        self.nbm = NeuroBehaviorMat(expr=self)
         self.nbviz = NBVisualizer(self)
         self.plot_path = folder
         self.modeling_id = modeling_id
@@ -508,7 +826,7 @@ class NBExperiment:
                     bdf = bmat.todf()
                     all_bdfs.append(bdf)
                 except Exception:
-                    logging.warning(f'Error in calculating dff or AUC-score for {animal}, {session}, check signal')
+                    logging.warning(f'Error in computing bmat for {animal}, {session}, check session')
 
         all_bdf = pd.concat(all_bdfs, axis=0)
         final_bdf = all_bdf.merge(self.meta, how='left', on=['animal', 'session'])
@@ -556,7 +874,7 @@ class PS_Expr(NBExperiment):
         self.meta['hemi'] = ''
         self.meta.loc[self.meta['plug_in'] == 'R', 'hemi'] = 'right'
         self.meta.loc[self.meta['plug_in'] == 'L', 'hemi'] = 'left'
-        self.nbm = PS_NBMat()
+        self.nbm = PS_NBMat(expr=self)
 
         # TODO: modify this later
         if 'trig_mode' not in self.meta.columns:
@@ -607,6 +925,7 @@ class PS_Expr(NBExperiment):
             ps_series = BonsaiPS1Hemi2Ch(fp_file, fp_timestamps, trig_mode, animal_alias, session)
             ps_series.merge_channels()
             ps_series.realign_time(bmat)
+            bmat.adjust_tmax(ps_series)
         else:
             ps_series = None
         return bmat, ps_series
@@ -686,7 +1005,7 @@ class RR_Expr(NBExperiment):
         # # self.meta.loc[self.meta['session_num']]
         self.meta['cell_type'] = self.meta['animal_ID'].str.split('-', expand=True)[0]
         self.meta['session'] = self.meta['age'].apply(self.cvt_age_to_session)
-        self.nbm = RR_NBMat()
+        self.nbm = RR_NBMat(expr=self)
         self.nbviz = RR_NBViz(self)
 
         # # TODO: modify this later
@@ -737,6 +1056,7 @@ class RR_Expr(NBExperiment):
             rr_series = BonsaiRR2Hemi2Ch(fp_file, fp_timestamps, trig_mode, animal_alias, session)
             rr_series.merge_channels(ts_resamp_opt='interp')
             rr_series.realign_time(bmat)
+            bmat.adjust_tmax(rr_series)
         else:
             rr_series = None
         return bmat, rr_series

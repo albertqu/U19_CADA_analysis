@@ -24,35 +24,36 @@ class RR_NBViz(NBVisualizer):
         super().__init__(expr)
         self.expr = expr
 
-    def psychometric(self, nb_df):
-        # setting up data
+    def psychometric(self, nb_df, behavior_var='accept'):
+        # setting up data, identify useful features
         reg_df = nb_df[
             ['animal', 'session', 'trial', 'tone_onset', 'T_Entry', 'choice', 'restaurant', 'tone_prob', 'accept',
              'stimulation_on', 'stimulation_off']].reset_index(drop=True)
         reg_df['hall_time'] = reg_df['T_Entry'] - reg_df['tone_onset']
         reg_df['decision_time'] = reg_df['choice'] - reg_df['tone_onset']
+        # TODO: classify trials into baseline, postStim, noSTIM, STIM, (restDay),
         reg_df = df_select_kwargs(reg_df, hall_time=lambda s: (s >= 0)).reset_index(drop=True)
         reg_df = reg_df[reg_df['decision_time'] <= np.percentile(reg_df['decision_time'], 95)].reset_index(drop=True)
         reg_df['restaurant'] = reg_df['restaurant'].map({i: f'R{i}' for i in range(1, 5)})
 
-        # compute action value
+        # compute action value TODO using baseline trials
         endog_map = self.expr.nbm.fit_action_value_function(reg_df[reg_df['stimulation_on'].isnull()].reset_index(drop=True))
         reg_df = self.expr.nbm.add_action_value_feature(reg_df, endog_map)
 
+        # STEP 3: set up plotting to plot logit against behavioral variables
         fig = plt.figure(figsize=(10, 10))
         ax = plt.gca()
         sns.set_context('talk')
-
         sns.regplot(x="action_logit", y="accept", data=reg_df[reg_df['stimulation_on'].isnull()], x_estimator=np.mean,
                     logistic=True, n_boot=500, scatter_kws={"zorder": 0}, color='k', marker='', ax=ax)
         sns.regplot(x="action_logit", y="accept", data=reg_df[~reg_df['stimulation_on'].isnull()], x_estimator=np.mean,
                     logistic=True, n_boot=500, scatter_kws={"zorder": 0}, color='g', ax=ax)
 
         slice_df = reg_df.loc[
-            reg_df['stimulation_on'].isnull(), ['restaurant', 'tone_prob', 'action_logit', 'accept']].reset_index(
+            reg_df['stimulation_on'].isnull(), ['restaurant', 'tone_prob', 'action_logit', behavior_var]].reset_index(
             drop=True)
-        plot_df = slice_df.groupby(['restaurant', 'tone_prob', 'action_logit'], as_index=False).agg({'accept': 'mean'})
-        sns.scatterplot(x='action_logit', y='accept', data=plot_df, style='restaurant', hue='tone_prob',
+        plot_df = slice_df.groupby(['restaurant', 'tone_prob', 'action_logit'], as_index=False).agg({behavior_var: 'mean'})
+        sns.scatterplot(x='action_logit', y=behavior_var, data=plot_df, style='restaurant', hue='tone_prob',
                         palette='coolwarm', ax=ax, s=120, linewidth=0, zorder=10)
         ax.set_ylim((0, 1.1))
         return fig
@@ -127,6 +128,31 @@ def rr_psychometric(reg_df, special_arg, suptitle=None):
 ###############################################"""
 
 
+def get_sample_size_facegrid(data=None, row=None, col=None, hue=None, style=None, **kwargs):
+
+    def sample_size_recursive(data, categories, pre_arg=''):
+        if categories:
+            category = categories[0]
+            assert category in data.columns, f'DATA must contain category {category}'
+            for ctg in np.unique(data[category]):
+                ctg_arg = f'category={ctg}'
+                sample_size_recursive(data[data[category] == ctg], categories[1:],
+                                      pre_arg+', '+ctg_arg)
+        else:
+            sub_df = data[['animal', 'session', 'trial']].drop_duplicates()
+            n_animal = len(sub_df['animal'].unique())
+            n_trial = len(sub_df)
+            n_session = len(np.unique(sub_df['animal'] + sub_df['session']))
+            print(pre_arg + f': A:{n_animal}, S: {n_session}, T: {n_trial}')
+
+    prearg = ''
+    if col is not None:
+        prearg = f'{col}={data[col].unique()[0]}'
+    if row is not None:
+        prearg = prearg + f', {row}={data[row].unique()[0]}'
+    sample_size_recursive(data, [c for c in [hue, style] if c is not None], prearg)
+
+
 def trial_av_vline_timedots(data=None, event=None, sort_order=None, id_cols=None, y_pos=None, ylim0=None,
                             time_func=None, **kwargs):
     # assume ypos has no duplicates
@@ -141,7 +167,7 @@ def trial_av_vline_timedots(data=None, event=None, sort_order=None, id_cols=None
     events = nbmat.behavior_events
     ev_colors = sns.color_palette("hls", len(events))
     event_cmap = {events[i]: ev_colors[i] for i in range(len(events))}
-    evt_cont_map = {'outcome': ['center_in', 'center_out', 'outcome', 'first_side_out'],
+    evt_cont_map = {'outcome': ['center_in', 'center_out', 'outcome', 'first_side_out', 'center_in{t+1}'],
                     'center_out': ['first_side_out{t-1}', 'center_in', 'center_out', 'outcome'],
                     'first_side_out': ['outcome', 'first_side_out', 'center_in{t+1}']}
     # first drop duplicates due to lagging operations

@@ -25,6 +25,9 @@ class FPSeries:
     .sig_channels: dict
         desc: similar to .all_channels, excluding `control` channel (in .params['control'])
 
+    hand shake process between bmat and neuro_series:
+        neuro_series.realign(bmat)
+        bmat.adjust_tmax(neuro_series)
     """
     io_specs = {'410nm': 'green',
                 '415nm': 'green',
