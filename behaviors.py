@@ -464,7 +464,7 @@ class BehaviorMat:
         return self.time_aligner(timestamps)
 
     def adjust_tmax(self, neuro_series):
-        return max(self.tmax, np.max(neuro_series.neur_df['time']))
+        return max(self.tmax, np.max(neuro_series.neural_df['time']))
 
 
 class RRBehaviorMat(BehaviorMat):
