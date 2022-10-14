@@ -227,7 +227,7 @@ class BonsaiFP3001(FPSeries):
 
     def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0', hazard=0):
         # determine the golden standard for resampling time series
-        super().__init__(data_file, ts_file, trig_mode, animal, session)
+        super().__init__(data_file, ts_file, trig_mode, animal, session, hazard)
         data = pd.read_csv(data_file, skiprows=1, names=['frame', 'cam_time', 'flag'] + self.rois)
         data_ts = pd.read_csv(ts_file, names=['time'])
         data_fp = pd.concat([data, data_ts.time], axis=1)
@@ -282,11 +282,12 @@ class BonsaiRR2Hemi2Ch(BonsaiFP3001):
               'ignore_channels': []}
 
     def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0', hazard=0):
-        super().__init__(data_file, ts_file, trig_mode, animal, session)
+        super().__init__(data_file, ts_file, trig_mode, animal, session, hazard)
         if hazard == -1:
             self.hazard = ['left_470nm']
         elif hazard == -2:
             self.hazard = ['right_470nm']
+
 
 class BonsaiPS1Hemi2Ch(BonsaiFP3001):
 
@@ -303,7 +304,7 @@ class BonsaiPS1Hemi2Ch(BonsaiFP3001):
     def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0', hazard=0):
         if pd.isnull(trig_mode):
             trig_mode = 'BSC1'
-        super().__init__(data_file, ts_file, trig_mode, animal, session)
+        super().__init__(data_file, ts_file, trig_mode, animal, session, hazard)
         if hazard == -1:
             self.hazard = list(np.concatenate([[src_roi for src_roi in self.sig_channels[src]] for src in self.sig_channels]))
 
