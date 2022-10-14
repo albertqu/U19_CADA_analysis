@@ -40,12 +40,13 @@ class FPSeries:
     fp_flags = {}
     quality_metric = 'aucroc'
 
-    def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0'):
+    def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0', hazard=0):
         self.neural_dfs = {}
         self.neural_df = None
         self.all_channels = {}
         self.sig_channels = {}
         self.animal, self.session = animal, session
+        self.hazard = hazard
         # TODO: add method to label quality for all ROIs
 
     def estimate_fr(self, ts):
@@ -75,6 +76,8 @@ class FPSeries:
         dff_dfs = {'time': iso_time}
         for ch in self.sig_channels:
             for roi in self.sig_channels[ch]:
+                if (self.hazard != 0) and (roi in self.hazard):
+                    continue
                 rec_time = self.neural_df['time'].values
                 rec_sig = self.neural_df[roi].values
                 iso_sig = self.neural_df[roi.replace(ch, self.params['control'])].values
@@ -222,7 +225,7 @@ class BonsaiFP3001(FPSeries):
 
     rois = []
 
-    def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0'):
+    def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0', hazard=0):
         # determine the golden standard for resampling time series
         super().__init__(data_file, ts_file, trig_mode, animal, session)
         data = pd.read_csv(data_file, skiprows=1, names=['frame', 'cam_time', 'flag'] + self.rois)
@@ -255,7 +258,7 @@ class OldFP3001(FPSeries):
               'control': '415nm',
               'ignore_channels': []}
 
-    def __init__(self, data_file, ts_file=None, trig_mode=None, animal='test', session='0'):
+    def __init__(self, data_file, ts_file=None, trig_mode=None, animal='test', session='0', hazard=0):
         super().__init__(data_file, ts_file, trig_mode, animal, session)
         self.sig_channels = {}
         if trig_mode is None:
@@ -278,9 +281,12 @@ class BonsaiRR2Hemi2Ch(BonsaiFP3001):
               'control': '410nm',
               'ignore_channels': []}
 
-    def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0'):
+    def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0', hazard=0):
         super().__init__(data_file, ts_file, trig_mode, animal, session)
-
+        if hazard == -1:
+            self.hazard = ['left_470nm']
+        elif hazard == -2:
+            self.hazard = ['right_470nm']
 
 class BonsaiPS1Hemi2Ch(BonsaiFP3001):
 
@@ -294,9 +300,11 @@ class BonsaiPS1Hemi2Ch(BonsaiFP3001):
               'control': '415nm',
               'ignore_channels': []}
 
-    def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0'):
+    def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0', hazard=0):
         if pd.isnull(trig_mode):
             trig_mode = 'BSC1'
         super().__init__(data_file, ts_file, trig_mode, animal, session)
+        if hazard == -1:
+            self.hazard = list(np.concatenate([[src_roi for src_roi in self.sig_channels[src]] for src in self.sig_channels]))
 
 
