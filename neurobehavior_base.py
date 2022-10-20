@@ -790,7 +790,7 @@ class NBExperiment:
         """
         nb_df = pd.read_parquet(parquet_file)
         self.nbm.nb_cols, self.nbm.nb_lag_cols = self.nbm.parse_nb_cols(nb_df)
-        nb_df.drop(columns=[c for c in self.meta.columns if c not in ['animal', 'session']], inplace=True)
+        nb_df.drop(columns=[c for c in self.meta.columns if (c not in ['animal', 'session']) and (c in nb_df.columns)], inplace=True)
         return nb_df.merge(self.meta, how='left', on=['animal', 'session'])
 
     def behavior_lagged_view(self, proj, laglist=None, **kwargs):
