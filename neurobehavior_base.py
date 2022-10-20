@@ -667,7 +667,7 @@ class RR_NBMat(NeuroBehaviorMat):
         # endogs
         exog = 'accept'
         to_convert = ['restaurant']
-        X = pd.concat([pd.get_dummies(df['restaurant']), df['tone_prob']], axis=1)
+        X = pd.concat([pd.get_dummies(df['restaurant'].astype(str)), df['tone_prob']], axis=1)
         reg_df = pd.concat([X, df[to_convert]], axis=1)
         y = df[exog].values
         # Use held out dataset to evaluate score
@@ -691,6 +691,11 @@ class RR_NBMat(NeuroBehaviorMat):
         endog = ['restaurant', 'tone_prob']
         df[endog_map['name']] = endog_map['func'](df[endog])
         return df
+
+    def add_action_value_animal_wise(self, nb_df):
+        endog_map = self.fit_action_value_function(nb_df[nb_df['stimType'] == 'nostim'].reset_index(drop=True))
+        reg_df = self.add_action_value_feature(nb_df, endog_map)
+        return reg_df
 
 
 #########################################################
@@ -779,6 +784,14 @@ class NBExperiment:
 
         all_nb_df = pd.concat(all_nb_dfs, axis=0)
         return all_nb_df.merge(self.meta, how='left', on=['animal', 'session'])
+
+    def align_lagged_view_parquet(self, parquet_file):
+        """ :) Tying shoe laces, loads aligned nb_df from memory instead of computing on the fly
+        """
+        nb_df = pd.read_parquet(parquet_file)
+        self.nbm.nb_cols, self.nbm.nb_lag_cols = self.nbm.parse_nb_cols(nb_df)
+        nb_df.drop(columns=[c for c in self.meta.columns if c not in ['animal', 'session']], inplace=True)
+        return nb_df.merge(self.meta, how='left', on=['animal', 'session'])
 
     def behavior_lagged_view(self, proj, laglist=None, **kwargs):
         """

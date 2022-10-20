@@ -1,0 +1,295 @@
+---
+title: "RR ArchT GLMER"
+author: "Albert Qü"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+header-includes:
+   - \usepackage{float}
+output: 
+  pdf_document:
+    number_sections: true
+---
+
+
+
+```{r setup, echo = FALSE, message=FALSE, warning=FALSE}
+# load in useful packages
+library(tidyverse)
+library(forcats)
+library(lubridate)
+library(stringr)
+# set default knitr chunks
+knitr::opts_chunk$set(
+  echo = FALSE,  # don't print the code chunk
+  warning = FALSE,  # don't print warnings
+  message = FALSE,  # don't print messages
+  fig.width = 6,  # set default width of figures
+  fig.height = 4,  # set default height of figures
+  fig.align = "center",  # always align figure in center
+  fig.pos = "H",  # always plot figure at the exact location of the code chunk
+  cache = FALSE)  # don't cache results
+
+reset_index <- function(df) {
+  df <- cbind(index = rownames(df), df)
+  rownames(df) <- 1:nrow(df)
+  return(df)
+}
+```
+
+
+```{r load-data, echo = FALSE, message = FALSE, warning = FALSE, cache = TRUE}
+# note that the cache = TRUE chunk argument means that the results of this 
+# chunk are saved so it doesn't need to be re-run every time you compile the pdf
+# load the dates data
+data_root <- "D:/U19/data/RR/"
+source_file <- 'rrArchT_glmer_R.csv'
+psep = ".Platform$file.sep"
+
+data <- read.table(paste0(data_root, source_file), sep=",", header=TRUE)
+#data <- mutate(data, across(c("stimType", "restaurant"), as.factor)) 
+data <- mutate(data, animal=as.factor(animal), accept=as.double(accept),
+               stimType=relevel(as.factor(stimType), "nostim"),
+               restaurant=relevel(as.factor(restaurant), "2")) 
+head(data)
+```
+```{r}
+data %>% 
+  select(animal, restaurant, tone_prob, stimType, accept, plugged_in, quit_time) %>% 
+  filter(stimType %in% c('stim', 'nostim'), animal=="RRM039", plugged_in=="L", !is.na(quit_time))
+```
+
+
+## Data consistency check with Python Psychometric Curve
+
+```{r stim_only_44, echo = TRUE, message=FALSE, warning=FALSE}
+data.44.L <- data %>% 
+  select(animal, restaurant, tone_prob, stimType, accept, plugged_in, quit_time) %>% 
+  filter(stimType %in% c('stim', 'nostim'), animal=="RRM044", plugged_in=="L", is.na(quit_time))
+glm.44.L <- glm(accept ~ restaurant:stimType + tone_prob:stimType + stimType + restaurant + tone_prob, family=binomial(), data=data.44.L)
+summary(glm.44.L)
+
+data.44.R <- data %>% 
+  select(animal, restaurant, tone_prob, stimType, accept, plugged_in, quit_time) %>% 
+  filter(stimType %in% c('stim', 'nostim'), animal=="RRM044", plugged_in=="R", is.na(quit_time))
+glm.44.R <- glm(accept ~ restaurant:stimType + tone_prob:stimType + stimType + restaurant + tone_prob, family=binomial(), data=data.44.R)
+summary(glm.44.R)
+
+```
+
+```{r}
+data.44.L %>% filter(stimType=='nostim') %>% 
+  group_by(restaurant, tone_prob) %>%
+  summarise(accept_rate=mean(accept))
+```
+
+## Formal p value summary multiple animal/hemisphere (accept decision)
+
+```{r stim_only_summary, echo = TRUE, message=FALSE, warning=FALSE}
+df_list = list()
+i = 1
+for (animal_num in c(39:40, 42:45)) {
+  animal_arg <- sprintf("RRM0%d", animal_num)
+  for (hemi_arg in c("L", "R")) {
+    data.ah <- data %>% 
+    select(animal, restaurant, tone_prob, stimType, accept, plugged_in, quit_time) %>% 
+    filter(stimType %in% c('stim', 'nostim'), animal==animal_arg, plugged_in==hemi_arg, is.na(quit_time))
+    glm.ah <- glm(accept ~ restaurant:stimType + tone_prob:stimType + stimType + restaurant + tone_prob, family=binomial(), data=data.ah)
+    print(paste(animal_arg, hemi_arg))
+    print(summary(glm.ah))
+    
+    df <- reset_index(as.data.frame(coef(summary(glm.ah))[, c(1, 2, 4)]))
+    df$animal = animal_arg
+    df$hemi = hemi_arg
+    df_list[[i]] = df
+    i = i + 1
+  }
+}
+
+accept_p_df <- do.call(rbind, df_list)
+names(accept_p_df)[3:4] = c("stdE", "p_val")
+accept_p_df %>% filter(p_val <= 0.05, grepl("stim", index))
+```
+
+## Formal p value summary multiple animal/hemisphere (decision time)
+
+no effect of stim on decision time
+
+summary: robust tone_prob effect on movement time, suggesting decision time positively correlated with tone probability
+
+```{r stim_only_dt_summary, echo = TRUE, message=FALSE, warning=FALSE}
+df_list = list()
+i = 1
+for (animal_num in c(39:40, 42:45)) {
+  animal_arg <- sprintf("RRM0%d", animal_num)
+  for (hemi_arg in c("L", "R")) {
+    data.ah <- data %>% 
+    select(animal, restaurant, tone_prob, stimType, decision_time, plugged_in, quit_time) %>% 
+    filter(stimType %in% c('stim', 'nostim'), animal==animal_arg, plugged_in==hemi_arg)
+    glm.ah <- glm(decision_time ~ stimType + restaurant + tone_prob, family=Gamma, data=data.ah)
+    print(paste(animal_arg, hemi_arg))
+    print(summary(glm.ah))
+    
+    df <- reset_index(as.data.frame(coef(summary(glm.ah))[, c(1, 2, 4)]))
+    df$animal = animal_arg
+    df$hemi = hemi_arg
+    df_list[[i]] = df
+    i = i + 1
+  }
+}
+
+dt_p_df <- do.call(rbind, df_list)
+names(dt_p_df)[3:4] = c("stdE", "p_val")
+dt_p_df %>% filter(p_val <= 0.05, grepl("tone", index))
+```
+
+
+```{r stim_only_interaction_dt, echo = TRUE, message=FALSE, warning=FALSE}
+df_list = list()
+i = 1
+for (animal_num in c(39:40, 42:45)) {
+  animal_arg <- sprintf("RRM0%d", animal_num)
+  for (hemi_arg in c("L", "R")) {
+    data.ah <- data %>% 
+    select(animal, restaurant, tone_prob, stimType, decision_time, plugged_in, quit_time) %>% 
+    filter(stimType %in% c('stim', 'nostim'), animal==animal_arg, plugged_in==hemi_arg)
+    glm.ah <- glm(decision_time ~ restaurant:stimType + tone_prob:stimType + stimType + restaurant + tone_prob, family=Gamma, data=data.ah)
+    print(paste(animal_arg, hemi_arg))
+    print(summary(glm.ah))
+    
+    df <- reset_index(as.data.frame(coef(summary(glm.ah))[, c(1, 2, 4)]))
+    df$animal = animal_arg
+    df$hemi = hemi_arg
+    df_list[[i]] = df
+    i = i + 1
+  }
+}
+
+dt_p_df <- do.call(rbind, df_list)
+names(dt_p_df)[3:4] = c("stdE", "p_val")
+dt_p_df %>% filter(p_val <= 0.05, grepl("tone", index))
+```
+
+
+```{r stim_only_gaussian_dt, echo = TRUE, message=FALSE, warning=FALSE}
+df_list = list()
+i = 1
+for (animal_num in c(39:40, 42:45)) {
+  animal_arg <- sprintf("RRM0%d", animal_num)
+  for (hemi_arg in c("L", "R")) {
+    data.ah <- data %>% 
+    select(animal, restaurant, tone_prob, stimType, decision_time, plugged_in, quit_time) %>% 
+    filter(stimType %in% c('stim', 'nostim'), animal==animal_arg, plugged_in==hemi_arg)
+    glm.ah <- glm(decision_time ~ restaurant:stimType + tone_prob:stimType + stimType + restaurant + tone_prob, family=gaussian(), data=data.ah)
+    print(paste(animal_arg, hemi_arg))
+    print(summary(glm.ah))
+    
+    df <- reset_index(as.data.frame(coef(summary(glm.ah))[, c(1, 2, 4)]))
+    df$animal = animal_arg
+    df$hemi = hemi_arg
+    df_list[[i]] = df
+    i = i + 1
+  }
+}
+
+dt_p_df <- do.call(rbind, df_list)
+names(dt_p_df)[3:4] = c("stdE", "p_val")
+dt_p_df %>% filter(p_val <= 0.05, grepl("tone", index))
+```
+
+
+```{r stim_only_gaussian_dt_nointer, echo = TRUE, message=FALSE, warning=FALSE}
+df_list = list()
+i = 1
+for (animal_num in c(39:40, 42:45)) {
+  animal_arg <- sprintf("RRM0%d", animal_num)
+  for (hemi_arg in c("L", "R")) {
+    data.ah <- data %>% 
+    select(animal, restaurant, tone_prob, stimType, decision_time, plugged_in, quit_time) %>% 
+    filter(stimType %in% c('stim', 'nostim'), animal==animal_arg, plugged_in==hemi_arg)
+    glm.ah <- glm(decision_time ~ stimType + restaurant + tone_prob, family=gaussian(), data=data.ah)
+    print(paste(animal_arg, hemi_arg))
+    print(summary(glm.ah))
+    
+    df <- reset_index(as.data.frame(coef(summary(glm.ah))[, c(1, 2, 4)]))
+    df$animal = animal_arg
+    df$hemi = hemi_arg
+    df_list[[i]] = df
+    i = i + 1
+  }
+}
+
+dt_p_df <- do.call(rbind, df_list)
+names(dt_p_df)[3:4] = c("stdE", "p_val")
+dt_p_df %>% filter(p_val <= 0.05, grepl("stim", index))
+```
+
+
+
+GLM gaussian and lm yield similar results
+
+```{r, fig.width=10,fig.height=11}
+data %>% 
+  select(animal, restaurant, tone_prob, stimType, decision_time, plugged_in, quit_time) %>% 
+  filter(stimType %in% c('stim', 'nostim')) %>% 
+  ggplot(aes(x=tone_prob, y=decision_time, color=stimType)) +
+  geom_smooth(method='lm') + facet_wrap(animal ~ plugged_in)
+
+
+d39L <- data %>% 
+  select(animal, restaurant, tone_prob, stimType, decision_time, plugged_in, quit_time) %>% 
+  filter(stimType== 'nostim', animal=='RRM039', plugged_in=='L')  
+
+glm(decision_time ~ restaurant + tone_prob, data=d39L, family=Gamma) %>% summary()
+
+glm(decision_time ~ restaurant + tone_prob, data=d39L, family=gaussian()) %>% summary()
+```
+
+
+
+## EDA: stimulation on quit_time
+```{r, fig.width=15,fig.height=11}
+data %>% 
+  select(animal, restaurant, tone_prob, stimType, decision_time, plugged_in, quit_time) %>% 
+  mutate(tone_prob=as.factor(tone_prob)) %>%
+  filter(stimType %in% c('stim', 'nostim'), !is.na(quit_time)) %>%
+  ggplot(aes(x=tone_prob, y=quit_time, color=stimType)) +
+  geom_boxplot() + facet_wrap(animal ~ plugged_in)
+
+
+df_list = list()
+i = 1
+for (animal_num in c(39:40, 42:45)) {
+  animal_arg <- sprintf("RRM0%d", animal_num)
+  for (hemi_arg in c("L", "R")) {
+    data.ah <- data %>% 
+    select(animal, restaurant, tone_prob, stimType, decision_time, plugged_in, quit_time) %>% 
+    filter(stimType %in% c('stim', 'nostim'), !is.na(quit_time), animal==animal_arg, plugged_in==hemi_arg)
+    glm.ah <- glm(quit_time ~ stimType + restaurant + tone_prob, family=gaussian(), data=data.ah)
+    print(paste(animal_arg, hemi_arg))
+    print(summary(glm.ah))
+    
+    df <- reset_index(as.data.frame(coef(summary(glm.ah))[, c(1, 2, 4)]))
+    df$animal = animal_arg
+    df$hemi = hemi_arg
+    df_list[[i]] = df
+    i = i + 1
+  }
+}
+
+dt_p_df <- do.call(rbind, df_list)
+names(dt_p_df)[3:4] = c("stdE", "p_val")
+dt_p_df %>% filter(p_val <= 0.05, grepl("stim", index))
+```
+
+
+```{r}
+ivw_mean <- function(x, group) {
+  v0 = var(x)
+  v <- numeric(length(x))
+  for (g in unique(group)) {
+    v[group==g] = 1 / var(x[group == g])
+  }
+  return(weighted.mean(x, v))
+}
+ivw_mean(data$rt, data$uniqueid)
+
+```
