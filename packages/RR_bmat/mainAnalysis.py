@@ -24,7 +24,7 @@ def preprocessing(filepath, eventcodedict):
     bonsai_output['event'] = bonsai_output['eventcode'].map(lambda code: eventcodedict[code])
     first_timestamp = bonsai_output.iloc[0, 0]
     first = bonsai_output[bonsai_output['eventcode'] == 9].index[0]
-    bonsai_output = bonsai_output[bonsai_output['eventcode'] != 9]
+    bonsai_output = bonsai_output[bonsai_output['eventcode'] != 9].reset_index(drop=True)
     bonsai_output['timestamp'] = bonsai_output['timestamp'].map(lambda t: (t - first_timestamp) / 1000)
     bonsai_output = bonsai_output[['event', 'timestamp', 'eventcode']]
     bonsai_output_final = bonsai_output[first:]
