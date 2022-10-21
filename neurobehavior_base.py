@@ -929,14 +929,15 @@ class PS_Expr(NBExperiment):
 
         hfile = h5py.File(filemap['behaviorLOG'], 'r')
         animal_alias = self.meta.loc[self.meta[arg_type] == animal_arg, 'animal'].values[0]
-        bmat = PSBehaviorMat(animal_alias, session, hfile, STAGE=1, modeling_id=self.modeling_id)
+        cfolder = self.folder if self.cache else None
+        bmat = PSBehaviorMat(animal_alias, session, hfile, STAGE=1, modeling_id=self.modeling_id, cache_folder=cfolder)
         fp_file = filemap['FP']
         fp_timestamps = filemap['FPTS']
 
         if (fp_file is not None) and (fp_timestamps is not None):
             session_sel = self.meta['session'] == session
             trig_mode = self.meta.loc[(self.meta[arg_type] == animal_arg) & session_sel, 'trig_mode'].values[0]
-            ps_series = BonsaiPS1Hemi2Ch(fp_file, fp_timestamps, trig_mode, animal_alias, session)
+            ps_series = BonsaiPS1Hemi2Ch(fp_file, fp_timestamps, trig_mode, animal_alias, session, cache_folder=cfolder)
             ps_series.merge_channels()
             ps_series.realign_time(bmat)
             bmat.adjust_tmax(ps_series)
@@ -1060,14 +1061,15 @@ class RR_Expr(NBExperiment):
             return None, None
 
         animal_alias = self.meta.loc[self.meta[arg_type] == animal_arg, 'animal'].values[0]
-        bmat = RRBehaviorMat(animal_alias, session, filemap['RR_'], STAGE=1)
+        cfolder = self.folder if self.cache else None
+        bmat = RRBehaviorMat(animal_alias, session, filemap['RR_'], STAGE=1, cache_folder=cfolder)
         fp_file = filemap['FP']
         fp_timestamps = filemap['FPTS']
 
         if (fp_file is not None) and (fp_timestamps is not None):
             session_sel = self.meta['session'] == session
             trig_mode = self.meta.loc[(self.meta[arg_type] == animal_arg) & session_sel, 'trig_mode'].values[0]
-            rr_series = BonsaiRR2Hemi2Ch(fp_file, fp_timestamps, trig_mode, animal_alias, session)
+            rr_series = BonsaiRR2Hemi2Ch(fp_file, fp_timestamps, trig_mode, animal_alias, session, cache_folder=cfolder)
             rr_series.merge_channels(ts_resamp_opt='interp')
             rr_series.realign_time(bmat)
             bmat.adjust_tmax(rr_series)
