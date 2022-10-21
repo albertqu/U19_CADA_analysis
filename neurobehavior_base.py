@@ -658,6 +658,7 @@ class RR_NBMat(NeuroBehaviorMat):
                                    'T_Entry': np.arange(-1, 1.001, 0.05),
                                    'choice': np.arange(-1, 1.001, 0.05),
                                    'outcome': np.arange(-1, 1.001, 0.05),
+                                   ''
                                    'quit': np.arange(-1, 1.001, 0.05),
                                    'collection': np.arange(-1, 1.001, 0.05),
                                    'trial_end': np.arange(-1, 1.001, 0.05),
