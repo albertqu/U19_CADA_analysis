@@ -705,12 +705,13 @@ class NBExperiment:
     info_name = None
     spec_name = None
 
-    def __init__(self, folder='', modeling_id=None):
+    def __init__(self, folder='', modeling_id=None, cache=True):
         self.meta = None
         self.nbm = NeuroBehaviorMat(expr=self)
         self.nbviz = NBVisualizer(self)
         self.plot_path = folder
         self.modeling_id = modeling_id
+        self.cache = cache
 
     def meta_safe_drop(self, nb_df, inplace=False):
         subcols = list(np.setdiff1d(nb_df.columns, self.meta.columns))
@@ -866,8 +867,8 @@ class PS_Expr(NBExperiment):
     info_name = 'probswitch_neural_subset.csv'
     spec_name = 'probswitch_animal_specs.csv'
 
-    def __init__(self, folder, modeling_id=None, **kwargs):
-        super().__init__(folder, modeling_id)
+    def __init__(self, folder, modeling_id=None, cache=True, **kwargs):
+        super().__init__(folder, modeling_id, cache)
         self.folder = folder
         pathlist = folder.split(os.sep)[:-1] + ['plots']
         self.plot_path = oj(os.sep, *pathlist)
@@ -1001,8 +1002,8 @@ class RR_Expr(NBExperiment):
     info_name = 'rr_neural_subset.csv'
     spec_name = 'rr_animal_specs.csv'
 
-    def __init__(self, folder, modeling_id=None, **kwargs):
-        super().__init__(folder, modeling_id)
+    def __init__(self, folder, modeling_id=None, cache=True, **kwargs):
+        super().__init__(folder, modeling_id, cache)
         self.folder = folder
         pathlist = folder.split(os.sep)[:-1] + ['plots']
         self.plot_path = oj(os.sep, *pathlist)

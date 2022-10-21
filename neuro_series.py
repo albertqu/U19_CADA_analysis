@@ -1,3 +1,7 @@
+import os.path
+
+import pandas as pd
+
 from packages.photometry_functions import get_zdFF, get_zdFF_old, jove_fit_reference
 from peristimulus import *
 from os.path import join as oj
@@ -40,12 +44,13 @@ class FPSeries:
     fp_flags = {}
     quality_metric = 'aucroc'
 
-    def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0', hazard=0):
+    def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0', hazard=0, cache_folder=None):
         self.neural_dfs = {}
         self.neural_df = None
         self.all_channels = {}
         self.sig_channels = {}
         self.animal, self.session = animal, session
+        self.cache_folder = oj(cache_folder, animal, session) if (cache_folder is not None) else None
         self.hazard = hazard
         # TODO: add method to label quality for all ROIs
 
@@ -71,6 +76,11 @@ class FPSeries:
 
         Returns: ZdF: making it method dependent, and store in a class variable
         """
+        cache_file = None
+        if self.cache_folder is not None:
+            cache_file = oj(self.cache_folder, f"{self.animal}_{self.session}_dff_{method}.pq")
+            if os.path.exists(cache_file):
+                return pd.read_parquet(cache_file)
         dff_name_map = {'iso_jove_dZF': 'jove'}
         iso_time = self.neural_df['time']
         dff_dfs = {'time': iso_time}
@@ -112,6 +122,10 @@ class FPSeries:
         meas = np.setdiff1d(dff_df.columns, id_labls)
         melted = pd.melt(dff_df, id_vars=id_labls, value_vars=meas, var_name='roi', value_name=meas_name)
         melted['roi'] = melted['roi'].str.replace('_' +meas_name, '')
+        if cache_file is not None:
+            if not os.path.exists(self.cache_folder):
+                os.makedirs(self.cache_folder)
+            melted.to_parquet(cache_file)
         return melted
 
     def merge_channels(self, ts_resamp_opt='lossy_ctrl'):
@@ -225,9 +239,9 @@ class BonsaiFP3001(FPSeries):
 
     rois = []
 
-    def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0', hazard=0):
+    def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0', hazard=0, cache_folder=None):
         # determine the golden standard for resampling time series
-        super().__init__(data_file, ts_file, trig_mode, animal, session, hazard)
+        super().__init__(data_file, ts_file, trig_mode, animal, session, hazard, cache_folder)
         data = pd.read_csv(data_file, skiprows=1, names=['frame', 'cam_time', 'flag'] + self.rois)
         data_ts = pd.read_csv(ts_file, names=['time'])
         data_fp = pd.concat([data, data_ts.time], axis=1)
@@ -281,8 +295,8 @@ class BonsaiRR2Hemi2Ch(BonsaiFP3001):
               'control': '410nm',
               'ignore_channels': []}
 
-    def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0', hazard=0):
-        super().__init__(data_file, ts_file, trig_mode, animal, session, hazard)
+    def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0', hazard=0, cache_folder=None):
+        super().__init__(data_file, ts_file, trig_mode, animal, session, hazard, cache_folder)
         if hazard == -1:
             self.hazard = ['left_470nm']
         elif hazard == -2:
@@ -301,10 +315,10 @@ class BonsaiPS1Hemi2Ch(BonsaiFP3001):
               'control': '415nm',
               'ignore_channels': []}
 
-    def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0', hazard=0):
+    def __init__(self, data_file, ts_file, trig_mode, animal='test', session='0', hazard=0, cache_folder=None):
         if pd.isnull(trig_mode):
             trig_mode = 'BSC1'
-        super().__init__(data_file, ts_file, trig_mode, animal, session, hazard)
+        super().__init__(data_file, ts_file, trig_mode, animal, session, hazard, cache_folder)
         if hazard == -1:
             self.hazard = list(np.concatenate([[src_roi for src_roi in self.sig_channels[src]] for src in self.sig_channels]))
 
