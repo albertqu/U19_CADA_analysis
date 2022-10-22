@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 import logging
 import sklearn
+from tqdm import tqdm
 logging.basicConfig(level=logging.INFO)
 #sns.set_context("talk")
 RAND_STATE = 230
@@ -758,7 +759,7 @@ class NBExperiment:
         meta_sel = df_select_kwargs(self.meta, return_index=True, **kwargs)
         all_nb_dfs = []
 
-        for animal, session in self.meta.loc[meta_sel & proj_sel, ['animal', 'session']].values:
+        for animal, session in tqdm(self.meta.loc[meta_sel & proj_sel, ['animal', 'session']].values):
             try:
                 bmat, neuro_series = self.load_animal_session(animal, session)
             except Exception:
