@@ -658,6 +658,7 @@ class RR_NBMat(NeuroBehaviorMat):
                                    'T_Entry': np.arange(-1, 1.001, 0.05),
                                    'choice': np.arange(-1, 1.001, 0.05),
                                    'outcome': np.arange(-1, 1.001, 0.05),
+                                   ''
                                    'quit': np.arange(-1, 1.001, 0.05),
                                    'collection': np.arange(-1, 1.001, 0.05),
                                    'trial_end': np.arange(-1, 1.001, 0.05),
@@ -667,7 +668,7 @@ class RR_NBMat(NeuroBehaviorMat):
         # endogs
         exog = 'accept'
         to_convert = ['restaurant']
-        X = pd.concat([pd.get_dummies(df['restaurant']), df['tone_prob']], axis=1)
+        X = pd.concat([pd.get_dummies(df['restaurant'].astype(str)), df['tone_prob']], axis=1)
         reg_df = pd.concat([X, df[to_convert]], axis=1)
         y = df[exog].values
         # Use held out dataset to evaluate score
@@ -692,6 +693,11 @@ class RR_NBMat(NeuroBehaviorMat):
         df[endog_map['name']] = endog_map['func'](df[endog])
         return df
 
+    def add_action_value_animal_wise(self, nb_df):
+        endog_map = self.fit_action_value_function(nb_df[nb_df['stimType'] == 'nostim'].reset_index(drop=True))
+        reg_df = self.add_action_value_feature(nb_df, endog_map)
+        return reg_df
+
 
 #########################################################
 ##################### NBExperiment ######################
@@ -700,12 +706,13 @@ class NBExperiment:
     info_name = None
     spec_name = None
 
-    def __init__(self, folder='', modeling_id=None):
+    def __init__(self, folder='', modeling_id=None, cache=True):
         self.meta = None
         self.nbm = NeuroBehaviorMat(expr=self)
         self.nbviz = NBVisualizer(self)
         self.plot_path = folder
         self.modeling_id = modeling_id
+        self.cache = cache
 
     def meta_safe_drop(self, nb_df, inplace=False):
         subcols = list(np.setdiff1d(nb_df.columns, self.meta.columns))
@@ -781,6 +788,14 @@ class NBExperiment:
         all_nb_df = pd.concat(all_nb_dfs, axis=0)
         return all_nb_df.merge(self.meta, how='left', on=['animal', 'session'])
 
+    def align_lagged_view_parquet(self, parquet_file):
+        """ :) Tying shoe laces, loads aligned nb_df from memory instead of computing on the fly
+        """
+        nb_df = pd.read_parquet(parquet_file)
+        self.nbm.nb_cols, self.nbm.nb_lag_cols = self.nbm.parse_nb_cols(nb_df)
+        nb_df.drop(columns=[c for c in self.meta.columns if (c not in ['animal', 'session']) and (c in nb_df.columns)], inplace=True)
+        return nb_df.merge(self.meta, how='left', on=['animal', 'session'])
+
     def behavior_lagged_view(self, proj, laglist=None, **kwargs):
         """
         Given the project code specified in `proj`, look through metadata loaded through `self.info_name`
@@ -854,8 +869,8 @@ class PS_Expr(NBExperiment):
     info_name = 'probswitch_neural_subset.csv'
     spec_name = 'probswitch_animal_specs.csv'
 
-    def __init__(self, folder, modeling_id=None, **kwargs):
-        super().__init__(folder, modeling_id)
+    def __init__(self, folder, modeling_id=None, cache=True, **kwargs):
+        super().__init__(folder, modeling_id, cache)
         self.folder = folder
         pathlist = folder.split(os.sep)[:-1] + ['plots']
         self.plot_path = oj(os.sep, *pathlist)
@@ -916,14 +931,15 @@ class PS_Expr(NBExperiment):
 
         hfile = h5py.File(filemap['behaviorLOG'], 'r')
         animal_alias = self.meta.loc[self.meta[arg_type] == animal_arg, 'animal'].values[0]
-        bmat = PSBehaviorMat(animal_alias, session, hfile, STAGE=1, modeling_id=self.modeling_id)
+        cfolder = self.folder if self.cache else None
+        bmat = PSBehaviorMat(animal_alias, session, hfile, STAGE=1, modeling_id=self.modeling_id, cache_folder=cfolder)
         fp_file = filemap['FP']
         fp_timestamps = filemap['FPTS']
 
         if (fp_file is not None) and (fp_timestamps is not None):
             session_sel = self.meta['session'] == session
             trig_mode = self.meta.loc[(self.meta[arg_type] == animal_arg) & session_sel, 'trig_mode'].values[0]
-            ps_series = BonsaiPS1Hemi2Ch(fp_file, fp_timestamps, trig_mode, animal_alias, session)
+            ps_series = BonsaiPS1Hemi2Ch(fp_file, fp_timestamps, trig_mode, animal_alias, session, cache_folder=cfolder)
             ps_series.merge_channels()
             ps_series.realign_time(bmat)
             bmat.adjust_tmax(ps_series)
@@ -989,8 +1005,8 @@ class RR_Expr(NBExperiment):
     info_name = 'rr_neural_subset.csv'
     spec_name = 'rr_animal_specs.csv'
 
-    def __init__(self, folder, modeling_id=None, **kwargs):
-        super().__init__(folder, modeling_id)
+    def __init__(self, folder, modeling_id=None, cache=True, **kwargs):
+        super().__init__(folder, modeling_id, cache)
         self.folder = folder
         pathlist = folder.split(os.sep)[:-1] + ['plots']
         self.plot_path = oj(os.sep, *pathlist)
@@ -1047,14 +1063,15 @@ class RR_Expr(NBExperiment):
             return None, None
 
         animal_alias = self.meta.loc[self.meta[arg_type] == animal_arg, 'animal'].values[0]
-        bmat = RRBehaviorMat(animal_alias, session, filemap['RR_'], STAGE=1)
+        cfolder = self.folder if self.cache else None
+        bmat = RRBehaviorMat(animal_alias, session, filemap['RR_'], STAGE=1, cache_folder=cfolder)
         fp_file = filemap['FP']
         fp_timestamps = filemap['FPTS']
 
         if (fp_file is not None) and (fp_timestamps is not None):
             session_sel = self.meta['session'] == session
             trig_mode = self.meta.loc[(self.meta[arg_type] == animal_arg) & session_sel, 'trig_mode'].values[0]
-            rr_series = BonsaiRR2Hemi2Ch(fp_file, fp_timestamps, trig_mode, animal_alias, session)
+            rr_series = BonsaiRR2Hemi2Ch(fp_file, fp_timestamps, trig_mode, animal_alias, session, cache_folder=cfolder)
             rr_series.merge_channels(ts_resamp_opt='interp')
             rr_series.realign_time(bmat)
             bmat.adjust_tmax(rr_series)

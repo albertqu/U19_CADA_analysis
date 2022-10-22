@@ -450,11 +450,13 @@ class BehaviorMat:
     time_unit = None
     eventlist = None
 
-    def __init__(self, animal, session):
+    def __init__(self, animal, session, cache_folder=None):
         self.animal = animal
         self.session = session
         self.time_aligner = lambda s: s # provides method to align timestamps
         self.tmax = 0
+        self.cache_folder = os.path.join(cache_folder, animal, session) if (cache_folder is not None) else None
+
 
     @abstractmethod
     def todf(self):
@@ -479,8 +481,8 @@ class RRBehaviorMat(BehaviorMat):
               'quit', 'collection', 'trial_end', 'exit']
     time_unit = 's'
 
-    def __init__(self, animal, session, logfile, STAGE=1):
-        super().__init__(animal, session)
+    def __init__(self, animal, session, logfile, STAGE=1, cache_folder=None):
+        super().__init__(animal, session, cache_folder=cache_folder)
         names = ['timestamp', 'eventcode']
         strip = lambda t: t.replace(" ", "") if isinstance(t, str) else t
         bonsai_output = pd.read_csv(logfile, sep=" ", index_col=False, names=names)[names]
@@ -503,6 +505,11 @@ class RRBehaviorMat(BehaviorMat):
     def todf(self, valid=True, comment=False):
         # Don't use todf if initialized with STAGE 0
         # trial structure containing pseudotrials
+        cache_file = None
+        if self.cache_folder is not None:
+            cache_file = os.path.join(self.cache_folder, f"{self.animal}_{self.session}_bdf.pq")
+            if os.path.exists(cache_file):
+                return pd.read_parquet(cache_file)
         trials = trial_writer(self.eventlist)
         trial_info_filler(trials)
         trial_merger(trials)
@@ -527,6 +534,10 @@ class RRBehaviorMat(BehaviorMat):
         result_df['trial'] = np.arange(1, result_df.shape[0]+1)
         result_df = result_df[['animal', 'session', 'trial'] + old_cols]
         result_df['tmax'] = self.tmax
+        if cache_file is not None:
+            if not os.path.exists(self.cache_folder):
+                os.makedirs(self.cache_folder)
+            result_df.to_parquet(cache_file)
         return result_df
 
     def eventlist_to_df(self):
@@ -561,8 +572,8 @@ class PSBehaviorMat(BehaviorMat):
     # event_features = 'reward', 'action',
     # trial_features = 'quality', 'struct_complex', 'explore_complex', 'BLKNo', 'CPort'
     # Always use efficient coding
-    def __init__(self, animal, session, hfile, tau=np.inf, STAGE=1, modeling_id=None):
-        super().__init__(animal, session)
+    def __init__(self, animal, session, hfile, tau=np.inf, STAGE=1, modeling_id=None, cache_folder=None):
+        super().__init__(animal, session, cache_folder=cache_folder)
         self.tau = tau
         if isinstance(hfile, str):
             print("For pipeline loaded hdf5 is recommended for performance")
@@ -761,6 +772,11 @@ class PSBehaviorMat(BehaviorMat):
         return eventlist
 
     def todf(self):
+        cache_file = None
+        if self.cache_folder is not None:
+            cache_file = os.path.join(self.cache_folder, f"{self.animal}_{self.session}_bdf.pq")
+            if os.path.exists(cache_file):
+                return pd.read_parquet(cache_file)
         # careful with the trials if their last outcome is the end of the exper file.
         elist = self.eventlist
         # reward and action
@@ -821,6 +837,10 @@ class PSBehaviorMat(BehaviorMat):
             assert np.sum(action_sel) == len(mdf), f'modeling dimension mismatch for {self.animal}, {self.session}'
             result_df.loc[action_sel, list(mdf.columns)] = mdf.values
         result_df['tmax'] = self.tmax
+        if cache_file is not None:
+            if not os.path.exists(self.cache_folder):
+                os.makedirs(self.cache_folder)
+            result_df.to_parquet(cache_file)
         return result_df
 
 
