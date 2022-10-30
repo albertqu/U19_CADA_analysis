@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 import logging
 import sklearn
+from tqdm import tqdm
 logging.basicConfig(level=logging.INFO)
 #sns.set_context("talk")
 RAND_STATE = 230
@@ -726,7 +727,7 @@ class NBExperiment:
     def encode_to_filename(self, animal, session, ftypes="processed_all"):
         return NotImplemented
 
-    def align_lagged_view(self, proj, events, laglist=None, **kwargs):
+    def align_lagged_view(self, proj, events, laglist=None, diagnose=False, **kwargs):
         """
         Given the project code specified in `proj`, look through metadata loaded through `self.info_name`
         and align each session's neural data to `events`. If specified, lag the neural data according to
@@ -758,7 +759,7 @@ class NBExperiment:
         meta_sel = df_select_kwargs(self.meta, return_index=True, **kwargs)
         all_nb_dfs = []
 
-        for animal, session in self.meta.loc[meta_sel & proj_sel, ['animal', 'session']].values:
+        for animal, session in tqdm(self.meta.loc[meta_sel & proj_sel, ['animal', 'session']].values):
             try:
                 bmat, neuro_series = self.load_animal_session(animal, session)
             except Exception:
@@ -772,12 +773,13 @@ class NBExperiment:
                     bdf, dff_df = bmat.todf(), neuro_series.calculate_dff(method='ZdF_jove')
                     nb_df = self.nbm.align_B2N_dff_ID(bdf, dff_df, events, form='wide')
                     nb_df = self.nbm.extend_features(nb_df)
-                    sig_scores = neuro_series.diagnose_multi_channels(viz=False)
-                    for sigch in sig_scores:
-                        sigch_score_col = neuro_series.quality_metric + f'_{sigch}'
-                        self.meta.loc[(self.meta['animal'] == animal)
-                                      & (self.meta['session'] == session),
-                                      sigch_score_col] = sig_scores[sigch]
+                    if diagnose:
+                        sig_scores = neuro_series.diagnose_multi_channels(viz=False)
+                        for sigch in sig_scores:
+                            sigch_score_col = neuro_series.quality_metric + f'_{sigch}'
+                            self.meta.loc[(self.meta['animal'] == animal)
+                                          & (self.meta['session'] == session),
+                                          sigch_score_col] = sig_scores[sigch]
                     if laglist is not None:
                         nb_df = self.nbm.lag_wide_df_ID(nb_df, laglist)
                     all_nb_dfs.append(nb_df)
