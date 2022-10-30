@@ -154,7 +154,7 @@ def get_sample_size_facegrid(data=None, row=None, col=None, hue=None, style=None
 
 
 def trial_av_vline_timedots(data=None, event=None, sort_order=None, id_cols=None, y_pos=None, ylim0=None,
-                            time_func=None, **kwargs):
+                            time_func=None, peri_event_map=None, **kwargs):
     # assume ypos has no duplicates
     ax = plt.gca()
     if ylim0 is None:
@@ -167,9 +167,12 @@ def trial_av_vline_timedots(data=None, event=None, sort_order=None, id_cols=None
     events = nbmat.behavior_events
     ev_colors = sns.color_palette("hls", len(events))
     event_cmap = {events[i]: ev_colors[i] for i in range(len(events))}
-    evt_cont_map = {'outcome': ['center_in', 'center_out', 'outcome', 'first_side_out', 'center_in{t+1}'],
-                    'center_out': ['first_side_out{t-1}', 'center_in', 'center_out', 'outcome'],
-                    'first_side_out': ['outcome', 'first_side_out', 'center_in{t+1}']}
+    if peri_event_map is not None:
+        evt_cont_map = peri_event_map
+    else:
+        evt_cont_map = {'outcome': ['center_in', 'center_out', 'outcome', 'first_side_out', 'center_in{t+1}'],
+                        'center_out': ['first_side_out{t-1}', 'center_in', 'center_out', 'outcome'],
+                        'first_side_out': ['outcome', 'first_side_out', 'center_in{t+1}']}
     # first drop duplicates due to lagging operations
     if id_cols is None:
         id_cols = ['animal', 'session', 'trial']
@@ -181,7 +184,13 @@ def trial_av_vline_timedots(data=None, event=None, sort_order=None, id_cols=None
         dots_df[evdots] = dots_df[evdots].values - event_zeros
     # default ascending
     if sort_order:
+        # assuming sort_order are strings
+        data_order_cols = [so for so in sort_order if so not in dots_df.columns]
+        if data_order_cols:
+            dots_df[data_order_cols] = data[data_order_cols]
         dots_df = dots_df.sort_values(sort_order)
+        if data_order_cols:
+            dots_df.drop(columns=data_order_cols, inplace=True)
     xmin, xmax = ax.get_xlim()
     if y_pos is None:
         ymin, ymax = ylim0
@@ -196,47 +205,28 @@ def trial_av_vline_timedots(data=None, event=None, sort_order=None, id_cols=None
     else:
         mradius = 0.15
 
+    event_labeled = {ev.split('{')[0]: False for ev in evt_cont_map[event]}
+    event_labeled
+
     for evdots in evt_cont_map[event]:
         # not exact when doing heatmap
         dot_times = dots_df[evdots].values
         if time_func is not None:
             dot_times = np.apply_along_axis(time_func, 0, dot_times)
         sels = (dot_times >= xmin) & (dot_times <= xmax)
-        ax.scatter(dot_times[sels], y_pos[sels], color=event_cmap[evdots.split('{')[0]],
-                   s=radius2marker_size(mradius))
+        color_event = evdots.split('{')[0]
+        if event_labeled[color_event]:
+            ax.scatter(dot_times[sels], y_pos[sels], color=event_cmap[color_event],
+                       s=radius2marker_size(mradius))
+        else:
+            ax.scatter(dot_times[sels], y_pos[sels], color=event_cmap[color_event],
+                       s=radius2marker_size(mradius), label=color_event)
+
     return ax
 
 
-def radius2marker_size(r):
-    return np.pi * (plt.gca().transData.transform([r, 0])[0] - plt.gca().transData.transform([0, 0])[0]) ** 2
-
-
-def df_long_heatmap(data=None, event=None, sort_cols=None, id_cols=None, **kwargs):
-    # if 'df_form' in kwargs:
-    #     df_form = kwargs['df_form']
-    # else:
-    #     df_form = 'long'
-    # df[f'{event}_neur_time'] = f'{event}_neur' + df[f'{event}_neur_time'].astype('str')
-    # df.pivot_table(index=np.setdiff1d(df.columns, twovar), columns=f'{event}_neur_time', values=f'{event}_neur_ZdFF')
-    # add dendogram functions
-    nbmat = kwargs['nbmat']
-    # nbmat.nb_cols[event]
-    if id_cols is None:
-        id_cols = ['animal', 'session', 'roi', 'trial']
-
-    heat_cols = [f'{event}_neur_time', f'{event}_neur_ZdFF']
-    if sort_cols is None:
-        # TODO: incorporate session_trial sorting
-        sort_cols = ['trial']
-    else:
-        if 'trial' not in sort_cols:
-            sort_cols.append('trial')
-    heat_df = data[id_cols + heat_cols + sort_cols].drop_duplicates(id_cols)
-    heat_df
-    pass
-
-
-def df_wide_heatmap(data=None, event=None, sort_cols=None, id_cols=None, nbmat=None, cmap=None, **kwargs):
+def df_wide_heatmap(data=None, event=None, sort_cols=None, id_cols=None, nbmat=None, cmap=None,
+                    peri_event_map=None, **kwargs):
     if cmap is None:
         cmap_opt = 'Greys_r'
     else:
@@ -276,7 +266,7 @@ def df_wide_heatmap(data=None, event=None, sort_cols=None, id_cols=None, nbmat=N
     ax.set_yticks([0, len(heat_df) - 1])
     ax.set_yticklabels([1, len(heat_df)])
     times = np.sort(np.core.defchararray.replace(heat_cols,
-                                                 event + '_neur|', '', count=None).astype(np.float))
+                                                 event + '_neur|', '', count=None).astype(float))
     zero = np.where(times == 0)[0][0]
     times[zero] = 0
     ticks = [0, zero, len(times) - 1]
@@ -294,8 +284,38 @@ def df_wide_heatmap(data=None, event=None, sort_cols=None, id_cols=None, nbmat=N
     ax = trial_av_vline_timedots(data=data_original, event=event,
                                  sort_order=sort_cols, id_cols=id_cols,
                                  time_func=t2i_final, nbmat=nbmat,
-                                 y_pos=np.arange(len(heat_df)), **kwargs)
+                                 y_pos=np.arange(len(heat_df)),
+                                 peri_event_map=peri_event_map, **kwargs)
     return ax
+
+
+def radius2marker_size(r):
+    return np.pi * (plt.gca().transData.transform([r, 0])[0] - plt.gca().transData.transform([0, 0])[0]) ** 2
+
+
+def df_long_heatmap(data=None, event=None, sort_cols=None, id_cols=None, **kwargs):
+    # if 'df_form' in kwargs:
+    #     df_form = kwargs['df_form']
+    # else:
+    #     df_form = 'long'
+    # df[f'{event}_neur_time'] = f'{event}_neur' + df[f'{event}_neur_time'].astype('str')
+    # df.pivot_table(index=np.setdiff1d(df.columns, twovar), columns=f'{event}_neur_time', values=f'{event}_neur_ZdFF')
+    # add dendogram functions
+    nbmat = kwargs['nbmat']
+    # nbmat.nb_cols[event]
+    if id_cols is None:
+        id_cols = ['animal', 'session', 'roi', 'trial']
+
+    heat_cols = [f'{event}_neur_time', f'{event}_neur_ZdFF']
+    if sort_cols is None:
+        # TODO: incorporate session_trial sorting
+        sort_cols = ['trial']
+    else:
+        if 'trial' not in sort_cols:
+            sort_cols.append('trial')
+    heat_df = data[id_cols + heat_cols + sort_cols].drop_duplicates(id_cols)
+    heat_df
+    pass
 
 
 def nb_df_reorder_column(nb_df, column, orders):
