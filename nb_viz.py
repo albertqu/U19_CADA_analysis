@@ -167,9 +167,12 @@ def trial_av_vline_timedots(data=None, event=None, sort_order=None, id_cols=None
     events = nbmat.behavior_events
     ev_colors = sns.color_palette("hls", len(events))
     event_cmap = {events[i]: ev_colors[i] for i in range(len(events))}
-    evt_cont_map = {'outcome': ['center_in', 'center_out', 'outcome', 'first_side_out', 'center_in{t+1}'],
-                    'center_out': ['first_side_out{t-1}', 'center_in', 'center_out', 'outcome'],
-                    'first_side_out': ['outcome', 'first_side_out', 'center_in{t+1}']}
+    if ('peri_event_map' in kwargs) and (kwargs['peri_event_map'] is not None):
+        evt_cont_map = kwargs['peri_event_map']
+    else:
+        evt_cont_map = {'outcome': ['center_in', 'center_out', 'outcome', 'first_side_out', 'center_in{t+1}'],
+                        'center_out': ['first_side_out{t-1}', 'center_in', 'center_out', 'outcome'],
+                        'first_side_out': ['outcome', 'first_side_out', 'center_in{t+1}']}
     # first drop duplicates due to lagging operations
     if id_cols is None:
         id_cols = ['animal', 'session', 'trial']
