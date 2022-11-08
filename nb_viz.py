@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 
 # Utils
-from utils import df_select_kwargs
+from utils import df_select_kwargs, RAND_STATE
 
 
 class NBVisualizer:
@@ -206,7 +206,6 @@ def trial_av_vline_timedots(data=None, event=None, sort_order=None, id_cols=None
         mradius = 0.15
 
     event_labeled = {ev.split('{')[0]: False for ev in evt_cont_map[event]}
-    event_labeled
 
     for evdots in evt_cont_map[event]:
         # not exact when doing heatmap
