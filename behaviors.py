@@ -487,8 +487,8 @@ class RRBehaviorMat(BehaviorMat):
         strip = lambda t: t.replace(" ", "") if isinstance(t, str) else t
         bonsai_output = pd.read_csv(logfile, sep=" ", index_col=False, names=names)[names]
         bonsai_output['timestamp'] = bonsai_output['timestamp'].map(strip).astype(float)
-        self.tmax = np.max(bonsai_output['timestamp'].values)
         self.time_aligner = lambda ts: (ts - bonsai_output.iloc[0, 0]) / 1000
+        self.tmax = self.time_aligner(np.max(bonsai_output['timestamp'].values))
         self.events = preprocessing(logfile, eventcodedict_full)
         self.eventlist = self.initialize(logfile, stage=STAGE)
 
