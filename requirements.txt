@@ -20,7 +20,7 @@ bokeh==1.1.0
 h5py==2.9.0
 imageio==2.5.0
 ipython==7.4.0
-nbconvert==5.4.1
+nbconvert==6.5.1
 nbformat==4.4.0
 networkx==2.3
 nitime==0.8.1
