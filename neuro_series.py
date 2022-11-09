@@ -80,6 +80,8 @@ class FPSeries:
         if self.cache_folder is not None:
             if not melt:
                 aarg = '_unmelted'
+            else:
+                aarg = ''
             cache_file = oj(self.cache_folder, f"{self.animal}_{self.session}_dff_{method}{aarg}.pq")
             if os.path.exists(cache_file):
                 return pd.read_parquet(cache_file)
