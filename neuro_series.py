@@ -62,7 +62,7 @@ class FPSeries:
     def __str__(self):
         return f"FP({self.animal},{self.session})"
 
-    def calculate_dff(self, method, zscore=True, **kwargs):
+    def calculate_dff(self, method, zscore=True, melt=True, **kwargs):
         # for all of the channels, calculate df using the method specified
         # TODO: add visualization technique by plotting the approximated
         # baseline against signal channels
@@ -78,7 +78,9 @@ class FPSeries:
         """
         cache_file = None
         if self.cache_folder is not None:
-            cache_file = oj(self.cache_folder, f"{self.animal}_{self.session}_dff_{method}.pq")
+            if not melt:
+                aarg = '_unmelted'
+            cache_file = oj(self.cache_folder, f"{self.animal}_{self.session}_dff_{method}{aarg}.pq")
             if os.path.exists(cache_file):
                 return pd.read_parquet(cache_file)
         dff_name_map = {'iso_jove_dZF': 'jove'}
@@ -118,6 +120,12 @@ class FPSeries:
                 dff_dfs['method'] = [method] * len(dff)
 
         dff_df = pd.DataFrame(dff_dfs)
+        if not melt:
+            if cache_file is not None:
+                if not os.path.exists(self.cache_folder):
+                    os.makedirs(self.cache_folder)
+                dff_df.to_parquet(cache_file)
+            return dff_df
         id_labls = ['time', 'method']
         meas = np.setdiff1d(dff_df.columns, id_labls)
         melted = pd.melt(dff_df, id_vars=id_labls, value_vars=meas, var_name='roi', value_name=meas_name)
