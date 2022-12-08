@@ -43,7 +43,42 @@ class PCModel(CogModel):
     TODO: implement interface that returns form of b, Q according to task structure
 
     @cite: Lai, Gershman 2021, https://doi.org/10.1016/bs.plm.2021.02.004.
+
+    params:
+        .beta: policy compression parameter
+        .p_rew: reward prob in correct choice
+        .p_eps: reward prob in wrong choice
+        .st: stickiness to previous choice
+        .sw: switch probability
+
+    latents:
+        .b: belief vector, propagating and updated via bayesian inference
+        .w: weights for belief vector
+        .rpe: reward prediction error
+        .Q: action values
+
     """
+
+    def __init__(self):
+        super().__init__()
+        pass
+
+    def sim(self, data, beta=1, p_rew=0.75, p_eps=0, sw=0.98, st=1, *args, **kwargs):
+        """
+        Simulates the model that matches the data
+
+        params:
+            data: pd.DataFrame
+            ... params listed in class description
+
+        Returns:
+            data with new columns filled with latents listed in class description
+        """
+
+        
+
+        pass
+
 
 
 
