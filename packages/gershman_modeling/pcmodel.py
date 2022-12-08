@@ -3,6 +3,7 @@
 import numpy as np
 import statsmodels.api as sm
 
+
 def fit_marginal(data, K = 50):
     # Fit marginal choice probability
     #
@@ -20,7 +21,7 @@ def fit_marginal(data, K = 50):
     sess = data['Session']
     
     for n in range(N):
-        if (n > 0 and sess.iat[n] == sess.iat[n-1]):
+        if (n > 0) and (sess.iat[n] == sess.iat[n-1]):
             m[n,] = (1-alpha)*m[n-1,] + alpha*c.iat[n-1]
     
     m[m==0] = 0.001
@@ -31,6 +32,7 @@ def fit_marginal(data, K = 50):
     print("alpha =",alpha[np.argmax(L)])
     
     return data
+
 
 def sim(data, p = 0.8, q = 0.98):
     # Simulate model
@@ -53,7 +55,7 @@ def sim(data, p = 0.8, q = 0.98):
     
     for n in range(N):
         
-        if (n == 0 or sess.iat[n] != sess.iat[n-1]):
+        if (n == 0) or (sess.iat[n] != sess.iat[n-1]):
             b = 0.5
         
         if c.iat[n]==1:
@@ -76,7 +78,8 @@ def sim(data, p = 0.8, q = 0.98):
     data['rpe'] = rpe
     
     return data
-        
+
+
 def crossval(data, m):
     # Cross-validation
     # INPUTS:
@@ -97,7 +100,8 @@ def crossval(data, m):
     loglik = np.sum(y_test*np.log(y_pred) + (1-y_test)*np.log(1-y_pred))
     
     return loglik
-        
+
+
 def fitglm(data, m):
     # Fit GLM with maximum likelihood estimation
     
@@ -106,7 +110,8 @@ def fitglm(data, m):
     results = model.fit()
     
     return results
-    
+
+
 def createvars(data, m):
     # Create variables for GLM
     
@@ -123,6 +128,7 @@ def createvars(data, m):
         z = data['logodds']
         
     return y,X,z
+
 
 def fit(data):
     # Fit model to all subjects and get cross-validation results
