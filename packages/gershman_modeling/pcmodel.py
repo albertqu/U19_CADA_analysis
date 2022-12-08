@@ -134,7 +134,7 @@ def fit(data):
     #   bic - subjects x model BIC values
     #   loglik - subjects x model log likelihood values from cross-validation
     #   param - model parameters for each subject for model 1 (qdiff + logodds)
-    #   data - dataframe with 'qdiff' (Q-value difference),'rpe' (reward proediction error) 
+    #   data - dataframe with 'qdiff' (Q-value difference),'rpe' (reward prediction error)
     #          and 'logodds' (log choice probability) columns added
     
     subjects = data['Mouse'].unique()

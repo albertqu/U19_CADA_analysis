@@ -436,6 +436,11 @@ def auc_roc_2dist(d1, d2, method='QDA', k=5, return_dist=False):
             X_train, X_test = X[train_index], X[test_index]
             y_train, y_test = y[train_index], y[test_index]
             test_probs = clf.fit(X_train, y_train).predict_proba(X_test)[:, 1]
+            # for NaNs we replace it with the opposite of test label!
+            nantp = np.isnan(test_probs)
+            if np.sum(nantp) > 0:
+                logging.warning("NaNs encountered in QDA prediction, interpret AUCROC with caution!")
+                test_probs[nantp] = 1-y_test[nantp]
             roc_scores.append(roc_auc_score(y_test, test_probs))
         if return_dist:
             return roc_scores
