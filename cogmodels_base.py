@@ -80,6 +80,10 @@ class PCModel(CogModel):
         pass
 
 
+    def fit(self, data, *args, **kwargs):
+        """
+        Fit models to all subjects 
+        """
 
 
 
