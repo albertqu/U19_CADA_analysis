@@ -82,7 +82,7 @@ class PCModel(CogModel):
 
     def fit(self, data, *args, **kwargs):
         """
-        Fit models to all subjects 
+        Fit models to all subjects
         """
 
 
