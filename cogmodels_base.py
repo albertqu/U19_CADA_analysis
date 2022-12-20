@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.special import expit
 from numbers import Number
 import statsmodels.api as sm
 
@@ -51,7 +52,7 @@ class PCModel(CogModel):
         .p_rew: reward prob in correct choice
         .p_eps: reward prob in wrong choice
         .st: stickiness to previous choice
-        .sw: switch probability
+        .sw: block switch probability
         .gam: decay rate simulating forgetting across days, $w_{t+1} = \gamma w_0 + (1-\gamma) w_{t}$
 
     latents:
@@ -65,6 +66,7 @@ class PCModel(CogModel):
     def __init__(self):
         super().__init__()
         self.k_action = 2
+        self.params = {}
         pass
 
     def calc_q(self, b, w):
@@ -82,7 +84,37 @@ class PCModel(CogModel):
         """
         return (2*b-1) * (w[0]-w[1])
 
-    def sim(self, data, beta=1, p_rew=0.75, p_eps=0, sw=0.98, st=1, gam=0, *args, **kwargs):
+    def fit_marginal(self, data, K=50):
+        # Fit marginal choice probability
+        #
+        # INPUTS:
+        #   data - dataframe containing all the relevant data
+        #   K - number of different exponential weighting values
+        #
+        # OUTPUTS:
+        #   data with new column 'logodds' (choice log odds)
+
+        alpha = np.linspace(0.001, 0.3, num=K)
+        N = data.shape[0]
+        m = np.zeros((N, K)) + 0.5
+        c = data['Decision']
+        sess = data['Session']
+
+        for n in range(N):
+            if (n > 0) and (sess.iat[n] == sess.iat[n - 1]):
+                m[n,] = (1 - alpha) * m[n - 1,] + alpha * c.iat[n - 1]
+
+        m[m == 0] = 0.001
+        m[m == 1] = 0.999
+        L = np.dot(c, np.log(m)) + np.dot((1 - c), np.log(1 - m))
+        m = m[:, np.argmax(L)]
+        data['logodds'] = np.log(m) - np.log(1 - m)
+        print("alpha =", alpha[np.argmax(L)])
+
+        return data
+
+
+    def sim(self, data, beta=1, p_rew=0.75, p_eps=0, sw=0.02, st=1, gam=0, *args, **kwargs):
         """
         Simulates the model that matches the data
 
@@ -111,7 +143,7 @@ class PCModel(CogModel):
         # wt = np.zeros((N, len(w0.ravel())))
         # bdim = 1 if isinstance(b0, Number) else len(b0)
         # bt = np.zeros((N, bdim))
-        b,w = b0, w0
+        b, w = b0, w0
 
         for n in range(N):
             # initializing latents
@@ -129,10 +161,10 @@ class PCModel(CogModel):
             # compute value difference
             qdiff[n] = qs[1] - qs[0]
             ## Model update
-            rpe[n] = qs[c.iat[n]]
+            rpe[n] = r.iat[n] - qs[c.iat[n]]
             # update w according to reward prediction error, uncomment later
             # f_b = np.array([1-b, b])
-            # w[c.iat[n]] = (1-alpha) * w + alpha * rpe[n] * f_b
+            # w[c.iat[n]] = w[c.iat[n]] + alpha * rpe[n] * f_b
 
             def projected_rew(r, c, z):
                 if c == 1:
@@ -144,19 +176,26 @@ class PCModel(CogModel):
                 return P[int(z)]
 
             p1, p0 = projected_rew(r.iat[n], c.iat[n], 1), projected_rew(r.iat[n], c.iat[n], 0)
-            b = (sw * b * p1 + (1 - sw) * (1 - b) * p0) / (b * p1 + (1 - b) * (1 - p0))
+            b = ((1-sw) * b * p1 + sw * (1 - b) * p0) / (b * p1 + (1 - b) * (1 - p0))
 
         data['qdiff'] = qdiff
         data['rpe'] = rpe
 
         return data
 
-
+    def get_proba(self, data):
+        beta = self.params['beta']
+        st = self.params['st']
+        return np.sum(expit(data['qdiff'] * beta + data['logodds'] * st))
 
     def fit(self, data, *args, **kwargs):
         """
         Fit models to all subjects
         """
+        pass
+
+
+    # pseudo R-squared: http://courses.atlas.illinois.edu/fall2016/STAT/STAT200/RProgramming/LogisticRegression.html#:~:text=Null%20Model,-The%20simplest%20model&text=The%20fitted%20equation%20is%20ln,e%E2%88%923.36833)%3D0.0333.
 
 
 
