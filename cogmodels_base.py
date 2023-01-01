@@ -1,6 +1,9 @@
 import numpy as np
+import pandas as pd
 from scipy.special import expit
+import scipy
 from numbers import Number
+
 import statsmodels.api as sm
 
 __author__ = "Albert Qü"
@@ -22,7 +25,7 @@ class CogModel:
     def __init__(self):
         pass
 
-    def sim(self, data, *args, **kwargs):
+    def sim(self, data, params, *args, **kwargs):
         pass
 
     def fit(self, data, *args, **kwargs):
@@ -38,6 +41,14 @@ class CogModel:
 
 class PCModel(CogModel):
     """
+
+    Debate: single subject fit, with one paramter sets, and multiple PC models
+    OR:
+    one fit for all subjects, and multiple parameter sets -> bayesian mixed effects model
+
+    Potentially use ID to identify different snippets of data
+
+
     Implements base policy compression model that seeks to maximize rewards subject
     to cognitive resource constraint encoded as an upper bound to mutual information
     between marginal policy state/belief dependent policy.
@@ -66,13 +77,20 @@ class PCModel(CogModel):
     def __init__(self):
         super().__init__()
         self.k_action = 2
-        self.params = {}
-        pass
+        self.fixed_params = {"b0": 0.5,
+                             "K_marginal": 50}
+        self.param_dict = {"p_rew": CogParam(scipy.stats.beta(90, 30)),
+                           "p_eps": CogParam(scipy.stats.beta(1, 30)),
+                           "st": CogParam(scipy.stats.gamma(2, scale=0.2)),
+                           "sw": CogParam(scipy.stats.uniform(loc=0, scale=0.05)),
+                           "gam": CogParam(scipy.stats.uniform())}
+        self.fitted_params = None
+        self.summary = {}
 
     def calc_q(self, b, w):
         """
         Function to calculate action values given b, belief states, and w, the weights
-        b = probability of choosing action 1,
+        b = probability believing in state 1
         """
         f_b = np.array([1-b, b]).reshape((1, 2))
         W = np.diag([w[0]-w[1]] * len(w)) + w[1]
@@ -113,19 +131,19 @@ class PCModel(CogModel):
 
         return data
 
-
-    def sim(self, data, beta=1, p_rew=0.75, p_eps=0, sw=0.02, st=1, gam=0, *args, **kwargs):
+    def sim(self, data, params, *args, **kwargs):
         """
-        Simulates the model that matches the data
+        Simulates the model for single subject that matches the data
 
-        params:
+        Input:
             data: pd.DataFrame
             ... params listed in class description
+            params: pd.DataFrame
+            ... containing parameters of interest
 
         Returns:
             data with new columns filled with latents listed in class description
         """
-
         N = data.shape[0]
         qdiff = np.zeros(N)
         rpe = np.zeros(N)
@@ -133,11 +151,14 @@ class PCModel(CogModel):
         c = data['Decision']
         sess = data['Session']
         subj = data['Subject']
+        id = data['ID']
         r = data['Reward']
 
         # replace later with generic function
-        w0 = np.array([p_rew, p_eps])
-        b0 = 0.5
+        plist = ['p_rew_init', 'p_eps_init', 'gam', 'sw', 'alpha']
+        p_rew_init, p_eps_init, gam, sw, alpha = tuple(params.iloc[params['id'] == id.iat(0), plist].values)
+        w0 = np.array([p_rew_init, p_eps_init])
+        b0 = self.fixed_params['b0']
 
         # add later with generic function
         # wt = np.zeros((N, len(w0.ravel())))
@@ -145,12 +166,15 @@ class PCModel(CogModel):
         # bt = np.zeros((N, bdim))
         b, w = b0, w0
 
+        # when ID changes: certain parameter changes
+
         for n in range(N):
             # initializing latents
-            if n == 0:
-                b = b0
-                w = w0
-            elif subj.iat[n] != subj.iat[n-1]:
+            if id.iat[n] != id.iat[n-1]:
+                p_rew_init, p_eps_init, gam, sw, alpha = tuple(params.iloc[params['id'] == id.iat(0), plist].values)
+                w0 = np.array([p_rew_init, p_eps_init])
+
+            if subj.iat[n] != subj.iat[n-1]:
                 b = b0
                 w = w0
             elif sess.iat[n] != sess.iat[n - 1]:
@@ -163,8 +187,8 @@ class PCModel(CogModel):
             ## Model update
             rpe[n] = r.iat[n] - qs[c.iat[n]]
             # update w according to reward prediction error, uncomment later
-            # f_b = np.array([1-b, b])
-            # w[c.iat[n]] = w[c.iat[n]] + alpha * rpe[n] * f_b
+            f_b = np.array([1-b, b])
+            w[c.iat[n]] = w[c.iat[n]] + alpha * rpe[n] * f_b
 
             def projected_rew(r, c, z):
                 if c == 1:
@@ -184,19 +208,87 @@ class PCModel(CogModel):
         return data
 
     def get_proba(self, data):
-        beta = self.params['beta']
-        st = self.params['st']
-        return np.sum(expit(data['qdiff'] * beta + data['logodds'] * st))
+        if 'loglik' in data.columns:
+            return np.exp(data['loglik'].values)
+        else:
+            new_data = data.merge(self.fitted_params[['beta', 'st']], on='ID')
+            return expit(new_data['qdiff'] * new_data['beta'] + new_data['logodds'] * new_data['st'])
+
+    def create_params(self, data):
+        uniq_ids = data['ID'].unique()
+        n_id = len(uniq_ids)
+        new_params = {}
+        for p in self.param_dict:
+            self.param_dict[p].n_id = n_id
+            new_params[p] = self.param_dict[p].eval()
+        new_params['ID'] = uniq_ids
+        return pd.DataFrame(new_params)
 
     def fit(self, data, *args, **kwargs):
-        """
-        Fit models to all subjects
-        """
-        pass
+        # Fit model to single subjects and get cross-validation results
+        #
+        # INPUTS:
+        #   data - dataframe with all relevant data
+        #
+        # OUTPUTS:
+        #   bic - subjects x model BIC values
+        #   loglik - subjects x model log likelihood values from cross-validation
+        #   param - model parameters for each subject for model 1 (qdiff + logodds)
+        #   data - dataframe with 'qdiff' (Q-value difference),'rpe' (reward prediction error)
+        #          and 'logodds' (log choice probability) columns added
 
+        # data <- fit_marginal
+        # params <- create_params
+        # params2x, x2params
+        # x0 = params2x
+        # nll(x, *data, *params): x2params(x), sim, get_prob, negsum
+        # results = scipy.optimize.minimize(nll, x0)
+        # self.fitted_params = x2params(results)
+
+        data = self.fit_marginal(data, K=self.fixed_params['K_marginal'])
+        params_df = self.create_params(data)
+        id_list = params_df['ID']
+        param_names = [c for c in params_df if c != "ID"]
+        params2x = lambda params_df: params_df.drop(columns='ID').values.ravel(order='C')
+        x2params = lambda x: pd.DataFrame(x.reshape((-1, len(self.param_dict)), order='C'),
+                                          columns=param_names, index=id_list).reset_index().rename({'index': 'ID'})
+        x0 = params2x(params_df)
+
+        def nll(x):
+            params = x2params(x)
+            data_sim = self.sim(data, params, *args, **kwargs)
+            return - np.sum(np.log(self.get_proba(data_sim)))
+
+        res = scipy.optimize.minimize(nll, x0, method='BFGS', tol=1e-6)
+        self.fitted_params = x2params(res.x)
+        negloglik = res.fun
+        bic = len(res.x) * np.log(len(data)) + 2 * negloglik
+        aic = 2 * len(res.x) + 2 * negloglik
+
+        data_sim_opt = self.sim(data, self.fitted_params, *args, **kwargs)
+        data['choice_p'] = self.get_proba(data_sim_opt)
+
+        latent_names = ['qdiff', 'rpe', 'choice_p']
+        self.summary = {'bic': bic, 'aic': aic,
+                'latents': data[latent_names].reset_index(drop=True)}
+        return self
 
     # pseudo R-squared: http://courses.atlas.illinois.edu/fall2016/STAT/STAT200/RProgramming/LogisticRegression.html#:~:text=Null%20Model,-The%20simplest%20model&text=The%20fitted%20equation%20is%20ln,e%E2%88%923.36833)%3D0.0333.
 
+class CogParam:
+
+    def __init__(self, value=None, fixed_init=False, n_id=1):
+        self.value = value
+        self.fixed_init = fixed_init
+        self.n_id = n_id
+
+    def eval(self):
+        if isinstance(self.value, Number):
+            return np.full(self.n_id, self.value)
+        elif hasattr(self.value, "rvs"):
+            return self.value.rvs(size=self.n_id)
+        else:
+            return ValueError()
 
 
 
