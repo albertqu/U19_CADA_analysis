@@ -72,6 +72,9 @@ class PCModel(CogModel):
         .rpe: reward prediction error
         .Q: action values
 
+    input data must have the following columns:
+    ID, Subject, Session, Trial, blockTrial, blockLength, Target, Decision, Switch, Reward, Condition
+
     """
 
     def __init__(self):
@@ -79,7 +82,8 @@ class PCModel(CogModel):
         self.k_action = 2
         self.fixed_params = {"b0": 0.5,
                              "K_marginal": 50}
-        self.param_dict = {"p_rew": CogParam(scipy.stats.beta(90, 30)),
+        self.param_dict = {"beta": CogParam(scipy.stats.expon(1)),
+                           "p_rew": CogParam(scipy.stats.beta(90, 30)),
                            "p_eps": CogParam(scipy.stats.beta(1, 30)),
                            "st": CogParam(scipy.stats.gamma(2, scale=0.2)),
                            "sw": CogParam(scipy.stats.uniform(loc=0, scale=0.05)),
@@ -120,13 +124,20 @@ class PCModel(CogModel):
 
         for n in range(N):
             if (n > 0) and (sess.iat[n] == sess.iat[n - 1]):
-                m[n,] = (1 - alpha) * m[n - 1,] + alpha * c.iat[n - 1]
+                if np.isnan(c.iat[n - 1]):
+                    # Handling miss decisions
+                    m[n,] = m[n - 1,]
+                else:
+                    m[n,] = (1 - alpha) * m[n - 1,] + alpha * c.iat[n - 1]
 
         m[m == 0] = 0.001
         m[m == 1] = 0.999
-        L = np.dot(c, np.log(m)) + np.dot((1 - c), np.log(1 - m))
+        c_vec = c[~c.isnull()].values
+        m_mat = m[~c.isnull()]
+        L = np.dot(c_vec, np.log(m_mat)) + np.dot((1 - c_vec), np.log(1 - m_mat))
         m = m[:, np.argmax(L)]
         data['logodds'] = np.log(m) - np.log(1 - m)
+        data['marg'] = m
         print("alpha =", alpha[np.argmax(L)])
 
         return data
@@ -147,8 +158,11 @@ class PCModel(CogModel):
         N = data.shape[0]
         qdiff = np.zeros(N)
         rpe = np.zeros(N)
+        b_arr = np.zeros(N)
+        w_arr = np.zeros((N, 2))
 
         c = data['Decision']
+        # TODO: handle miss decisions 
         sess = data['Session']
         subj = data['Subject']
         id = data['ID']
@@ -186,6 +200,9 @@ class PCModel(CogModel):
             qdiff[n] = qs[1] - qs[0]
             ## Model update
             rpe[n] = r.iat[n] - qs[c.iat[n]]
+            w_arr[n] = w
+            b_arr[n] = b
+
             # update w according to reward prediction error, uncomment later
             f_b = np.array([1-b, b])
             w[c.iat[n]] = w[c.iat[n]] + alpha * rpe[n] * f_b
@@ -204,6 +221,8 @@ class PCModel(CogModel):
 
         data['qdiff'] = qdiff
         data['rpe'] = rpe
+        data['b'] = b_arr
+        data['w'] = w_arr
 
         return data
 
@@ -268,9 +287,9 @@ class PCModel(CogModel):
         data_sim_opt = self.sim(data, self.fitted_params, *args, **kwargs)
         data['choice_p'] = self.get_proba(data_sim_opt)
 
-        latent_names = ['qdiff', 'rpe', 'choice_p']
+        latent_names = ['qdiff', 'rpe', 'w', 'b', 'choice_p']
         self.summary = {'bic': bic, 'aic': aic,
-                'latents': data[latent_names].reset_index(drop=True)}
+                        'latents': data[latent_names].reset_index(drop=True)}
         return self
 
     # pseudo R-squared: http://courses.atlas.illinois.edu/fall2016/STAT/STAT200/RProgramming/LogisticRegression.html#:~:text=Null%20Model,-The%20simplest%20model&text=The%20fitted%20equation%20is%20ln,e%E2%88%923.36833)%3D0.0333.
