@@ -162,7 +162,7 @@ class PCModel(CogModel):
         w_arr = np.zeros((N, 2))
 
         c = data['Decision']
-        # TODO: handle miss decisions 
+        # TODO: handle miss decisions
         sess = data['Session']
         subj = data['Subject']
         id = data['ID']
@@ -199,25 +199,33 @@ class PCModel(CogModel):
             # compute value difference
             qdiff[n] = qs[1] - qs[0]
             ## Model update
-            rpe[n] = r.iat[n] - qs[c.iat[n]]
-            w_arr[n] = w
-            b_arr[n] = b
+            if c.iat[n] == -1:
+                # handling miss trials
+                rpe[n] = np.nan
+                w_arr[n] = w,
+                b_arr[n] = b
+                # w, b remains the same
+            else:
+                rpe[n] = r.iat[n] - qs[c.iat[n]]
+                # w, b reflects information prior to reward
+                w_arr[n] = w
+                b_arr[n] = b
 
-            # update w according to reward prediction error, uncomment later
-            f_b = np.array([1-b, b])
-            w[c.iat[n]] = w[c.iat[n]] + alpha * rpe[n] * f_b
+                # update w according to reward prediction error, uncomment later
+                f_b = np.array([1-b, b])
+                w[c.iat[n]] = w[c.iat[n]] + alpha * rpe[n] * f_b
 
-            def projected_rew(r, c, z):
-                if c == 1:
-                    P = w[::-1]
-                else:
-                    P = w
-                if r == 0:
-                    P = 1 - P
-                return P[int(z)]
+                def projected_rew(r, c, z):
+                    if c == 1:
+                        P = w[::-1]
+                    else:
+                        P = w
+                    if r == 0:
+                        P = 1 - P
+                    return P[int(z)]
 
-            p1, p0 = projected_rew(r.iat[n], c.iat[n], 1), projected_rew(r.iat[n], c.iat[n], 0)
-            b = ((1-sw) * b * p1 + sw * (1 - b) * p0) / (b * p1 + (1 - b) * (1 - p0))
+                p1, p0 = projected_rew(r.iat[n], c.iat[n], 1), projected_rew(r.iat[n], c.iat[n], 0)
+                b = ((1-sw) * b * p1 + sw * (1 - b) * p0) / (b * p1 + (1 - b) * (1 - p0))
 
         data['qdiff'] = qdiff
         data['rpe'] = rpe
@@ -293,6 +301,7 @@ class PCModel(CogModel):
         return self
 
     # pseudo R-squared: http://courses.atlas.illinois.edu/fall2016/STAT/STAT200/RProgramming/LogisticRegression.html#:~:text=Null%20Model,-The%20simplest%20model&text=The%20fitted%20equation%20is%20ln,e%E2%88%923.36833)%3D0.0333.
+
 
 class CogParam:
 
