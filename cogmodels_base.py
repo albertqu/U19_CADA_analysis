@@ -82,9 +82,10 @@ class PCModel(CogModel):
         self.k_action = 2
         self.fixed_params = {"b0": 0.5,
                              "K_marginal": 50}
-        self.param_dict = {"beta": CogParam(scipy.stats.expon(1)),
-                           "p_rew": CogParam(scipy.stats.beta(90, 30)),
-                           "p_eps": CogParam(scipy.stats.beta(1, 30)),
+        self.param_dict = {"alpha": CogParam(scipy.stats.uniform()),
+                           "beta": CogParam(scipy.stats.expon(1)),
+                           "p_rew_init": CogParam(scipy.stats.beta(90, 30)),
+                           "p_eps_init": CogParam(scipy.stats.beta(1, 30)),
                            "st": CogParam(scipy.stats.gamma(2, scale=0.2)),
                            "sw": CogParam(scipy.stats.uniform(loc=0, scale=0.05)),
                            "gam": CogParam(scipy.stats.uniform())}
@@ -165,12 +166,12 @@ class PCModel(CogModel):
         # TODO: handle miss decisions
         sess = data['Session']
         subj = data['Subject']
-        id = data['ID']
+        id_i = data['ID']
         r = data['Reward']
 
         # replace later with generic function
         plist = ['p_rew_init', 'p_eps_init', 'gam', 'sw', 'alpha']
-        p_rew_init, p_eps_init, gam, sw, alpha = tuple(params.iloc[params['id'] == id.iat(0), plist].values)
+        p_rew_init, p_eps_init, gam, sw, alpha = params.loc[params["ID"] == id_i.iat[0], plist].values.ravel()
         w0 = np.array([p_rew_init, p_eps_init])
         b0 = self.fixed_params['b0']
 
@@ -184,61 +185,68 @@ class PCModel(CogModel):
 
         for n in range(N):
             # initializing latents
-            if id.iat[n] != id.iat[n-1]:
-                p_rew_init, p_eps_init, gam, sw, alpha = tuple(params.iloc[params['id'] == id.iat(0), plist].values)
+            if id_i.iat[n] != id_i.iat[n-1]:
+                p_rew_init, p_eps_init, gam, sw, alpha = params.loc[params["ID"] == id_i.iat[n], plist].values.ravel()
                 w0 = np.array([p_rew_init, p_eps_init])
 
             if subj.iat[n] != subj.iat[n-1]:
                 b = b0
-                w = w0
+                w = np.copy(w0)
             elif sess.iat[n] != sess.iat[n - 1]:
                 b = b0
                 w = w0 * gam + (1-gam) * w
             ## Action value calculation
-            qs = self.calc_q(b, w)
+            qs = self.calc_q(b, w).ravel()
             # compute value difference
             qdiff[n] = qs[1] - qs[0]
             ## Model update
             if c.iat[n] == -1:
                 # handling miss trials
                 rpe[n] = np.nan
-                w_arr[n] = w,
+                w_arr[n, :] = w
                 b_arr[n] = b
                 # w, b remains the same
             else:
                 rpe[n] = r.iat[n] - qs[c.iat[n]]
                 # w, b reflects information prior to reward
-                w_arr[n] = w
+                w_arr[n, :] = w
                 b_arr[n] = b
 
                 # update w according to reward prediction error, uncomment later
                 f_b = np.array([1-b, b])
-                w[c.iat[n]] = w[c.iat[n]] + alpha * rpe[n] * f_b
+                # change the update rule
+                # w[c.iat[n]] = w[c.iat[n]] + alpha * rpe[n] * f_b
+                dw = np.array([1-b, b]) # alternatively p2 = b+c-2bc
+                if c.iat[n] == 1:
+                    dw = np.array([b, 1-b])
+                w += alpha * rpe[n] * dw
+                w = np.minimum(np.maximum(w, 0), 1)
 
-                def projected_rew(r, c, z):
-                    if c == 1:
+                def projected_rew(r_i, c_i, z):
+                    if c_i == 1:
                         P = w[::-1]
                     else:
                         P = w
-                    if r == 0:
+                    if r_i == 0:
                         P = 1 - P
                     return P[int(z)]
 
                 p1, p0 = projected_rew(r.iat[n], c.iat[n], 1), projected_rew(r.iat[n], c.iat[n], 0)
-                b = ((1-sw) * b * p1 + sw * (1 - b) * p0) / (b * p1 + (1 - b) * (1 - p0))
+                b = ((1-sw) * b * p1 + sw * (1 - b) * p0) / (b * p1 + (1 - b) * p0)
 
         data['qdiff'] = qdiff
         data['rpe'] = rpe
         data['b'] = b_arr
-        data['w'] = w_arr
-
+        data[['p_rew', 'p_eps']] = w_arr
+        # qdiff[n], rpe[n], b, w, b_arr[n], w_arr[n]
         return data
 
-    def get_proba(self, data):
+    def get_proba(self, data, params=None):
         if 'loglik' in data.columns:
             return np.exp(data['loglik'].values)
         else:
-            new_data = data.merge(self.fitted_params[['beta', 'st']], on='ID')
+            params_in = self.fitted_params[['ID', 'beta', 'st']] if params is None else params
+            new_data = data.merge(params_in, on='ID')
             return expit(new_data['qdiff'] * new_data['beta'] + new_data['logodds'] * new_data['st'])
 
     def create_params(self, data):
@@ -284,9 +292,10 @@ class PCModel(CogModel):
         def nll(x):
             params = x2params(x)
             data_sim = self.sim(data, params, *args, **kwargs)
-            return - np.sum(np.log(self.get_proba(data_sim)))
+            return - np.sum(np.log(self.get_proba(data_sim, params)))
 
         res = scipy.optimize.minimize(nll, x0, method='BFGS', tol=1e-6)
+        # constrain optimize
         self.fitted_params = x2params(res.x)
         negloglik = res.fun
         bic = len(res.x) * np.log(len(data)) + 2 * negloglik
@@ -295,7 +304,7 @@ class PCModel(CogModel):
         data_sim_opt = self.sim(data, self.fitted_params, *args, **kwargs)
         data['choice_p'] = self.get_proba(data_sim_opt)
 
-        latent_names = ['qdiff', 'rpe', 'w', 'b', 'choice_p']
+        latent_names = ['qdiff', 'rpe', 'p_rew', 'p_eps', 'b', 'choice_p']
         self.summary = {'bic': bic, 'aic': aic,
                         'latents': data[latent_names].reset_index(drop=True)}
         return self
