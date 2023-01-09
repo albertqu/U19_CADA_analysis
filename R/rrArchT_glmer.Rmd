@@ -8,7 +8,8 @@ output:
   pdf_document:
     number_sections: true
 ---
-
+check tutorials: 
+https://ourcodingclub.github.io/tutorials/mixed-models/
 
 
 ```{r setup, echo = FALSE, message=FALSE, warning=FALSE}
@@ -17,6 +18,8 @@ library(tidyverse)
 library(forcats)
 library(lubridate)
 library(stringr)
+library(ggplot2)
+library(dplyr)
 # set default knitr chunks
 knitr::opts_chunk$set(
   echo = FALSE,  # don't print the code chunk
@@ -293,3 +296,79 @@ ivw_mean <- function(x, group) {
 ivw_mean(data$rt, data$uniqueid)
 
 ```
+
+## Collapsing restaurant viz stim effect
+
+```{r data_viz_stim, echo = TRUE, message=FALSE, warning=FALSE, fig.width=10, fig.height=6}
+df_list = list()
+
+
+# data %>% select(animal, restaurant, tone_prob, stimType, accept, plugged_in, quit_time) %>%
+#   filter(stimType %in% c('stim', 'nostim'), is.na(quit_time)) %>%
+#   mutate(tone_prob=as.factor(tone_prob), stimType=as.factor(stimType)) %>% 
+#   group_by(animal, plugged_in, tone_prob, stimType) %>% 
+#   summarise(accept_rate = mean(accept), accept_sd = sqrt(var(accept)), n=n()) %>% 
+#   mutate(accept_se=accept_sd / sqrt(n)) %>%
+#   
+#   ggplot(aes(x=tone_prob, y=accept_rate, color=stimType)) +
+#   geom_bar(stat="identity", alpha=0.5) +
+#   geom_errorbar( aes(x=Species, ymin=mean-se, ymax=mean+se), width=0.4, colour="orange",
+#   geom_boxplot() +
+#   facet_grid(animal~plugged_in) +
+#   theme_classic()
+
+data %>% select(animal, restaurant, tone_prob, stimType, accept, plugged_in, quit_time) %>%
+  filter(stimType %in% c('stim', 'nostim'), is.na(quit_time)) %>%
+  mutate(tone_prob=as.factor(tone_prob), stimType=as.factor(stimType)) %>% 
+  group_by(animal, plugged_in, tone_prob, stimType) %>% 
+  ggplot(aes(x=tone_prob, y=accept, color=stimType)) +
+  stat_summary(fun = mean,
+               geom = "pointrange",
+               fun.max = function(x) mean(x) + sd(x) / sqrt(length(x)),
+               fun.min = function(x) mean(x) - sd(x) / sqrt(length(x))) +
+  facet_grid(plugged_in~animal)
+
+data %>% select(animal, restaurant, tone_prob, stimType, accept, plugged_in, quit_time) %>%
+  filter(plugged_in %in% c("L", "R"), is.na(quit_time)) %>%
+  mutate(tone_prob=as.factor(tone_prob), stimType=as.factor(stimType)) %>% 
+  group_by(animal, plugged_in, tone_prob, stimType) %>% 
+  ggplot(aes(x=tone_prob, y=accept, color=stimType)) +
+  stat_summary(fun = mean,
+               geom = "pointrange",
+               fun.max = function(x) mean(x) + sd(x) / sqrt(length(x)),
+               fun.min = function(x) mean(x) - sd(x) / sqrt(length(x))) +
+  facet_grid(plugged_in~animal)
+
+```
+
+```{r stim_only_summary_allR, echo = TRUE, message=FALSE, warning=FALSE}
+df_list = list()
+i = 1
+for (animal_num in c(39:40, 42:45)) {
+  animal_arg <- sprintf("RRM0%d", animal_num)
+  for (hemi_arg in c("L", "R")) {
+    data.ah <- data %>% 
+    select(animal, restaurant, tone_prob, stimType, accept, plugged_in, quit_time) %>% 
+    filter(stimType %in% c('stim', 'nostim'), animal==animal_arg, plugged_in==hemi_arg, is.na(quit_time))
+    glm.ah <- glm(accept ~ tone_prob:stimType + stimType + tone_prob, family=binomial(), data=data.ah)
+    print(paste(animal_arg, hemi_arg))
+    print(summary(glm.ah))
+    
+    df <- reset_index(as.data.frame(coef(summary(glm.ah))[, c(1, 2, 4)]))
+    df$animal = animal_arg
+    df$hemi = hemi_arg
+    df_list[[i]] = df
+    i = i + 1
+  }
+}
+
+accept_p_df <- do.call(rbind, df_list)
+names(accept_p_df)[3:4] = c("stdE", "p_val")
+accept_p_df %>% filter(p_val <= 0.05, grepl("stim", index))
+```
+
+
+```
+toneprob +  restaurant*animal
+```
+

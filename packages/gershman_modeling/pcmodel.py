@@ -13,24 +13,24 @@ def fit_marginal(data, K = 50):
     #   
     # OUTPUTS:
     #   data with new column 'logodds' (choice log odds)
-    
+
     alpha = np.linspace(0.001,0.3,num=K)
     N = data.shape[0]
     m = np.zeros((N,K)) + 0.5
     c = data['Decision']
     sess = data['Session']
-    
+
     for n in range(N):
         if (n > 0) and (sess.iat[n] == sess.iat[n-1]):
             m[n,] = (1-alpha)*m[n-1,] + alpha*c.iat[n-1]
-    
+
     m[m==0] = 0.001
     m[m==1] = 0.999
     L = np.dot(c,np.log(m)) + np.dot((1-c),np.log(1-m))
     m = m[:,np.argmax(L)]
     data['logodds'] = np.log(m) - np.log(1-m)
     print("alpha =",alpha[np.argmax(L)])
-    
+
     return data
 
 
