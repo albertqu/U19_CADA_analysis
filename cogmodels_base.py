@@ -40,7 +40,7 @@ class CogModel:
         pass
 
 
-class CogModel2ABT(CogModel):
+class CogModel2ABT_BWQ(CogModel):
     """
     Base class for 2ABT cognitive models
     """
@@ -48,31 +48,57 @@ class CogModel2ABT(CogModel):
     def __init__(self):
         super().__init__()
         self.k_action = 2
-        self.fixed_params = {'predict_thres': 0.5}
+        self.fixed_params = {'predict_thres': 0.5,
+                             'CF': False} # whether or not to calculate counterfactual rpe
         # used fixed for hyperparam_tuning
         self.param_dict = {}
         self.fitted_params = None
         self.latent_names = []# ['qdiff', 'rpe']
         self.summary = {}
 
+    def latents_init(self, N):
+        qdiff = np.zeros(N)
+        if self.fixed_params['CF']:
+            rpe = np.zeros((N, 2))
+        else:
+            rpe = np.zeros((N, 1))
+        b_arr = np.zeros(N)
+        w_arr = np.zeros((N, 2))
+        return qdiff, rpe, b_arr, w_arr
+
     @abstractmethod
     def id_param_init(self, params, id):
-        """abstract method for iniatiating ID parameter"""
+        """abstract method for iniatiating ID parameter
+        Returns: Dict
+        """
         pass
 
     @abstractmethod
     def calc_q(self, b, w):
-        """abstract method for calcualting action value"""
+        """abstract method for calcualting action value
+        Returns: np.array of q values
+        """
         pass
 
     @abstractmethod
     def update_b(self, b, w, c_t, r_t, params_i):
-        """abstract method for updating model latent b"""
+        """abstract method for updating model latent b
+        Returns: updated b, scalar or np.array
+        """
         pass
 
     @abstractmethod
     def update_w(self, b, w, c_t, rpe_t, params_i):
-        """abstract method for updating model latent w"""
+        """abstract method for updating model latent w
+        Returns: updated w, scalar or np.array
+        """
+        pass
+
+    @abstractmethod
+    def assign_latents(self, data, qdiff, rpe, b_arr, w_arr):
+        """ abstract method for saving simulated latents,
+        Returns: data appended with columns storing different latents
+        """
         pass
 
     def sim(self, data, params, *args, **kwargs):
@@ -89,10 +115,7 @@ class CogModel2ABT(CogModel):
             data with new columns filled with latents listed in class description
         """
         N = data.shape[0]
-        qdiff = np.zeros(N)
-        rpe = np.zeros(N)
-        b_arr = np.zeros(N)
-        w_arr = np.zeros((N, 2))
+        qdiff, rpe, b_arr, w_arr = self.latents_init(N)
 
         c = data['Decision']
         # TODO: handle miss decisions
@@ -101,13 +124,8 @@ class CogModel2ABT(CogModel):
         id_i = data['ID']
         r = data['Reward']
 
-        # replace later with generic function
-        b0, w0, gam, sw, alpha = self.id_param_init(params, id_i.iat[0])
-
-        # add later with generic function
-        # wt = np.zeros((N, len(w0.ravel())))
-        # bdim = 1 if isinstance(b0, Number) else len(b0)
-        # bt = np.zeros((N, bdim))
+        params_d = self.id_param_init(params, id_i.iat[0])
+        b0, w0, gam = params_d['b0'], params_d['w0'], params_d['gam']
         b, w = b0, w0
 
         # when ID changes: certain parameter changes
@@ -115,9 +133,9 @@ class CogModel2ABT(CogModel):
         for n in range(N):
             # initializing latents
             if id_i.iat[n] != id_i.iat[n-1]:
-                b0, w0, gam, sw, alpha = self.id_param_init(params, id_i.iat[n])
+                params_d = self.id_param_init(params, id_i.iat[n])
 
-            if subj.iat[n] != subj.iat[n-1]:
+            if (n == 0) or (subj.iat[n] != subj.iat[n-1]):
                 b = b0
                 w = np.copy(w0)
             elif sess.iat[n] != sess.iat[n - 1]:
@@ -130,28 +148,88 @@ class CogModel2ABT(CogModel):
             ## Model update
             if c.iat[n] == -1:
                 # handling miss trials
-                rpe[n] = np.nan
+                rpe[n, :] = np.nan
                 w_arr[n, :] = w
                 b_arr[n] = b
                 # w, b remains the same
             else:
-                rpe[n] = r.iat[n] - qs[c.iat[n]]
+                rpe_c = r.iat[n] - qs[c.iat[n]]
+                if self.fixed_params['CF']:
+                    rpe_cf = (1-r.iat[n]) - qs[1-c.iat[n]]
+                    rpe_t = np.array([rpe_c, rpe_cf])
+                else:
+                    rpe_t = rpe_c
+                rpe[n, :] = rpe_t
                 # w, b reflects information prior to reward
                 w_arr[n, :] = w
                 b_arr[n] = b
-                w = self.update_w(b, w, c.iat[n], rpe[n], {'alpha': alpha})
+                w = self.update_w(b, w, c.iat[n], rpe_t, params_d)
                 # Updating b!
-                b = self.update_b(b, w, c.iat[n], r.iat[n], {'sw': sw})
+                b = self.update_b(b, w, c.iat[n], r.iat[n], params_d)
 
-        data['qdiff'] = qdiff
-        data['rpe'] = rpe
-        data['b'] = b_arr
-        data[['p_rew', 'p_eps']] = w_arr
+        data = self.assign_latents(data, qdiff, rpe, b_arr, w_arr)
         # qdiff[n], rpe[n], b, w, b_arr[n], w_arr[n]
         return data
 
 
-class PCModel(CogModel2ABT):
+class RLCF(CogModel2ABT_BWQ):
+
+    """ Model class for counter-factual Q-learning, described in Eckstein et al. 2022
+    https://doi.org/10.1016/j.dcn.2022.101106
+
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.fixed_params.update({"b0": 1,
+                                  'q0': 0,
+                                  'gam': 1,
+                                  'CF': True})
+        # used fixed for hyperparam_tuning
+        self.param_dict = {"beta": CogParam(scipy.stats.expon(1), lb=0),
+                           'a_pos': CogParam(scipy.stats.uniform(), lb=0, ub=1),
+                           'a_neg': CogParam(scipy.stats.uniform(), lb=0, ub=1),
+                           "st": CogParam(scipy.stats.gamma(2, scale=0.2), lb=0)}
+        self.fitted_params = None
+        self.latent_names = ['qdiff', 'rpe', 'w0', 'w1']# ['qdiff', 'rpe']
+        self.summary = {}
+
+    def id_param_init(self, params, id):
+        varp_list = ['a_pos', 'a_neg']
+        fixp_list = ['b0', 'q0', 'gam']
+        a_pos, a_neg = params.loc[params["ID"] == id, varp_list].values.ravel()[0]
+        b0, q0, gam = [self.fixed_params[fp] for fp in fixp_list]
+        w0 = np.array(['q0'] * 2)
+        return {'b0': b0,
+                'w0': w0,
+                'gam': gam,
+                'a_pos': a_pos,
+                'a_neg': a_neg}
+
+    def calc_q(self, b, w):
+        return w
+
+    def update_b(self, b, w, c_t, r_t, params_i):
+        return b
+
+    def update_w(self, b, w, c_t, rpe_t, params_i):
+        """abstract method for updating model latent w"""
+        pass
+
+    @abstractmethod
+    def assign_latents(self, data, qdiff, rpe, b_arr, w_arr):
+        pass
+
+    def get_proba(self, data, params=None):
+        if 'loglik' in data.columns:
+            return np.exp(data['loglik'].values)
+        else:
+            params_in = self.fitted_params[['ID', 'beta', 'st']] if params is None else params
+            new_data = data.merge(params_in, on='ID')
+            return expit(new_data['qdiff'] * new_data['beta'] + new_data['logodds'] * new_data['st'])
+
+
+class PCModel(CogModel2ABT_BWQ):
     """
 
     Debate: single subject fit, with one paramter sets, and multiple PC models
@@ -191,7 +269,6 @@ class PCModel(CogModel2ABT):
 
     def __init__(self):
         super().__init__()
-        self.k_action = 2
         self.fixed_params.update({"b0": 0.5,
                              "K_marginal": 50})
         # used fixed for hyperparam_tuning
@@ -207,6 +284,25 @@ class PCModel(CogModel2ABT):
         self.fitted_params = None
         self.latent_names = ['qdiff', 'rpe', 'p_rew', 'p_eps', 'b']
         self.summary = {}
+
+    def id_param_init(self, params, id):
+        varp_list = ['p_rew_init', 'p_eps_init', 'gam', 'sw', 'alpha']
+        fixp_list = ['b0']
+        p_rew_init, p_eps_init, gam, sw, alpha = params.loc[params["ID"] == id, varp_list].values.ravel()
+        b0 = self.fixed_params['b0']
+        w0 = np.array([p_rew_init, p_eps_init])
+        return {'b0': b0,
+                'w0': w0,
+                'gam': gam,
+                'sw': sw,
+                'alpha': alpha}
+
+    def assign_latents(self, data, qdiff, rpe, b_arr, w_arr):
+        data['qdiff'] = qdiff
+        data['rpe'] = rpe
+        data['b'] = b_arr
+        data[['p_rew', 'p_eps']] = w_arr
+        return data
 
     def calc_q(self, b, w):
         """
@@ -237,6 +333,7 @@ class PCModel(CogModel2ABT):
 
     def update_b(self, b, w, c_t, r_t, params_i):
         sw = params_i['sw']
+
         def projected_rew(r_i, c_i, z):
             if c_i == 1:
                 P = w[::-1]
@@ -265,14 +362,6 @@ class PCModel(CogModel2ABT):
         # except FloatingPointError:
         #     print(r.iat[n], c.iat[n], p1, p0, b, sw, w)
         return b
-
-    def id_param_init(self, params, id):
-        varp_list = ['p_rew_init', 'p_eps_init', 'gam', 'sw', 'alpha']
-        fixp_list = ['b0']
-        p_rew_init, p_eps_init, gam, sw, alpha = params.loc[params["ID"] == id, varp_list].values.ravel()
-        b0 = self.fixed_params['b0']
-        w0 = np.array([p_rew_init, p_eps_init])
-        return b0, w0, gam, sw, alpha
 
     def fit_marginal(self, data):
         # Fit marginal choice probability
@@ -409,13 +498,12 @@ class PCModel_fixpswgam(PCModel):
 
     def __init__(self):
         super().__init__()
-        self.k_action = 2
         self.fixed_params.update({"b0": 0.5,
                              "K_marginal": 50,
                              'p_rew_init': 0.75,
                              'p_eps_init': 0,
                              'sw': 0.02,
-                             'gam': 0,
+                             'gam': 1,
                              'alpha': 0})
         # used fixed for hyperparam_tuning
         self.param_dict = {"beta": CogParam(scipy.stats.expon(1), lb=0),
@@ -427,12 +515,17 @@ class PCModel_fixpswgam(PCModel):
         # alpha = params.loc[params["ID"] == id, varp_list].values.ravel()[0]
         b0, p_rew_init, p_eps_init, gam, sw, alpha = [self.fixed_params[fp] for fp in fixp_list]
         w0 = np.array([p_rew_init, p_eps_init])
-        return b0, w0, gam, sw, alpha
+        return {'b0': b0,
+                'w0': w0,
+                'gam': gam,
+                'sw': sw,
+                'alpha': alpha}
 
     def update_w(self, b, w, c_t, rpe_t, params_i):
         # No update!
         # v8: update
         # v7: no update
+        # <= v8: gam = 0
         return w
 
 

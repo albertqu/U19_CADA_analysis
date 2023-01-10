@@ -77,7 +77,7 @@ def test_mp_multiple_animals(model, model_arg):
             id_sim, id_fp = r.get()
             all_data_sim.append(id_sim)
             all_params.append(id_fp)
-    version = 'v7_test2'
+    version = 'v7_test3'
     data_sim_opt = pd.concat(all_data_sim, axis=0).sort_values(['Subject', 'Session', 'Trial'])
     data_sim_opt.to_csv(os.path.join(cache_folder, f"bsd_simopt_data_{data_arg}_{model_arg}_{version}.csv"), index=False)
     pd.concat(all_params, axis=0).sort_values('ID').to_csv(os.path.join(cache_folder,
