@@ -24,6 +24,11 @@ class CogModel:
     """
 
     def __init__(self):
+        self.fixed_params = {}
+        self.param_dict = {}
+        self.fitted_params = None
+        self.latent_names = []# ['qdiff', 'rpe']
+        self.summary = {}
         pass
 
     def sim(self, data, params, *args, **kwargs):
@@ -43,6 +48,8 @@ class CogModel:
 class CogModel2ABT_BWQ(CogModel):
     """
     Base class for 2ABT cognitive models
+    input data must have the following columns:
+    ID, Subject, Session, Trial, blockTrial, blockLength, Target, Decision, Switch, Reward, Condition
     """
 
     def __init__(self):
@@ -51,10 +58,6 @@ class CogModel2ABT_BWQ(CogModel):
         self.fixed_params = {'predict_thres': 0.5,
                              'CF': False} # whether or not to calculate counterfactual rpe
         # used fixed for hyperparam_tuning
-        self.param_dict = {}
-        self.fitted_params = None
-        self.latent_names = []# ['qdiff', 'rpe']
-        self.summary = {}
 
     def latents_init(self, N):
         qdiff = np.zeros(N)
@@ -101,6 +104,37 @@ class CogModel2ABT_BWQ(CogModel):
         """
         pass
 
+    def get_proba(self, data, params=None):
+        if 'loglik' in data.columns:
+            return np.exp(data['loglik'].values)
+        else:
+            params_in = self.fitted_params[['ID', 'beta', 'st']] if params is None else params
+            new_data = data.merge(params_in, on='ID')
+            return expit(new_data['qdiff'] * new_data['beta'] + new_data['stay'] * new_data['st'])
+
+    def select_action(self, qdiff, c_1back, params):
+        stay = 1
+        if c_1back == 0:
+            stay = -1
+        choice_p = expit(qdiff * params['beta'] + stay * params['st'])
+        return int(choice_p <= np.random.random())
+
+    def predict(self, data):
+        return (self.get_proba(data) >= self.fixed_params['predict_thres']).astype(float)
+
+    def fit_marginal(self, data):
+        """Fits fake marginal with only past trial information, useful for BI and RL model"""
+        # test marginal stay
+        c = data['Decision']
+        sess = data['Session']
+        c_lag = c.shift(1)
+        s_lag = sess.shift(1)
+        data['stay'] = -1
+        data.loc[c == c_lag, 'stay'] = 1
+        data.loc[sess != s_lag, 'stay'] = 0
+        data.loc[(c == -1) | (c_lag == -1), 'stay'] = 0
+        return data
+
     def sim(self, data, params, *args, **kwargs):
         """
         Simulates the model for single subject that matches the data
@@ -145,6 +179,7 @@ class CogModel2ABT_BWQ(CogModel):
             qs = self.calc_q(b, w).ravel()
             # compute value difference
             qdiff[n] = qs[1] - qs[0]
+            # print(n, qs)
             ## Model update
             if c.iat[n] == -1:
                 # handling miss trials
@@ -171,244 +206,91 @@ class CogModel2ABT_BWQ(CogModel):
         # qdiff[n], rpe[n], b, w, b_arr[n], w_arr[n]
         return data
 
-
-class RLCF(CogModel2ABT_BWQ):
-
-    """ Model class for counter-factual Q-learning, described in Eckstein et al. 2022
-    https://doi.org/10.1016/j.dcn.2022.101106
-
-    """
-
-    def __init__(self):
-        super().__init__()
-        self.fixed_params.update({"b0": 1,
-                                  'q0': 0,
-                                  'gam': 1,
-                                  'CF': True})
-        # used fixed for hyperparam_tuning
-        self.param_dict = {"beta": CogParam(scipy.stats.expon(1), lb=0),
-                           'a_pos': CogParam(scipy.stats.uniform(), lb=0, ub=1),
-                           'a_neg': CogParam(scipy.stats.uniform(), lb=0, ub=1),
-                           "st": CogParam(scipy.stats.gamma(2, scale=0.2), lb=0)}
-        self.fitted_params = None
-        self.latent_names = ['qdiff', 'rpe', 'w0', 'w1']# ['qdiff', 'rpe']
-        self.summary = {}
-
-    def id_param_init(self, params, id):
-        varp_list = ['a_pos', 'a_neg']
-        fixp_list = ['b0', 'q0', 'gam']
-        a_pos, a_neg = params.loc[params["ID"] == id, varp_list].values.ravel()[0]
-        b0, q0, gam = [self.fixed_params[fp] for fp in fixp_list]
-        w0 = np.array(['q0'] * 2)
-        return {'b0': b0,
-                'w0': w0,
-                'gam': gam,
-                'a_pos': a_pos,
-                'a_neg': a_neg}
-
-    def calc_q(self, b, w):
-        return w
-
-    def update_b(self, b, w, c_t, r_t, params_i):
-        return b
-
-    def update_w(self, b, w, c_t, rpe_t, params_i):
-        """abstract method for updating model latent w"""
-        pass
-
-    @abstractmethod
-    def assign_latents(self, data, qdiff, rpe, b_arr, w_arr):
-        pass
-
-    def get_proba(self, data, params=None):
-        if 'loglik' in data.columns:
-            return np.exp(data['loglik'].values)
-        else:
-            params_in = self.fitted_params[['ID', 'beta', 'st']] if params is None else params
-            new_data = data.merge(params_in, on='ID')
-            return expit(new_data['qdiff'] * new_data['beta'] + new_data['logodds'] * new_data['st'])
-
-
-class PCModel(CogModel2ABT_BWQ):
-    """
-
-    Debate: single subject fit, with one paramter sets, and multiple PC models
-    OR:
-    one fit for all subjects, and multiple parameter sets -> bayesian mixed effects model
-
-    Potentially use ID to identify different snippets of data
-
-
-    Implements base policy compression model that seeks to maximize rewards subject
-    to cognitive resource constraint encoded as an upper bound to mutual information
-    between marginal policy state/belief dependent policy.
-
-    TODO: implement interface that returns form of b, Q according to task structure
-
-    @cite: Lai, Gershman 2021, https://doi.org/10.1016/bs.plm.2021.02.004.
-    @credit: inspired by pcmodel.py written by Sam Gershman
-
-    params:
-        .beta: policy compression parameter
-        .p_rew: reward prob in correct choice
-        .p_eps: reward prob in wrong choice
-        .st: stickiness to previous choice
-        .sw: block switch probability
-        .gam: decay rate simulating forgetting across days, $w_{t+1} = \gamma w_0 + (1-\gamma) w_{t}$
-
-    latents:
-        .b: belief vector, propagating and updated via bayesian inference
-        .w: weights for belief vector
-        .rpe: reward prediction error
-        .Q: action values
-
-    input data must have the following columns:
-    ID, Subject, Session, Trial, blockTrial, blockLength, Target, Decision, Switch, Reward, Condition
-
-    """
-
-    def __init__(self):
-        super().__init__()
-        self.fixed_params.update({"b0": 0.5,
-                             "K_marginal": 50})
-        # used fixed for hyperparam_tuning
-        self.param_dict = {"alpha": CogParam(scipy.stats.uniform(), lb=0, ub=1),
-                           "beta": CogParam(scipy.stats.expon(1), lb=0),
-                           "p_rew_init": CogParam(scipy.stats.beta(90, 30), lb=0, ub=1),
-                           # "p_rew_init": CogParam(0.75, lb=0, ub=1),
-                           "p_eps_init": CogParam(scipy.stats.beta(1, 30), lb=0, ub=1),
-                           # "p_eps_init": CogParam(0, lb=0, ub=1),
-                           "st": CogParam(scipy.stats.gamma(2, scale=0.2), lb=0),
-                           "sw": CogParam(scipy.stats.uniform(loc=0, scale=0.05), lb=0.001, ub=1),
-                           "gam": CogParam(scipy.stats.uniform(), lb=0, ub=1)}
-        self.fitted_params = None
-        self.latent_names = ['qdiff', 'rpe', 'p_rew', 'p_eps', 'b']
-        self.summary = {}
-
-    def id_param_init(self, params, id):
-        varp_list = ['p_rew_init', 'p_eps_init', 'gam', 'sw', 'alpha']
-        fixp_list = ['b0']
-        p_rew_init, p_eps_init, gam, sw, alpha = params.loc[params["ID"] == id, varp_list].values.ravel()
-        b0 = self.fixed_params['b0']
-        w0 = np.array([p_rew_init, p_eps_init])
-        return {'b0': b0,
-                'w0': w0,
-                'gam': gam,
-                'sw': sw,
-                'alpha': alpha}
-
-    def assign_latents(self, data, qdiff, rpe, b_arr, w_arr):
-        data['qdiff'] = qdiff
-        data['rpe'] = rpe
-        data['b'] = b_arr
-        data[['p_rew', 'p_eps']] = w_arr
-        return data
-
-    def calc_q(self, b, w):
+    def emulate(self, data, params, *args, **kwargs):
         """
-        Function to calculate action values given b, belief states, and w, the weights
-        b = probability believing in state 1
+        Simulates the model for single subject that matches the data
+
+        Input:
+            data: pd.DataFrame
+            ... params listed in class description
+            params: pd.DataFrame
+            ... containing parameters of interest
+
+        Returns:
+            data with new columns filled with latents listed in class description
         """
-        f_b = np.array([1-b, b]).reshape((1, 2))
-        W = np.diag([w[0]-w[1]] * len(w)) + w[1]
-        return f_b @ W
-
-    def calc_qdiff(self, b, w):
-        """
-        Function to calculate q value differences given b, w
-        """
-        return (2*b-1) * (w[0]-w[1])
-
-    def update_w(self, b, w, c_t, rpe_t, params_i):
-        # update w according to reward prediction error, uncomment later
-        f_b = np.array([1 - b, b])
-        # change the update rule
-        # w[c.iat[n]] = w[c.iat[n]] + alpha * rpe[n] * f_b
-        dw = np.array([1 - b, b])  # alternatively p2 = b+c-2bc
-        if c_t == 1:
-            dw = np.array([b, 1 - b])
-        w += params_i['alpha'] * rpe_t * dw
-        w = np.minimum(np.maximum(w, 0), 1)
-        return w
-
-    def update_b(self, b, w, c_t, r_t, params_i):
-        sw = params_i['sw']
-
-        def projected_rew(r_i, c_i, z):
-            if c_i == 1:
-                P = w[::-1]
-            else:
-                P = w
-            if r_i == 0:
-                P = 1 - P
-            return P[int(z)]
-
-        p1, p0 = projected_rew(r_t, c_t, 1), projected_rew(r_t, c_t, 0)
-        eps = 0.001
-        if (b == 0) and (p0 == 0):
-            b = eps
-            print('b gets to 0 and corrects')
-        elif (b == 1) and (p1 == 0):
-            b = 1 - eps
-            print("b gets to 1 and corrects")
-        elif (p1 == 0) and (p0 == 0):
-            p1, p0 = eps / 2, eps / 2
-            print("encountering optimizing both p1 and p0 starting 0")
-        if (b == 0) or (b == 1):
-            print(f'b gets to {b}')
-        b = ((1 - sw) * b * p1 + sw * (1 - b) * p0) / (b * p1 + (1 - b) * p0)  # catch when b goes to 1
-        # try:
-        #     b = ((1-sw) * b * p1 + sw * (1 - b) * p0) / (b * p1 + (1 - b) * p0)
-        # except FloatingPointError:
-        #     print(r.iat[n], c.iat[n], p1, p0, b, sw, w)
-        return b
-
-    def fit_marginal(self, data):
-        # Fit marginal choice probability
-        #
-        # INPUTS:
-        #   data - dataframe containing all the relevant data
-        #   K - number of different exponential weighting values
-        #
-        # OUTPUTS:
-        #   data with new column 'logodds' (choice log odds)
-        K = self.fixed_params['K_marginal']
-        alpha = np.linspace(0.001, 0.3, num=K)
         N = data.shape[0]
-        m = np.zeros((N, K)) + 0.5
-        c = data['Decision']
+        qdiff, rpe, b_arr, w_arr = self.latents_init(N)
+        c = np.zeros(N, dtype=int)
+        r = np.zeros(N, dtype=int)
+
+        # TODO: handle miss decisions
         sess = data['Session']
+        subj = data['Subject']
+        id_i = data['ID']
+        targets = data['Target']
+        c_data = data['Decision']
+        r_data = data['Reward']
 
-        for n in range(N):
-            if (n > 0) and (sess.iat[n] == sess.iat[n - 1]):
-                if c.iat[n - 1] == -1:
-                    # Handling miss decisions
-                    m[n,] = m[n - 1,]
-                else:
-                    m[n,] = (1 - alpha) * m[n - 1,] + alpha * c.iat[n - 1]
-        eps = 0.001
-        m = np.minimum(np.maximum(eps, m), 1-eps)
-        c_vec = c[c != -1].values # handling missing decisions
-        m_mat = m[c != -1]
+        probs = data['Condition'].split('-')
+        p_cor, p_inc = [float(p)/100 for p in probs]
+        fix_cols = ['ID', 'Subject', 'Session', 'Trial', 'blockTrial', 'blockLength', 'Target', 'Condition']
+        emu_data = data[fix_cols].reset_index(drop=True)
+        params_d = self.id_param_init(params, id_i.iat[0])
+        b0, w0, gam = params_d['b0'], params_d['w0'], params_d['gam']
+        c_1back = np.nan
+        b, w = b0, w0
+
+        # when ID changes: certain parameter changes
         # np.seterr(all='raise')
-        L = np.dot(c_vec, np.log(m_mat)) + np.dot((1 - c_vec), np.log(1 - m_mat))
-        m = m[:, np.argmax(L)]
-        data['logodds'] = np.log(m) - np.log(1 - m)
-        data['marg'] = m
-        print("alpha =", alpha[np.argmax(L)])
+        for n in range(N):
+            # initializing latents
+            if id_i.iat[n] != id_i.iat[n-1]:
+                params_d = self.id_param_init(params, id_i.iat[n])
+                c_1back = np.nan
 
-        return data
+            if (n == 0) or (subj.iat[n] != subj.iat[n-1]):
+                b = b0
+                w = np.copy(w0)
+            elif sess.iat[n] != sess.iat[n - 1]:
+                b = b0
+                w = w0 * gam + (1-gam) * w
+            ## Action value calculation
+            qs = self.calc_q(b, w).ravel()
+            # compute value difference
+            qdiff[n] = qs[1] - qs[0]
 
-    def get_proba(self, data, params=None):
-        if 'loglik' in data.columns:
-            return np.exp(data['loglik'].values)
-        else:
-            params_in = self.fitted_params[['ID', 'beta', 'st']] if params is None else params
-            new_data = data.merge(params_in, on='ID')
-            return expit(new_data['qdiff'] * new_data['beta'] + new_data['logodds'] * new_data['st'])
+            c_t = self.select_action(qdiff[n], c_1back, params_d)
 
-    def predict(self, data):
-        return (self.get_proba(data) >= self.fixed_params['predict_thres']).astype(float)
+            if c_t == c_data.iat[n]:
+                r_t = r_data.iat[n]
+            else:
+                dice = np.random.random()
+                if targets.iat[n] == c_t:
+                    r_t = int(dice <= p_cor)
+                else:
+                    r_t = int(dice <= p_inc)
+            ## Model update
+            rpe_c = r_t - qs[c_t]
+
+            if self.fixed_params['CF']:
+                rpe_cf = (1-r_t) - qs[1-c_t]
+                rpe_t = np.array([rpe_c, rpe_cf])
+            else:
+                rpe_t = rpe_c
+            c[n], r[n] = c_t, r_t
+            rpe[n, :] = rpe_t
+            # w, b reflects information prior to reward
+            w_arr[n, :] = w
+            b_arr[n] = b
+            w = self.update_w(b, w, c.iat[n], rpe_t, params_d)
+            # Updating b!
+            b = self.update_b(b, w, c.iat[n], r.iat[n], params_d)
+        emu_data['Decision'] = c
+        emu_data['Reward'] = r
+        # data = self.assign_latents(emu_data, qdiff, rpe, b_arr, w_arr)
+        # qdiff[n], rpe[n], b, w, b_arr[n], w_arr[n]
+        return emu_data
 
     def create_params(self, data):
         uniq_ids = data['ID'].unique()
@@ -487,6 +369,357 @@ class PCModel(CogModel2ABT_BWQ):
                         'latents': data[self.latent_names + ['choice_p']].reset_index(drop=True)}
         return self
 
+
+class RLCF(CogModel2ABT_BWQ):
+
+    """ Model class for counter-factual Q-learning, described in Eckstein et al. 2022
+    https://doi.org/10.1016/j.dcn.2022.101106
+    Here we implement a model where choice stays does not alter Q value but rather
+    affects choice selection.
+
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.fixed_params.update({"b0": 1,
+                                  'q_init': 0,
+                                  'gam': 1,
+                                  'CF': True})
+        # used fixed for hyperparam_tuning
+        self.param_dict = {"beta": CogParam(scipy.stats.expon(1), lb=0),
+                           'a_pos': CogParam(scipy.stats.uniform(), lb=0, ub=1),
+                           'a_neg': CogParam(scipy.stats.uniform(), lb=0, ub=1),
+                           "st": CogParam(scipy.stats.gamma(2, scale=0.2), lb=0)}
+        self.latent_names = ['qdiff', 'rpe', 'rpe_cf', 'q0', 'q1']# ['qdiff', 'rpe']
+
+    def id_param_init(self, params, id):
+        varp_list = ['a_pos', 'a_neg', 'beta', 'st']
+        fixp_list = ['b0', 'q_init', 'gam']
+        a_pos, a_neg, beta, st = params.loc[params["ID"] == id, varp_list].values.ravel()
+        b0, q0, gam = [self.fixed_params[fp] for fp in fixp_list]
+        w0 = np.array([q0] * 2)
+        return {'b0': b0,
+                'w0': w0,
+                'gam': gam,
+                'a_pos': a_pos,
+                'a_neg': a_neg,
+                'beta': beta,
+                'st': st}
+
+    def calc_q(self, b, w):
+        return w
+
+    def update_b(self, b, w, c_t, r_t, params_i):
+        return b
+
+    def update_w(self, b, w, c_t, rpe_t, params_i):
+        """abstract method for updating model latent w"""
+        d_rpe = rpe_t
+        if c_t == 1:
+            d_rpe = rpe_t[::-1]
+        alphas = params_i['a_pos'] * (rpe_t >= 0) + params_i['a_neg'] * (rpe_t < 0)
+        return w + alphas * d_rpe
+
+    def assign_latents(self, data, qdiff, rpe, b_arr, w_arr):
+        data['qdiff'] = qdiff
+        data[['rpe', 'rpe_cf']] = rpe
+        data[['q0', 'q1']] = w_arr
+        return data
+
+
+class BayesianModel(CogModel2ABT_BWQ):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def bayesian_step(b, ps, c_t, r_t, sw):
+        # performs bayesian step to update b
+        def projected_rew(r_i, c_i, z):
+            if c_i == 1:
+                P = ps[::-1]
+            else:
+                P = ps
+            if r_i == 0:
+                P = 1 - P
+            return P[int(z)]
+
+        p1, p0 = projected_rew(r_t, c_t, 1), projected_rew(r_t, c_t, 0)
+        # print(b, p1, p0, c_t, r_t)
+        eps = 0.001
+        # if (b == 0) and (p0 == 0):
+        #     b = eps
+        #     print('b gets to 0 and corrects')
+        # elif (b == 1) and (p1 == 0):
+        #     b = 1 - eps
+        #     print("b gets to 1 and corrects")
+        # elif (p1 == 0) and (p0 == 0):
+        #     p1, p0 = eps / 2, eps / 2
+        #     print("encountering optimizing both p1 and p0 starting 0")
+        # if (b == 0) or (b == 1):
+        #     print(f'b gets to {b}')
+        b = ((1 - sw) * b * p1 + sw * (1 - b) * p0) / (b * p1 + (1 - b) * p0)  # catch when b goes to 1
+        b = np.maximum(np.minimum(b, 1-eps), eps)
+        # try:
+        #     b = ((1-sw) * b * p1 + sw * (1 - b) * p0) / (b * p1 + (1 - b) * p0)
+        # except FloatingPointError:
+        #     print(r.iat[n], c.iat[n], p1, p0, b, sw, w)
+        return b
+
+
+class BIModel(BayesianModel):
+    """ Model class for Bayesian inference model, described in Eckstein et al. 2022,
+    adapted to BWQ framework: https://doi.org/10.1016/j.dcn.2022.101106
+    Here we implement a model where choice stays does not alter Q value but rather
+    affects choice selection.
+    """
+    def __init__(self):
+        super().__init__()
+        self.fixed_params.update({"b0": 0.5,
+                                  'gam': 1,
+                                  'p_eps': 1e-4,
+                                  'w0': 0.5})
+        # used fixed for hyperparam_tuning
+        self.param_dict = {"beta": CogParam(scipy.stats.expon(1), lb=0), # v9 constraining
+                           "st": CogParam(scipy.stats.gamma(2, scale=0.2), lb=0),
+                           "p_rew": CogParam(scipy.stats.beta(90, 30), lb=0, ub=1), # 0.75
+                           "sw": CogParam(scipy.stats.uniform(loc=0, scale=0.05), lb=0.001, ub=0.05)} # 0.05
+        self.latent_names = ['qdiff', 'b', 'rpe']
+
+    def latents_init(self, N):
+        qdiff = np.zeros(N)
+        if self.fixed_params['CF']:
+            rpe = np.zeros((N, 2))
+        else:
+            rpe = np.zeros((N, 1))
+        b_arr = np.zeros(N)
+        w_arr = np.zeros((N, 1))
+        return qdiff, rpe, b_arr, w_arr
+
+    def id_param_init(self, params, id):
+        varp_list = ['p_rew', 'sw', 'beta', 'st']
+        fixp_list = ['b0', 'w0', 'p_eps', 'gam']
+        p_rew, sw, beta, st = params.loc[params["ID"] == id, varp_list].values.ravel()
+        b0, w0, p_eps, gam = [self.fixed_params[fp] for fp in fixp_list]
+        return {'p_rew': p_rew,
+                'p_eps': p_eps,
+                'sw': sw,
+                'gam': gam,
+                'w0': w0,
+                'b0': b0,
+                'beta': beta,
+                'st': st}
+
+    def calc_q(self, b, w):
+        return np.array([(1-b)/2, b/2])
+
+    def update_b(self, b, w, c_t, r_t, params_i):
+        sw = params_i['sw']
+        ps = np.array([params_i['p_rew'], params_i['p_eps']])
+        return self.bayesian_step(b, ps, c_t, r_t, sw)
+
+    def update_w(self, b, w, c_t, rpe_t, params_i):
+        return w
+
+    def assign_latents(self, data, qdiff, rpe, b_arr, w_arr):
+        data['qdiff'] = qdiff
+        data['rpe'] = rpe
+        data['b'] = b_arr
+        return data
+
+    def get_proba(self, data, params=None):
+        if 'loglik' in data.columns:
+            return np.exp(data['loglik'].values)
+        else:
+            params_in = self.fitted_params[['ID', 'beta', 'st']] if params is None else params
+            new_data = data.merge(params_in, on='ID')
+            return expit(new_data['qdiff'] * new_data['beta'] + new_data['stay'] * new_data['st'])
+        #v10 mix beta and st
+
+
+class BIModel_fixp(BIModel):
+    """ Model class for Bayesian inference model, described in Eckstein et al. 2022,
+    adapted to BWQ framework: https://doi.org/10.1016/j.dcn.2022.101106
+    Here we implement a model where choice stays does not alter Q value but rather
+    affects choice selection.
+    """
+    def __init__(self):
+        super().__init__()
+        self.fixed_params.update({"b0": 0.5,
+                                  'gam': 1,
+                                  'p_eps': 1e-4,
+                                  'w0': 0.5,
+                                  'p_rew': 0.75})
+        # used fixed for hyperparam_tuning
+        self.param_dict = {"beta": CogParam(scipy.stats.expon(1), lb=0),
+                           "st": CogParam(scipy.stats.gamma(2, scale=0.2), lb=0),
+                           # "p_rew": CogParam(scipy.stats.beta(90, 30), lb=0, ub=1), # 0.75
+                           "sw": CogParam(scipy.stats.uniform(loc=0, scale=0.05), lb=0.001, ub=1)} # 0.05
+
+    def id_param_init(self, params, id):
+        varp_list = ['sw', 'beta', 'st']
+        fixp_list = ['b0', 'w0', 'p_rew', 'p_eps', 'gam']
+        sw, beta, st = params.loc[params["ID"] == id, varp_list].values.ravel()
+        b0, w0, p_rew, p_eps, gam = [self.fixed_params[fp] for fp in fixp_list]
+        return {'p_rew': p_rew,
+                'p_eps': p_eps,
+                'sw': sw,
+                'gam': gam,
+                'w0': w0,
+                'b0': b0,
+                'beta': beta,
+                'st': st}
+
+
+class PCModel(BayesianModel):
+    """
+
+    Debate: single subject fit, with one paramter sets, and multiple PC models
+    OR:
+    one fit for all subjects, and multiple parameter sets -> bayesian mixed effects model
+
+    Potentially use ID to identify different snippets of data
+
+
+    Implements base policy compression model that seeks to maximize rewards subject
+    to cognitive resource constraint encoded as an upper bound to mutual information
+    between marginal policy state/belief dependent policy.
+
+    TODO: implement interface that returns form of b, Q according to task structure
+
+    @cite: Lai, Gershman 2021, https://doi.org/10.1016/bs.plm.2021.02.004.
+    @credit: inspired by pcmodel.py written by Sam Gershman
+
+    params:
+        .beta: policy compression parameter
+        .p_rew: reward prob in correct choice
+        .p_eps: reward prob in wrong choice
+        .st: stickiness to previous choice
+        .sw: block switch probability
+        .gam: decay rate simulating forgetting across days, $w_{t+1} = \gamma w_0 + (1-\gamma) w_{t}$
+
+    latents:
+        .b: belief vector, propagating and updated via bayesian inference
+        .w: weights for belief vector
+        .rpe: reward prediction error
+        .Q: action values
+
+    input data must have the following columns:
+    ID, Subject, Session, Trial, blockTrial, blockLength, Target, Decision, Switch, Reward, Condition
+
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.fixed_params.update({"b0": 0.5,
+                             "K_marginal": 50})
+        # used fixed for hyperparam_tuning
+        self.param_dict = {"alpha": CogParam(scipy.stats.uniform(), lb=0, ub=1),
+                           "beta": CogParam(scipy.stats.expon(1), lb=0),
+                           "p_rew_init": CogParam(scipy.stats.beta(90, 30), lb=0, ub=1),
+                           # "p_rew_init": CogParam(0.75, lb=0, ub=1),
+                           "p_eps_init": CogParam(scipy.stats.beta(1, 30), lb=0, ub=1),
+                           # "p_eps_init": CogParam(0, lb=0, ub=1),
+                           "st": CogParam(scipy.stats.gamma(2, scale=0.2), lb=0),
+                           "sw": CogParam(scipy.stats.uniform(loc=0, scale=0.05), lb=0.001, ub=1),
+                           "gam": CogParam(scipy.stats.uniform(), lb=0, ub=1)}
+        self.fitted_params = None
+        self.latent_names = ['qdiff', 'rpe', 'p_rew', 'p_eps', 'b']
+        self.summary = {}
+
+    def id_param_init(self, params, id):
+        varp_list = ['p_rew_init', 'p_eps_init', 'gam', 'sw', 'alpha', 'beta', 'st']
+        fixp_list = ['b0']
+        p_rew_init, p_eps_init, gam, sw, alpha, beta, st = params.loc[params["ID"] == id, varp_list].values.ravel()
+        b0 = self.fixed_params['b0']
+        w0 = np.array([p_rew_init, p_eps_init])
+        return {'b0': b0,
+                'w0': w0,
+                'gam': gam,
+                'sw': sw,
+                'alpha': alpha,
+                'beta': beta,
+                'st': st}
+
+    def assign_latents(self, data, qdiff, rpe, b_arr, w_arr):
+        data['qdiff'] = qdiff
+        data['rpe'] = rpe
+        data['b'] = b_arr
+        data[['p_rew', 'p_eps']] = w_arr
+        return data
+
+    def calc_q(self, b, w):
+        """
+        Function to calculate action values given b, belief states, and w, the weights
+        b = probability believing in state 1
+        """
+        f_b = np.array([1-b, b]).reshape((1, 2))
+        W = np.diag([w[0]-w[1]] * len(w)) + w[1]
+        return f_b @ W
+
+    def calc_qdiff(self, b, w):
+        """
+        Function to calculate q value differences given b, w
+        """
+        return (2*b-1) * (w[0]-w[1])
+
+    def update_w(self, b, w, c_t, rpe_t, params_i):
+        # update w according to reward prediction error, uncomment later
+        f_b = np.array([1 - b, b])
+        # change the update rule
+        # w[c.iat[n]] = w[c.iat[n]] + alpha * rpe[n] * f_b
+        dw = np.array([1 - b, b])  # alternatively p2 = b+c-2bc
+        if c_t == 1:
+            dw = np.array([b, 1 - b])
+        w += params_i['alpha'] * rpe_t * dw
+        w = np.minimum(np.maximum(w, 0), 1)
+        return w
+
+    def update_b(self, b, w, c_t, r_t, params_i):
+        sw = params_i['sw']
+        return self.bayesian_step(b, w, c_t, r_t, sw)
+
+    def fit_marginal(self, data):
+        # Fit marginal choice probability
+        #
+        # INPUTS:
+        #   data - dataframe containing all the relevant data
+        #   K - number of different exponential weighting values
+        #
+        # OUTPUTS:
+        #   data with new column 'logodds' (choice log odds)
+        K = self.fixed_params['K_marginal']
+        alpha = np.linspace(0.001, 0.3, num=K)
+        N = data.shape[0]
+        m = np.zeros((N, K)) + 0.5
+        c = data['Decision']
+        sess = data['Session']
+
+        for n in range(N):
+            if (n > 0) and (sess.iat[n] == sess.iat[n - 1]):
+                if c.iat[n - 1] == -1:
+                    # Handling miss decisions
+                    m[n,] = m[n - 1,]
+                else:
+                    m[n,] = (1 - alpha) * m[n - 1,] + alpha * c.iat[n - 1]
+        eps = 0.001
+        m = np.minimum(np.maximum(eps, m), 1-eps)
+        c_vec = c[c != -1].values # handling missing decisions
+        m_mat = m[c != -1]
+        # np.seterr(all='raise')
+        L = np.dot(c_vec, np.log(m_mat)) + np.dot((1 - c_vec), np.log(1 - m_mat))
+        m = m[:, np.argmax(L)]
+        data['logodds'] = np.log(m) - np.log(1 - m)
+        data['marg'] = m
+        print("alpha =", alpha[np.argmax(L)])
+        return data
+
+    def get_proba(self, data, params=None):
+        if 'loglik' in data.columns:
+            return np.exp(data['loglik'].values)
+        else:
+            params_in = self.fitted_params[['ID', 'beta', 'st']] if params is None else params
+            new_data = data.merge(params_in, on='ID')
+            return expit(new_data['qdiff'] * new_data['beta'] + new_data['logodds'] * new_data['st'])
     # pseudo R-squared: http://courses.atlas.illinois.edu/fall2016/STAT/STAT200/RProgramming/LogisticRegression.html#:~:text=Null%20Model,-The%20simplest%20model&text=The%20fitted%20equation%20is%20ln,e%E2%88%923.36833)%3D0.0333.
 
 
@@ -510,16 +743,18 @@ class PCModel_fixpswgam(PCModel):
                            "st": CogParam(scipy.stats.gamma(2, scale=0.2), lb=0)}
 
     def id_param_init(self, params, id):
-        varp_list = []
+        varp_list = ['beta', 'st']
         fixp_list = ['b0', 'p_rew_init', 'p_eps_init', 'gam', 'sw', 'alpha']
-        # alpha = params.loc[params["ID"] == id, varp_list].values.ravel()[0]
+        beta, st = params.loc[params["ID"] == id, varp_list].values.ravel()[0]
         b0, p_rew_init, p_eps_init, gam, sw, alpha = [self.fixed_params[fp] for fp in fixp_list]
         w0 = np.array([p_rew_init, p_eps_init])
         return {'b0': b0,
                 'w0': w0,
                 'gam': gam,
                 'sw': sw,
-                'alpha': alpha}
+                'alpha': alpha,
+                'beta': beta,
+                'st': st}
 
     def update_w(self, b, w, c_t, rpe_t, params_i):
         # No update!
@@ -544,6 +779,3 @@ class CogParam:
             return self.value.rvs(size=self.n_id)
         else:
             return ValueError()
-
-
-
