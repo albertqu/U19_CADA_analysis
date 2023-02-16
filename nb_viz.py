@@ -10,6 +10,7 @@ from sklearn.linear_model import LogisticRegression
 
 # Utils
 from utils import df_select_kwargs, RAND_STATE
+import logging
 
 
 class NBVisualizer:
@@ -329,3 +330,13 @@ def plot_nb_df_rr(nb_df, data_cols, idvars):
     nb_df_neur['neur_time'] = nb_df_neur['neur_time'].astype(np.float)
     sns.relplot(data=nb_df_neur[nb_df_neur['event'] == 'T_Entry'], col='hemi',
                 x='neur_time', y='dZF', row='animal', kind='line', hue='decision')
+
+
+def plot_correlation(dataset: pd.DataFrame, dendo=True) -> None:
+    corrs = dataset.corr(method='pearson')
+    if np.any(corrs.isnull().values.ravel()):
+        logging.warning("null entries in correlation matrix, check data")
+    corrmap = sns.clustermap(corrs.fillna(0), cmap='coolwarm', vmin=-1, vmax=1, cbar_kws={'label': 'Correlation'}, figsize=(12, 12))
+    corrmap.ax_row_dendrogram.set_visible(dendo)
+    corrmap.ax_col_dendrogram.set_visible(dendo)
+    return corrmap

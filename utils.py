@@ -1385,3 +1385,18 @@ def pds_is_valid(pds):
 
 def pds_neq(x, y):
     return pds_is_valid(x) & pds_is_valid(y) & (x != y)
+
+
+def decode_from_regfeature(feature):
+    get_lag = lambda s: int(s.split('_')[1][:-4])
+    if ':' in feature:
+        ftype = 'C:R'
+        lag = get_lag(feature.split(':')[0])
+    elif feature == 'Intercept':
+        ftype = feature
+        lag = 0
+    else:
+        ftype = feature.split('_')[0]
+        lag = get_lag(feature)
+    return ftype, lag
+

@@ -4,6 +4,10 @@ from scipy.special import expit
 import scipy
 from numbers import Number
 from abc import abstractmethod
+from cogmodels_utils import Probswitch_2ABT, add_switch
+from statsmodels.tsa.tsatools import lagmat
+from sklearn.linear_model import LogisticRegressionCV
+import patsy
 
 import statsmodels.api as sm
 
@@ -22,6 +26,9 @@ class CogModel:
         .columns: Subject, Decision, Reward, Target, *State* (applies to tasks with
         distinct sensory states)
     """
+
+    data_cols = ["ID", "Subject", "Session", "Trial", "blockTrial", "blockNum", "blockLength",
+                 "Target", "Decision", "Switch", "Reward", "Condition"]
 
     def __init__(self):
         self.fixed_params = {}
@@ -45,6 +52,57 @@ class CogModel:
         pass
 
 
+class LR(CogModel):
+
+    def __init__(self, nlag=4):
+        super().__init__()
+        self.nlag = nlag
+        self.clf = None
+
+    def __str__(self):
+        return 'LR'
+
+    def df2Xy(self, rdf):
+        nlag = self.nlag
+        rdf['C'] = 2 * rdf['Decision'] - 1
+        features = ['C', 'R']
+        lagfeats = list(np.concatenate([[feat + f'_{i}back' for feat in features] for i in range(1, nlag + 1)]))
+
+        lagdf = pd.DataFrame(lagmat(rdf[features].values, maxlag=nlag, trim='forward', original='ex'),
+                             columns=lagfeats)
+        col_keys = ['C'] + [f'C_{i}back' for i in range(1, nlag + 1)]
+        lagdf = pd.concat([rdf, lagdf], axis=1)
+        lagdf = lagdf[
+            (lagdf['Trial'] > nlag) & np.logical_and.reduce([(lagdf[c] != -3) for c in col_keys])].reset_index(
+            drop=True)
+        interactions = [f'C_{i}back:R_{i}back' for i in range(1, nlag + 1)]
+        formula = 'Decision ~ ' + '+'.join(lagfeats + interactions)
+        y, X = patsy.dmatrices(formula, data=lagdf, return_type="dataframe")
+        id_df = lagdf[['ID', 'Session', 'Trial']]
+        return X, y, id_df
+
+    def fitsim(self, data, *args, **kwargs):
+        # assume data comes from one animal
+
+        rdf = data[['ID', 'Session', 'Trial', 'Decision', 'Reward']].rename(columns={'Reward': 'R'}).reset_index(
+            drop=True)
+        X, y, id_df = self.df2Xy(rdf)
+        # clf = LogisticRegressionCV().fit(X, y)
+        # self.clf = clf
+        # id_df['choice_p'] = clf.predict_proba(X)[:, 1]
+        # sklearn and GLM produces similar results
+        binomial_model = sm.GLM(y, X, family=sm.families.Binomial())
+        binomial_results = binomial_model.fit()
+        params = pd.DataFrame({0: binomial_results.params}).transpose()
+        params['ID'] = data['ID'].unique()[0]
+        self.fitted_params = params
+        self.summary= {'aic': binomial_results.aic,
+                       'bic': binomial_results.bic_llf}
+        id_df['choice_p'] = binomial_model.predict(binomial_results.params, X)
+        data_sim = data.merge(id_df, how='left', on=['ID', 'Session', 'Trial'])
+        return data_sim
+
+
 class CogModel2ABT_BWQ(CogModel):
     """
     Base class for 2ABT cognitive models
@@ -57,6 +115,7 @@ class CogModel2ABT_BWQ(CogModel):
         self.k_action = 2
         self.fixed_params = {'predict_thres': 0.5,
                              'CF': False} # whether or not to calculate counterfactual rpe
+        self.marg_name = 'stay'
         # used fixed for hyperparam_tuning
 
     def latents_init(self, N):
@@ -109,15 +168,23 @@ class CogModel2ABT_BWQ(CogModel):
             return np.exp(data['loglik'].values)
         else:
             params_in = self.fitted_params[['ID', 'beta', 'st']] if params is None else params
-            new_data = data.merge(params_in, on='ID')
+            new_data = data.merge(params_in, how='left', on='ID')
             return expit(new_data['qdiff'] * new_data['beta'] + new_data['stay'] * new_data['st'])
 
-    def select_action(self, qdiff, c_1back, params):
+    def select_action(self, qdiff, m_1back, params):
         stay = 1
-        if c_1back == 0:
+        if m_1back == 0:
             stay = -1
+        elif m_1back == np.nan:
+            stay = 0
         choice_p = expit(qdiff * params['beta'] + stay * params['st'])
-        return int(choice_p <= np.random.random())
+        return int(np.random.random() <= choice_p)
+
+    def marginal_init(self):
+        return np.nan
+
+    def update_marginal(self, c_t, m_1back):
+        return c_t
 
     def predict(self, data):
         return (self.get_proba(data) >= self.fixed_params['predict_thres']).astype(float)
@@ -126,12 +193,10 @@ class CogModel2ABT_BWQ(CogModel):
         """Fits fake marginal with only past trial information, useful for BI and RL model"""
         # test marginal stay
         c = data['Decision']
-        sess = data['Session']
         c_lag = c.shift(1)
-        s_lag = sess.shift(1)
         data['stay'] = -1
-        data.loc[c == c_lag, 'stay'] = 1
-        data.loc[sess != s_lag, 'stay'] = 0
+        data.loc[c_lag == 1, 'stay'] = 1
+        data.loc[data['Trial'] == 1, 'stay'] = 0
         data.loc[(c == -1) | (c_lag == -1), 'stay'] = 0
         return data
 
@@ -187,6 +252,7 @@ class CogModel2ABT_BWQ(CogModel):
                 w_arr[n, :] = w
                 b_arr[n] = b
                 # w, b remains the same
+                # TODO: plot by adjusting parameter and see if behavior change.
             else:
                 rpe_c = r.iat[n] - qs[c.iat[n]]
                 if self.fixed_params['CF']:
@@ -204,6 +270,102 @@ class CogModel2ABT_BWQ(CogModel):
 
         data = self.assign_latents(data, qdiff, rpe, b_arr, w_arr)
         # qdiff[n], rpe[n], b, w, b_arr[n], w_arr[n]
+        return data
+
+    def generate(self, params, *args, **kwargs):
+        # n_trial, n_session, serialN=1,
+        """
+        Simulates the model for single subject/ID that matches the data
+
+        for each variable parameter: randomly generate parameter i that range, n_ids
+        params <- full sets of params for all ids
+
+        Input:
+            data: pd.DataFrame
+            ... params listed in class description
+            params: pd.DataFrame
+            ID, vars, n_trial, n_session
+            ... containing parameters of interest
+
+        Returns:
+            data with new columns filled with latents listed in class description
+        """
+        uniq_id = params['ID'].values[0]
+        n_trial = params['n_trial'].values[0]
+        n_session = params['n_session'].values[0]
+        N = n_trial * n_session
+        qdiff, rpe, b_arr, w_arr = self.latents_init(N)
+        c = np.zeros(N, dtype=int)
+        r = np.zeros(N, dtype=int)
+
+        data = {k: np.zeros(N, dtype=int) for k in ['Target', 'Decision', 'Reward']}
+        data['Session'] = np.repeat([f'{i:02d}' for i in range(1, n_session+1)], n_trial)
+        data['Trial'] = np.tile([i+1 for i in range(n_trial)], n_session)
+        data = pd.DataFrame(data)
+        data['Subject'] = uniq_id
+        data['ID'] = uniq_id
+        sess = data['Session']
+
+        task_params = {'blockLen_range': (8, 15), 'condition': '75-0'}
+        task_params.update(kwargs)
+        probs = task_params['condition'].split('-')
+        data['Condition'] = task_params['condition']
+        p_cor, p_inc = [float(p) / 100 for p in probs]
+        task_params.update({'p_cor': p_cor, 'p_inc': p_inc})
+        task = Probswitch_2ABT(**task_params)
+
+        # fix_cols = ['ID', 'Subject', 'Session', 'Trial', 'blockTrial', 'blockLength', 'Target', 'Condition']
+        #ID, Subject, Session, Trial, blockTrial, blockLength, Target, Decision, Switch, Reward, Condition
+        params_d = self.id_param_init(params, uniq_id)
+        b0, w0, gam = params_d['b0'], params_d['w0'], params_d['gam']
+
+        b, w = b0, w0
+        m_1back = self.marginal_init()
+
+        # when ID changes: certain parameter changes
+        # np.seterr(all='raise')
+        for n in range(N):
+            if (n != 0) and (sess.iat[n] != sess.iat[n - 1]):
+                b = b0
+                w = w0 * gam + (1-gam) * w
+                m_1back = self.marginal_init()
+                task.initialize()
+            ## Action value calculation
+            qs = self.calc_q(b, w).ravel()
+            # compute value difference
+            qdiff[n] = qs[1] - qs[0]
+
+            c_t = self.select_action(qdiff[n], m_1back, params_d)
+            m_1back = self.update_marginal(c_t, m_1back)
+
+            data.loc[n, 'Target'] = task.target
+            data.loc[n, 'blockTrial'] = task.btrial
+            data.loc[n, 'blockNum'] = task.blockN
+            r_t = task.getOutcome(c_t)
+
+            ## Model update
+            rpe_c = r_t - qs[c_t]
+
+            if self.fixed_params['CF']:
+                rpe_cf = (1-r_t) - qs[1-c_t]
+                rpe_t = np.array([rpe_c, rpe_cf])
+            else:
+                rpe_t = rpe_c
+            c[n], r[n] = c_t, r_t
+            rpe[n, :] = rpe_t
+            # w, b reflects information prior to reward
+            w_arr[n, :] = w
+            b_arr[n] = b
+            w = self.update_w(b, w, c[n], rpe_t, params_d)
+            # Updating b!
+            b = self.update_b(b, w, c[n], r[n], params_d)
+
+        data['Decision'] = c
+        data['Reward'] = r
+        v = data.groupby(['ID', 'Session', 'blockNum'], as_index=False).apply(len)
+        v.columns = list(v.columns[:3]) + ['blockLength']
+        data = data.merge(v, how='left', on=['ID', 'Session', 'blockNum'])
+        data = add_switch(data)
         return data
 
     def emulate(self, data, params, *args, **kwargs):
@@ -232,35 +394,40 @@ class CogModel2ABT_BWQ(CogModel):
         c_data = data['Decision']
         r_data = data['Reward']
 
-        probs = data['Condition'].split('-')
+        probs = data['Condition'].unique()[0].split('-')
         p_cor, p_inc = [float(p)/100 for p in probs]
         fix_cols = ['ID', 'Subject', 'Session', 'Trial', 'blockTrial', 'blockLength', 'Target', 'Condition']
         emu_data = data[fix_cols].reset_index(drop=True)
         params_d = self.id_param_init(params, id_i.iat[0])
         b0, w0, gam = params_d['b0'], params_d['w0'], params_d['gam']
-        c_1back = np.nan
+
         b, w = b0, w0
+        m_1back = self.marginal_init()
 
         # when ID changes: certain parameter changes
         # np.seterr(all='raise')
         for n in range(N):
             # initializing latents
-            if id_i.iat[n] != id_i.iat[n-1]:
+            if (n == 0) or (id_i.iat[n] != id_i.iat[n-1]):
                 params_d = self.id_param_init(params, id_i.iat[n])
-                c_1back = np.nan
+                # generalize recency
 
             if (n == 0) or (subj.iat[n] != subj.iat[n-1]):
                 b = b0
                 w = np.copy(w0)
+                m_1back = self.marginal_init()
             elif sess.iat[n] != sess.iat[n - 1]:
                 b = b0
                 w = w0 * gam + (1-gam) * w
+                m_1back = self.marginal_init()
             ## Action value calculation
             qs = self.calc_q(b, w).ravel()
             # compute value difference
             qdiff[n] = qs[1] - qs[0]
 
-            c_t = self.select_action(qdiff[n], c_1back, params_d)
+            c_t = self.select_action(qdiff[n], m_1back, params_d)
+            m_1back = self.update_marginal(c_t, m_1back)
+
 
             if c_t == c_data.iat[n]:
                 r_t = r_data.iat[n]
@@ -269,7 +436,7 @@ class CogModel2ABT_BWQ(CogModel):
                 if targets.iat[n] == c_t:
                     r_t = int(dice <= p_cor)
                 else:
-                    r_t = int(dice <= p_inc)
+                    r_t = int(dice <= p_inc) # check this block
             ## Model update
             rpe_c = r_t - qs[c_t]
 
@@ -283,12 +450,13 @@ class CogModel2ABT_BWQ(CogModel):
             # w, b reflects information prior to reward
             w_arr[n, :] = w
             b_arr[n] = b
-            w = self.update_w(b, w, c.iat[n], rpe_t, params_d)
+            w = self.update_w(b, w, c[n], rpe_t, params_d)
             # Updating b!
-            b = self.update_b(b, w, c.iat[n], r.iat[n], params_d)
+            b = self.update_b(b, w, c[n], r[n], params_d)
         emu_data['Decision'] = c
         emu_data['Reward'] = r
-        # data = self.assign_latents(emu_data, qdiff, rpe, b_arr, w_arr)
+        emu_data = add_switch(emu_data)
+        emu_data = self.assign_latents(emu_data, qdiff, rpe, b_arr, w_arr)
         # qdiff[n], rpe[n], b, w, b_arr[n], w_arr[n]
         return emu_data
 
@@ -314,6 +482,7 @@ class CogModel2ABT_BWQ(CogModel):
         #   param - model parameters for each subject for model 1 (qdiff + logodds)
         #   data - dataframe with 'qdiff' (Q-value difference),'rpe' (reward prediction error)
         #          and 'logodds' (log choice probability) columns added
+        # contrastd softmax anne's with qdiff implementation
 
         # data <- fit_marginal
         # params <- create_params
@@ -336,26 +505,33 @@ class CogModel2ABT_BWQ(CogModel):
             params = x2params(x)
             data_sim = self.sim(data, params, *args, **kwargs)
             # balanced weights
-            vcs = data_sim['Decision'].value_counts()
-            total1s, total0s = 0, 0
-            if 1 in vcs.index:
-                total1s = vcs[1]
-            if 0 in vcs.index:
-                total0s = vcs[0]
-            data_sim.loc[data_sim['Decision'] == 1, 'class_weight'] = total1s / (total1s + total0s)
-            data_sim.loc[data_sim['Decision'] == 0, 'class_weight'] = total0s / (total1s + total0s)
+            # vcs = data_sim['Decision'].value_counts()
+            # total1s, total0s = 0, 0
+            # if 1 in vcs.index:
+            #     total1s = vcs[1]
+            # if 0 in vcs.index:
+            #     total0s = vcs[0]
+            # data_sim.loc[data_sim['Decision'] == 1, 'class_weight'] = total1s / (total1s + total0s)
+            # data_sim.loc[data_sim['Decision'] == 0, 'class_weight'] = total0s / (total1s + total0s)
             # weight by class weights
             c_valid_sel = data_sim['Decision'] != -1
             p_s = self.get_proba(data_sim, params)[c_valid_sel].values
 
             c_vs = data_sim.loc[c_valid_sel, 'Decision'].values
-            epsilon = 0.001
+            epsilon = 1e-15 # 0.001
             p_s = np.minimum(np.maximum(epsilon, p_s), 1-epsilon)
+            # try out class_weights
             return -(c_vs @ np.log(p_s) + (1-c_vs) @ np.log(1-p_s))
 
         params_bounds = [self.param_dict[pn].bounds for pn in param_names] * len(id_list)
+        method = 'L-BFGS-B'
+        if 'method' in kwargs:
+            method = kwargs['method']
 
-        res = scipy.optimize.minimize(nll, x0, method='L-BFGS-B', bounds=params_bounds, tol=1e-6)
+        res = scipy.optimize.minimize(nll, x0, method=method, bounds=params_bounds, tol=1e-6)
+        if not res.success:
+            print('failed', res.message)
+        # TODO: if result gives failure, you throw an error
         # constrain optimize
         self.fitted_params = x2params(res.x)
         negloglik = res.fun
@@ -376,7 +552,7 @@ class RLCF(CogModel2ABT_BWQ):
     https://doi.org/10.1016/j.dcn.2022.101106
     Here we implement a model where choice stays does not alter Q value but rather
     affects choice selection.
-
+    # TODO: same model without stickiness
     """
 
     def __init__(self):
@@ -391,6 +567,9 @@ class RLCF(CogModel2ABT_BWQ):
                            'a_neg': CogParam(scipy.stats.uniform(), lb=0, ub=1),
                            "st": CogParam(scipy.stats.gamma(2, scale=0.2), lb=0)}
         self.latent_names = ['qdiff', 'rpe', 'rpe_cf', 'q0', 'q1']# ['qdiff', 'rpe']
+
+    def __str__(self):
+        return 'RLCF'
 
     def id_param_init(self, params, id):
         varp_list = ['a_pos', 'a_neg', 'beta', 'st']
@@ -414,15 +593,169 @@ class RLCF(CogModel2ABT_BWQ):
 
     def update_w(self, b, w, c_t, rpe_t, params_i):
         """abstract method for updating model latent w"""
-        d_rpe = rpe_t
-        if c_t == 1:
-            d_rpe = rpe_t[::-1]
-        alphas = params_i['a_pos'] * (rpe_t >= 0) + params_i['a_neg'] * (rpe_t < 0)
+        if self.fixed_params['CF']:
+            d_rpe = rpe_t
+            if c_t == 1:
+                d_rpe = rpe_t[::-1]
+        else:
+            if c_t == 1:
+                d_rpe = np.array([0, rpe_t])
+            else:
+                d_rpe = np.array([rpe_t, 0])
+        alphas = params_i['a_pos'] * (d_rpe >= 0) + params_i['a_neg'] * (d_rpe < 0)
         return w + alphas * d_rpe
 
     def assign_latents(self, data, qdiff, rpe, b_arr, w_arr):
         data['qdiff'] = qdiff
-        data[['rpe', 'rpe_cf']] = rpe
+        if self.fixed_params['CF']:
+            data[['rpe', 'rpe_cf']] = rpe
+        else:
+            data['rpe'] = rpe
+        data[['q0', 'q1']] = w_arr
+        return data
+
+
+class RL_4p(RLCF):
+
+    def __init__(self):
+        super().__init__()
+        self.fixed_params.update({"b0": 1,
+                                  'q_init': 0,
+                                  'gam': 1,
+                                  'CF': False})
+        self.latent_names = ['qdiff', 'rpe', 'q0', 'q1']
+
+    def __str__(self):
+        return 'RL4p'
+
+
+class RL(CogModel2ABT_BWQ):
+
+    """ Model class for counter-factual Q-learning, described in Eckstein et al. 2022
+    https://doi.org/10.1016/j.dcn.2022.101106
+    Here we implement a model where choice stays does not alter Q value but rather
+    affects choice selection.
+    # TODO: same model without stickiness
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.fixed_params.update({"b0": 1,
+                                  'q_init': 0,
+                                  'gam': 1,
+                                  'CF': False})
+        # used fixed for hyperparam_tuning
+        self.param_dict = {"beta": CogParam(scipy.stats.expon(1), lb=0),
+                           'alpha': CogParam(scipy.stats.uniform(), lb=0, ub=1)}
+        self.latent_names = ['qdiff', 'rpe', 'q0', 'q1']# ['qdiff', 'rpe']
+
+    def __str__(self):
+        return 'RL'
+
+    def id_param_init(self, params, id):
+        varp_list = ['alpha', 'beta']
+        fixp_list = ['b0', 'q_init', 'gam']
+        alpha, beta = params.loc[params["ID"] == id, varp_list].values.ravel()
+        b0, q0, gam = [self.fixed_params[fp] for fp in fixp_list]
+        w0 = np.array([q0] * 2)
+        return {'b0': b0,
+                'w0': w0,
+                'gam': gam,
+                'alpha': alpha,
+                'beta': beta}
+
+    def calc_q(self, b, w):
+        return w
+
+    def update_b(self, b, w, c_t, r_t, params_i):
+        return b
+
+    def update_w(self, b, w, c_t, rpe_t, params_i):
+        """abstract method for updating model latent w"""
+        if c_t == 1:
+            d_rpe = np.array([0, rpe_t])
+        else:
+            d_rpe = np.array([rpe_t, 0])
+        return w + params_i['alpha'] * d_rpe
+
+    def assign_latents(self, data, qdiff, rpe, b_arr, w_arr):
+        data['qdiff'] = qdiff
+        data['rpe'] = rpe
+        data[['q0', 'q1']] = w_arr
+        return data
+
+    def get_proba(self, data, params=None):
+        if 'loglik' in data.columns:
+            return np.exp(data['loglik'].values)
+        else:
+            params_in = self.fitted_params[['ID', 'beta']] if params is None else params
+            new_data = data.merge(params_in, how='left', on='ID')
+            return expit(new_data['qdiff'] * new_data['beta'])
+
+    def select_action(self, qdiff, m_1back, params):
+        stay = 1
+        if m_1back == 0:
+            stay = -1
+        elif m_1back == np.nan:
+            stay = 0
+        choice_p = expit(qdiff * params['beta'])
+        return int(np.random.random() <= choice_p)
+
+
+class RL_st(CogModel2ABT_BWQ):
+
+    """ Model class for counter-factual Q-learning, described in Eckstein et al. 2022
+    https://doi.org/10.1016/j.dcn.2022.101106
+    Here we implement a model where choice stays does not alter Q value but rather
+    affects choice selection.
+    # TODO: same model without stickiness
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.fixed_params.update({"b0": 1,
+                                  'q_init': 0,
+                                  'gam': 1,
+                                  'CF': False})
+        # used fixed for hyperparam_tuning
+        self.param_dict = {"beta": CogParam(scipy.stats.expon(1), lb=0),
+                           'alpha': CogParam(scipy.stats.uniform(), lb=0, ub=1),
+                           "st": CogParam(scipy.stats.gamma(2, scale=0.2), lb=0)}
+        self.latent_names = ['qdiff', 'rpe', 'q0', 'q1']# ['qdiff', 'rpe']
+
+    def __str__(self):
+        return 'RLst'
+
+    def id_param_init(self, params, id):
+        varp_list = ['alpha', 'beta', 'st']
+        fixp_list = ['b0', 'q_init', 'gam']
+        alpha, beta, st = params.loc[params["ID"] == id, varp_list].values.ravel()
+        b0, q0, gam = [self.fixed_params[fp] for fp in fixp_list]
+        w0 = np.array([q0] * 2)
+        return {'b0': b0,
+                'w0': w0,
+                'gam': gam,
+                'alpha': alpha,
+                'beta': beta,
+                'st': st}
+
+    def calc_q(self, b, w):
+        return w
+
+    def update_b(self, b, w, c_t, r_t, params_i):
+        return b
+
+    def update_w(self, b, w, c_t, rpe_t, params_i):
+        """abstract method for updating model latent w"""
+        if c_t == 1:
+            d_rpe = np.array([0, rpe_t])
+        else:
+            d_rpe = np.array([rpe_t, 0])
+        return w + params_i['alpha'] * d_rpe
+
+    def assign_latents(self, data, qdiff, rpe, b_arr, w_arr):
+        data['qdiff'] = qdiff
+        data['rpe'] = rpe
         data[['q0', 'q1']] = w_arr
         return data
 
@@ -444,25 +777,9 @@ class BayesianModel(CogModel2ABT_BWQ):
             return P[int(z)]
 
         p1, p0 = projected_rew(r_t, c_t, 1), projected_rew(r_t, c_t, 0)
-        # print(b, p1, p0, c_t, r_t)
-        eps = 0.001
-        # if (b == 0) and (p0 == 0):
-        #     b = eps
-        #     print('b gets to 0 and corrects')
-        # elif (b == 1) and (p1 == 0):
-        #     b = 1 - eps
-        #     print("b gets to 1 and corrects")
-        # elif (p1 == 0) and (p0 == 0):
-        #     p1, p0 = eps / 2, eps / 2
-        #     print("encountering optimizing both p1 and p0 starting 0")
-        # if (b == 0) or (b == 1):
-        #     print(f'b gets to {b}')
+        eps = 1e-15
         b = ((1 - sw) * b * p1 + sw * (1 - b) * p0) / (b * p1 + (1 - b) * p0)  # catch when b goes to 1
         b = np.maximum(np.minimum(b, 1-eps), eps)
-        # try:
-        #     b = ((1-sw) * b * p1 + sw * (1 - b) * p0) / (b * p1 + (1 - b) * p0)
-        # except FloatingPointError:
-        #     print(r.iat[n], c.iat[n], p1, p0, b, sw, w)
         return b
 
 
@@ -482,8 +799,11 @@ class BIModel(BayesianModel):
         self.param_dict = {"beta": CogParam(scipy.stats.expon(1), lb=0), # v9 constraining
                            "st": CogParam(scipy.stats.gamma(2, scale=0.2), lb=0),
                            "p_rew": CogParam(scipy.stats.beta(90, 30), lb=0, ub=1), # 0.75
-                           "sw": CogParam(scipy.stats.uniform(loc=0, scale=0.05), lb=0.001, ub=0.05)} # 0.05
+                           "sw": CogParam(scipy.stats.uniform(loc=0, scale=0.05), lb=0.001)} # v10 0.05
         self.latent_names = ['qdiff', 'b', 'rpe']
+
+    def __str__(self):
+        return 'BI'
 
     def latents_init(self, N):
         qdiff = np.zeros(N)
@@ -531,7 +851,7 @@ class BIModel(BayesianModel):
             return np.exp(data['loglik'].values)
         else:
             params_in = self.fitted_params[['ID', 'beta', 'st']] if params is None else params
-            new_data = data.merge(params_in, on='ID')
+            new_data = data.merge(params_in, how='left', on='ID')
             return expit(new_data['qdiff'] * new_data['beta'] + new_data['stay'] * new_data['st'])
         #v10 mix beta and st
 
@@ -554,6 +874,9 @@ class BIModel_fixp(BIModel):
                            "st": CogParam(scipy.stats.gamma(2, scale=0.2), lb=0),
                            # "p_rew": CogParam(scipy.stats.beta(90, 30), lb=0, ub=1), # 0.75
                            "sw": CogParam(scipy.stats.uniform(loc=0, scale=0.05), lb=0.001, ub=1)} # 0.05
+
+    def __str__(self):
+        return 'BIfp'
 
     def id_param_init(self, params, id):
         varp_list = ['sw', 'beta', 'st']
@@ -611,7 +934,8 @@ class PCModel(BayesianModel):
     def __init__(self):
         super().__init__()
         self.fixed_params.update({"b0": 0.5,
-                             "K_marginal": 50})
+                                  "K_marginal": 50,
+                                  'a_marg': 0.2})
         # used fixed for hyperparam_tuning
         self.param_dict = {"alpha": CogParam(scipy.stats.uniform(), lb=0, ub=1),
                            "beta": CogParam(scipy.stats.expon(1), lb=0),
@@ -624,7 +948,11 @@ class PCModel(BayesianModel):
                            "gam": CogParam(scipy.stats.uniform(), lb=0, ub=1)}
         self.fitted_params = None
         self.latent_names = ['qdiff', 'rpe', 'p_rew', 'p_eps', 'b']
+        self.marg_name = 'logodds'
         self.summary = {}
+
+    def __str__(self):
+        return 'PC'
 
     def id_param_init(self, params, id):
         varp_list = ['p_rew_init', 'p_eps_init', 'gam', 'sw', 'alpha', 'beta', 'st']
@@ -710,15 +1038,29 @@ class PCModel(BayesianModel):
         m = m[:, np.argmax(L)]
         data['logodds'] = np.log(m) - np.log(1 - m)
         data['marg'] = m
-        print("alpha =", alpha[np.argmax(L)])
+        alpha_opt = alpha[np.argmax(L)]
+        print("alpha =", alpha_opt)
+        self.fixed_params['a_marg'] = alpha_opt
         return data
+
+    def select_action(self, qdiff, m_1back, params):
+        logodd = np.log(m_1back) - np.log(1-m_1back)
+        choice_p = expit(qdiff * params['beta'] + logodd * params['st'])
+        return int(np.random.random() <= choice_p)
+
+    def marginal_init(self):
+        return 0.5
+
+    def update_marginal(self, c_t, m_1back):
+        a_marg = self.fixed_params['a_marg']
+        return (1-a_marg) * m_1back + a_marg * c_t
 
     def get_proba(self, data, params=None):
         if 'loglik' in data.columns:
             return np.exp(data['loglik'].values)
         else:
             params_in = self.fitted_params[['ID', 'beta', 'st']] if params is None else params
-            new_data = data.merge(params_in, on='ID')
+            new_data = data.merge(params_in, how='left', on='ID')
             return expit(new_data['qdiff'] * new_data['beta'] + new_data['logodds'] * new_data['st'])
     # pseudo R-squared: http://courses.atlas.illinois.edu/fall2016/STAT/STAT200/RProgramming/LogisticRegression.html#:~:text=Null%20Model,-The%20simplest%20model&text=The%20fitted%20equation%20is%20ln,e%E2%88%923.36833)%3D0.0333.
 
@@ -732,20 +1074,24 @@ class PCModel_fixpswgam(PCModel):
     def __init__(self):
         super().__init__()
         self.fixed_params.update({"b0": 0.5,
-                             "K_marginal": 50,
-                             'p_rew_init': 0.75,
-                             'p_eps_init': 0,
-                             'sw': 0.02,
-                             'gam': 1,
-                             'alpha': 0})
+                                  "K_marginal": 50,
+                                  'p_rew_init': 0.75,
+                                  'p_eps_init': 0,
+                                  'sw': 0.02,
+                                  'gam': 1,
+                                  'alpha': 0,
+                                  'a_marg': 0.2})
         # used fixed for hyperparam_tuning
         self.param_dict = {"beta": CogParam(scipy.stats.expon(1), lb=0),
                            "st": CogParam(scipy.stats.gamma(2, scale=0.2), lb=0)}
 
+    def __str__(self):
+        return 'PCf'
+
     def id_param_init(self, params, id):
         varp_list = ['beta', 'st']
         fixp_list = ['b0', 'p_rew_init', 'p_eps_init', 'gam', 'sw', 'alpha']
-        beta, st = params.loc[params["ID"] == id, varp_list].values.ravel()[0]
+        beta, st = params.loc[params["ID"] == id, varp_list].values.ravel()
         b0, p_rew_init, p_eps_init, gam, sw, alpha = [self.fixed_params[fp] for fp in fixp_list]
         w0 = np.array([p_rew_init, p_eps_init])
         return {'b0': b0,

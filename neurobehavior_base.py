@@ -6,7 +6,10 @@ from peristimulus import *
 from abc import abstractmethod
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
+from statsmodels.tsa.tsatools import lagmat
+from utils import decode_from_regfeature
 import logging
+import patsy
 import sklearn
 from tqdm import tqdm
 logging.basicConfig(level=logging.INFO)
@@ -551,6 +554,55 @@ class PS_NBMat(NeuroBehaviorMat):
             return nb_df
 
         return self.apply_to_idgroups(nb_df, ptib, id_vars=['animal', 'session'])
+
+    def df2Xy(self, rdf, nlag=6):
+        rdf['C'] = 2 * rdf['action'] - 1
+        features = ['C', 'R']
+        lagfeats = list(np.concatenate([[feat + f'_{i}back' for feat in features] for i in range(1, nlag + 1)]))
+
+        lagdf = pd.DataFrame(lagmat(rdf[features].values, maxlag=nlag, trim='forward', original='ex'),
+                             columns=lagfeats)
+        col_keys = ['C'] + [f'C_{i}back' for i in range(1, nlag + 1)]
+        lagdf = pd.concat([rdf, lagdf], axis=1)
+        lagdf = lagdf[
+            (lagdf['Trial'] > nlag) & np.logical_and.reduce([(~lagdf[c].isnull()) for c in col_keys])].reset_index(
+            drop=True)
+        interactions = [f'C_{i}back:R_{i}back' for i in range(1, nlag + 1)]
+        formula = 'action ~ ' + '+'.join(lagfeats + interactions)
+        y, X = patsy.dmatrices(formula, data=lagdf, return_type="dataframe")
+        id_df = lagdf[['animal', 'session', 'trial']]
+        return X, y, id_df
+
+    def fit_action_value_function(self, df, nlag=6):
+        # endogs
+
+        rdf = df[['animal', 'session', 'trial', 'rewarded', 'action']].rename({'rewarded': 'R'}).reset_index(drop=True)
+        X, y, _ = self.df2Xy(rdf, nlag=nlag)
+
+        # Use held out dataset to evaluate score
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=RAND_STATE)
+        # clf = LogisticRegression(random_state=0, class_weight='balanced').fit(X_train, y_train)
+        clf = LogisticRegression(random_state=RAND_STATE).fit(X_train, y_train)
+        cv_score = clf.score(X_test, y_test)
+        # use full dataset to calculate action logits
+        clf_psy = clf.fit(X, y)
+
+        def func(X):
+            logits = X @ clf_psy.coef_.T + clf_psy.intercept_
+            return logits
+
+        return {'score': cv_score, 'func': func, 'name': 'action_logit'}
+
+    def add_action_value_feature(self, df, endog_map, nlag=6):
+        rdf = df[['animal', 'session', 'trial', 'rewarded', 'action']].rename({'rewarded': 'R'}).reset_index(drop=True)
+        X, _, id_df = self.df2Xy(rdf, nlag=nlag)
+        id_df[endog_map['name']] = endog_map['func'](X)
+        return df.merge(id_df, how='left', on=['animal', 'session', 'trial'])
+
+    def add_action_value_animal_wise(self, nb_df, nlag=6):
+        endog_map = self.fit_action_value_function(nb_df)
+        reg_df = self.add_action_value_feature(nb_df, endog_map, nlag=nlag)
+        return reg_df
 
     def get_switch_number(self, nb_df):
         # disregard miss trials

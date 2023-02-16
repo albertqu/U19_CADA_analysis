@@ -1,0 +1,25 @@
+digraph {
+	CogModel
+	CogModel -> LR
+	LR
+	CogModel -> CogModel2ABT_BWQ
+	CogModel2ABT_BWQ
+	CogModel2ABT_BWQ -> RLCF
+	RLCF
+	RLCF -> RL_4p
+	RL_4p
+	CogModel2ABT_BWQ -> RL
+	RL
+	CogModel2ABT_BWQ -> RL_st
+	RL_st
+	CogModel2ABT_BWQ -> BayesianModel
+	BayesianModel
+	BayesianModel -> BIModel
+	BIModel
+	BIModel -> BIModel_fixp
+	BIModel_fixp
+	BayesianModel -> PCModel
+	PCModel
+	PCModel -> PCModel_fixpswgam
+	PCModel_fixpswgam
+}
