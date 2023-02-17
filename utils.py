@@ -1,6 +1,7 @@
 # System
 import time, os, h5py, re
 import logging
+import graphviz
 # Structure
 from collections import deque
 # Data
@@ -1399,4 +1400,21 @@ def decode_from_regfeature(feature):
         ftype = feature.split('_')[0]
         lag = get_lag(feature)
     return ftype, lag
+
+
+def draw_class_tree(cls_obj):
+    # from cogmodels_base import *
+    # dot = draw_class_tree(CogModel)
+    #
+    # dot.render('class_tree', view=True)
+    dot = graphviz.Digraph()
+
+    def add_nodes(c):
+        dot.node(c.__name__)
+        for sub_cls in c.__subclasses__():
+            dot.edge(c.__name__, sub_cls.__name__)
+            add_nodes(sub_cls)
+
+    add_nodes(cls_obj)
+    return dot
 

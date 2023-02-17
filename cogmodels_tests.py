@@ -241,9 +241,12 @@ def test_model_genrec_BSD(model):
     plist = list(mdl.param_dict.keys())
     param_ranges = {p: (params[p].min(), params[p].max()) for p in plist}
     np.random.seed(230)
-    data, params_x, params_y = test_modelgen_recover_mp(model, model_arg, f'{data_arg}_3s5ht', param_ranges,
-                                                        niters=1000, save_folder=cache_folder, method='L-BFGS-B',
-                                                        ntrial=500, nsess=3)
+    # data, params_x, params_y = test_modelgen_recover_mp(model, model_arg, f'{data_arg}_3s5ht', param_ranges,
+    #                                                     niters=1000, save_folder=cache_folder, method='L-BFGS-B',
+    #                                                     ntrial=500, nsess=3)
+    data, params_x, params_y = test_modelgen_recover_mp(model, model_arg, f'{data_arg}_3s5ht_restruct', param_ranges,
+                                                        niters=500, save_folder=cache_folder, method='L-BFGS-B',
+                                                        ntrial=500, nsess=1)
 
 
 def viz_genrec_recovery(model, gen_arg):
@@ -456,7 +459,7 @@ def test_mp_multiple_animals(model):
             id_sim, id_fp = r.get()
             all_data_sim.append(id_sim)
             all_params.append(id_fp)
-    version = 'v13'  # 'v11_swp05'
+    version = 'v14'  # 'v11_swp05'
     # v12 for model recovery test
     data_sim_opt = pd.concat(all_data_sim, axis=0).sort_values(['Subject', 'Session', 'Trial'])
     data_sim_opt.to_csv(os.path.join(cache_folder, f"bsd_simopt_data_{data_arg}_{model_arg}_{version}.csv"),
@@ -668,7 +671,7 @@ def viz_model_comp():
     sns.boxplot(data=all_mdf, x='model', y='aic', ax=axes[0][0])
     sns.boxplot(data=all_mdf, x='model', y='bic', ax=axes[0][1])
     for j, prm in enumerate(['beta', 'st']):
-        coef_df = pd.pivot_table(all_mdf, values='beta', index='ID', columns='model').reset_index(drop=True)
+        coef_df = pd.pivot_table(all_mdf, values=prm, index='ID', columns='model').reset_index(drop=True)
         sns.heatmap(coef_df.corr(), cmap='coolwarm', ax=axes[1][j])
         mnames = list(coef_df.columns)
         axes[1][j].set_xticks(np.arange(len(mnames)) + 0.5)
@@ -689,14 +692,15 @@ if __name__ == '__main__':
     # test_model_genrec_eckstein2022()
     # test_model_eckstein2022_RLCF()
     # test_model_eckstein2022_RLCF()
-    print('test ALL model recover')
+    print('test RL restruct model recover')
     # test_model_genrec_eckstein2022_RLCF()
     # test_model_genrec_eckstein2022()
     # test_model_genrec_eckstein2022_BIfp()
     # test_model_genrec_eckstein2022_PCf()
-    for model in [PCModel_fixpswgam, BIModel_fixp, RLCF, RL_4p, PCModel, BIModel]:
-        # test_mp_multiple_animals(model)
-        test_model_genrec_BSD(model)
+    # for model in [PCModel_fixpswgam, BIModel_fixp, RLCF, RL_4p, PCModel, BIModel]:
+    for model in [RLCF, RL_4p]:
+        test_mp_multiple_animals(model)
+        # test_model_genrec_BSD(model)
     # test_model_recovery_mp(PCModel, 'PC')
     # test_model_recovery_mp(BIModel, 'BI')
     # test_model_recovery_mp(RLCF, 'RLCF')

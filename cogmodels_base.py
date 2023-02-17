@@ -546,30 +546,23 @@ class CogModel2ABT_BWQ(CogModel):
         return self
 
 
-class RLCF(CogModel2ABT_BWQ):
-
-    """ Model class for counter-factual Q-learning, described in Eckstein et al. 2022
-    https://doi.org/10.1016/j.dcn.2022.101106
-    Here we implement a model where choice stays does not alter Q value but rather
-    affects choice selection.
-    # TODO: same model without stickiness
-    """
+class RL_4p(CogModel2ABT_BWQ):
 
     def __init__(self):
         super().__init__()
         self.fixed_params.update({"b0": 1,
                                   'q_init': 0,
                                   'gam': 1,
-                                  'CF': True})
+                                  'CF': False})
         # used fixed for hyperparam_tuning
         self.param_dict = {"beta": CogParam(scipy.stats.expon(1), lb=0),
                            'a_pos': CogParam(scipy.stats.uniform(), lb=0, ub=1),
                            'a_neg': CogParam(scipy.stats.uniform(), lb=0, ub=1),
                            "st": CogParam(scipy.stats.gamma(2, scale=0.2), lb=0)}
-        self.latent_names = ['qdiff', 'rpe', 'rpe_cf', 'q0', 'q1']# ['qdiff', 'rpe']
+        self.latent_names = ['qdiff', 'rpe', 'q0', 'q1']
 
     def __str__(self):
-        return 'RLCF'
+        return 'RL4p'
 
     def id_param_init(self, params, id):
         varp_list = ['a_pos', 'a_neg', 'beta', 'st']
@@ -592,7 +585,6 @@ class RLCF(CogModel2ABT_BWQ):
         return b
 
     def update_w(self, b, w, c_t, rpe_t, params_i):
-        """abstract method for updating model latent w"""
         if self.fixed_params['CF']:
             d_rpe = rpe_t
             if c_t == 1:
@@ -602,7 +594,12 @@ class RLCF(CogModel2ABT_BWQ):
                 d_rpe = np.array([0, rpe_t])
             else:
                 d_rpe = np.array([rpe_t, 0])
-        alphas = params_i['a_pos'] * (d_rpe >= 0) + params_i['a_neg'] * (d_rpe < 0)
+        if 'alpha' in params_i:
+            alphas = params_i['alpha']
+        elif ('a_pos' in params_i) and ('a_neg' in params_i):
+            alphas = params_i['a_pos'] * (d_rpe >= 0) + params_i['a_neg'] * (d_rpe < 0)
+        else:
+            raise ValueError('NO alpha?')
         return w + alphas * d_rpe
 
     def assign_latents(self, data, qdiff, rpe, b_arr, w_arr):
@@ -615,21 +612,7 @@ class RLCF(CogModel2ABT_BWQ):
         return data
 
 
-class RL_4p(RLCF):
-
-    def __init__(self):
-        super().__init__()
-        self.fixed_params.update({"b0": 1,
-                                  'q_init': 0,
-                                  'gam': 1,
-                                  'CF': False})
-        self.latent_names = ['qdiff', 'rpe', 'q0', 'q1']
-
-    def __str__(self):
-        return 'RL4p'
-
-
-class RL(CogModel2ABT_BWQ):
+class RLCF(RL_4p):
 
     """ Model class for counter-factual Q-learning, described in Eckstein et al. 2022
     https://doi.org/10.1016/j.dcn.2022.101106
@@ -643,63 +626,11 @@ class RL(CogModel2ABT_BWQ):
         self.fixed_params.update({"b0": 1,
                                   'q_init': 0,
                                   'gam': 1,
-                                  'CF': False})
-        # used fixed for hyperparam_tuning
-        self.param_dict = {"beta": CogParam(scipy.stats.expon(1), lb=0),
-                           'alpha': CogParam(scipy.stats.uniform(), lb=0, ub=1)}
-        self.latent_names = ['qdiff', 'rpe', 'q0', 'q1']# ['qdiff', 'rpe']
+                                  'CF': True})
+        self.latent_names = ['qdiff', 'rpe', 'rpe_cf', 'q0', 'q1'] # ['qdiff', 'rpe']
 
     def __str__(self):
-        return 'RL'
-
-    def id_param_init(self, params, id):
-        varp_list = ['alpha', 'beta']
-        fixp_list = ['b0', 'q_init', 'gam']
-        alpha, beta = params.loc[params["ID"] == id, varp_list].values.ravel()
-        b0, q0, gam = [self.fixed_params[fp] for fp in fixp_list]
-        w0 = np.array([q0] * 2)
-        return {'b0': b0,
-                'w0': w0,
-                'gam': gam,
-                'alpha': alpha,
-                'beta': beta}
-
-    def calc_q(self, b, w):
-        return w
-
-    def update_b(self, b, w, c_t, r_t, params_i):
-        return b
-
-    def update_w(self, b, w, c_t, rpe_t, params_i):
-        """abstract method for updating model latent w"""
-        if c_t == 1:
-            d_rpe = np.array([0, rpe_t])
-        else:
-            d_rpe = np.array([rpe_t, 0])
-        return w + params_i['alpha'] * d_rpe
-
-    def assign_latents(self, data, qdiff, rpe, b_arr, w_arr):
-        data['qdiff'] = qdiff
-        data['rpe'] = rpe
-        data[['q0', 'q1']] = w_arr
-        return data
-
-    def get_proba(self, data, params=None):
-        if 'loglik' in data.columns:
-            return np.exp(data['loglik'].values)
-        else:
-            params_in = self.fitted_params[['ID', 'beta']] if params is None else params
-            new_data = data.merge(params_in, how='left', on='ID')
-            return expit(new_data['qdiff'] * new_data['beta'])
-
-    def select_action(self, qdiff, m_1back, params):
-        stay = 1
-        if m_1back == 0:
-            stay = -1
-        elif m_1back == np.nan:
-            stay = 0
-        choice_p = expit(qdiff * params['beta'])
-        return int(np.random.random() <= choice_p)
+        return 'RLCF'
 
 
 class RL_st(CogModel2ABT_BWQ):
@@ -739,25 +670,58 @@ class RL_st(CogModel2ABT_BWQ):
                 'beta': beta,
                 'st': st}
 
-    def calc_q(self, b, w):
-        return w
 
-    def update_b(self, b, w, c_t, r_t, params_i):
-        return b
+class RL(RL_4p):
 
-    def update_w(self, b, w, c_t, rpe_t, params_i):
-        """abstract method for updating model latent w"""
-        if c_t == 1:
-            d_rpe = np.array([0, rpe_t])
+    """ Model class for counter-factual Q-learning, described in Eckstein et al. 2022
+    https://doi.org/10.1016/j.dcn.2022.101106
+    Here we implement a model where choice stays does not alter Q value but rather
+    affects choice selection.
+    # TODO: same model without stickiness
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.fixed_params.update({"b0": 1,
+                                  'q_init': 0,
+                                  'gam': 1,
+                                  'CF': False})
+        # used fixed for hyperparam_tuning
+        self.param_dict = {"beta": CogParam(scipy.stats.expon(1), lb=0),
+                           'alpha': CogParam(scipy.stats.uniform(), lb=0, ub=1)}
+        self.latent_names = ['qdiff', 'rpe', 'q0', 'q1']# ['qdiff', 'rpe']
+
+    def __str__(self):
+        return 'RL'
+
+    def id_param_init(self, params, id):
+        varp_list = ['alpha', 'beta']
+        fixp_list = ['b0', 'q_init', 'gam']
+        alpha, beta = params.loc[params["ID"] == id, varp_list].values.ravel()
+        b0, q0, gam = [self.fixed_params[fp] for fp in fixp_list]
+        w0 = np.array([q0] * 2)
+        return {'b0': b0,
+                'w0': w0,
+                'gam': gam,
+                'alpha': alpha,
+                'beta': beta}
+
+    def get_proba(self, data, params=None):
+        if 'loglik' in data.columns:
+            return np.exp(data['loglik'].values)
         else:
-            d_rpe = np.array([rpe_t, 0])
-        return w + params_i['alpha'] * d_rpe
+            params_in = self.fitted_params[['ID', 'beta']] if params is None else params
+            new_data = data.merge(params_in, how='left', on='ID')
+            return expit(new_data['qdiff'] * new_data['beta'])
 
-    def assign_latents(self, data, qdiff, rpe, b_arr, w_arr):
-        data['qdiff'] = qdiff
-        data['rpe'] = rpe
-        data[['q0', 'q1']] = w_arr
-        return data
+    def select_action(self, qdiff, m_1back, params):
+        stay = 1
+        if m_1back == 0:
+            stay = -1
+        elif m_1back == np.nan:
+            stay = 0
+        choice_p = expit(qdiff * params['beta'])
+        return int(np.random.random() <= choice_p)
 
 
 class BayesianModel(CogModel2ABT_BWQ):
