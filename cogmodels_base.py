@@ -633,13 +633,9 @@ class RLCF(RL_4p):
         return 'RLCF'
 
 
-class RL_st(CogModel2ABT_BWQ):
+class RL_st(RL_4p):
 
-    """ Model class for counter-factual Q-learning, described in Eckstein et al. 2022
-    https://doi.org/10.1016/j.dcn.2022.101106
-    Here we implement a model where choice stays does not alter Q value but rather
-    affects choice selection.
-    # TODO: same model without stickiness
+    """ Model class for Q-learning with stickiness
     """
 
     def __init__(self):
