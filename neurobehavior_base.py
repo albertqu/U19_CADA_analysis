@@ -729,7 +729,7 @@ class PS_NBMat(NeuroBehaviorMat):
 
         rdf = (
             df[["animal", "session", "trial", "rewarded", "action"]]
-            .rename({"rewarded": "R"})
+            .rename(columns={"rewarded": "R"})
             .reset_index(drop=True)
         )
         X, y, _ = self.df2Xy(rdf, nlag=nlag)
@@ -753,7 +753,7 @@ class PS_NBMat(NeuroBehaviorMat):
     def add_action_value_feature(self, df, endog_map, nlag=6):
         rdf = (
             df[["animal", "session", "trial", "rewarded", "action"]]
-            .rename({"rewarded": "R"})
+            .rename(columns={"rewarded": "R"})
             .reset_index(drop=True)
         )
         X, _, id_df = self.df2Xy(rdf, nlag=nlag)
