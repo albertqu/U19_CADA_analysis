@@ -1,6 +1,7 @@
 # System
 import time, os, h5py, re
 import logging
+import itertools
 import graphviz
 # Structure
 from collections import deque
@@ -1418,3 +1419,9 @@ def draw_class_tree(cls_obj):
     add_nodes(cls_obj)
     return dot
 
+
+def product_dict(**kwargs):
+    keys = kwargs.keys()
+    vals = kwargs.values()
+    for instance in itertools.product(*vals):
+        yield dict(zip(keys, instance))

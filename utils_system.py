@@ -8,15 +8,16 @@ import imageio, cv2
 from os.path import join as oj
 
 
-
 def archive_by_date(src_folder, dest_folder, archive_date):
     assert os.path.exists(dest_folder)
     os.chdir(src_folder)
     tomoves = []
-    exceptions = ['_MouseBrain_Atlas3', 'Lab 4CR Digging Masterfile', 'Talks']
+    exceptions = ["_MouseBrain_Atlas3", "Lab 4CR Digging Masterfile", "Talks"]
     for name in os.listdir(src_folder):
-        if (name[0] != '_') and (datetime.datetime.fromtimestamp(os.path.getatime(name)) < archive_date):
-            #atime: access time, mtime: modify time
+        if (name[0] != "_") and (
+            datetime.datetime.fromtimestamp(os.path.getatime(name)) < archive_date
+        ):
+            # atime: access time, mtime: modify time
             # print(name, datetime.datetime.fromtimestamp(os.path.getmtime(name)))
             if name not in exceptions:
                 tomoves.append(name)
@@ -28,30 +29,64 @@ def archive_by_date(src_folder, dest_folder, archive_date):
             print("skipping", name)
 
 
+def fix_files():
+    import os
+    import datetime
+
+    def str2date(s):
+        # str2time("12:00:00")
+        return datetime.datetime.strptime(s, "%Y-%m-%d").date()
+
+    folder = r"Z:\2ABT\ProbSwitch\BSDML_FP\BSD019"
+
+    dt0 = str2date("2022-08-09")
+    pv0 = 152
+    for f in os.listdir(folder):
+        pv = f.split("_")[2]
+        dt = str2date(f.split("_")[4].split("T")[0])
+        pvn = int(pv[1:])
+        pvn_new = pv0 + (dt - dt0).days
+        if pvn_new != pvn:
+            new_pv = f"p{pvn_new}"
+            os.rename(
+                os.path.join(folder, f), os.path.join(folder, f.replace(pv, new_pv))
+            )
+
+
 def chunk_video_sample_from_file(filename, out_folder, fps, duration):
-    assert path_prefix_free(filename).count('.') == 1, 'has to contain only one .'
-    file_code = path_prefix_free(filename).split('.')[0]
-    suffix = path_prefix_free(filename).split('.')[1]
-    w = imageio.get_writer(os.path.join(out_folder, f'{file_code}_sample.{suffix}'), format='FFMPEG',
-                           mode='I', fps=fps) # figure out what mode means
+    assert path_prefix_free(filename).count(".") == 1, "has to contain only one ."
+    file_code = path_prefix_free(filename).split(".")[0]
+    suffix = path_prefix_free(filename).split(".")[1]
+    w = imageio.get_writer(
+        os.path.join(out_folder, f"{file_code}_sample.{suffix}"),
+        format="FFMPEG",
+        mode="I",
+        fps=fps,
+    )  # figure out what mode means
     vid = imageio.get_reader(filename)
     for ith, img in enumerate(vid):
         if ith < duration * fps:
-            print('writing', img.shape, ith)
+            print("writing", img.shape, ith)
             w.append_data(img)
         if ith >= duration * fps:
-            print('all done')
+            print("all done")
             break
     w.close()
 
 
-def chunk_four_vids_and_stitch(filenames, ts_names, out_folder, fps, duration, time_zero=0):
+def chunk_four_vids_and_stitch(
+    filenames, ts_names, out_folder, fps, duration, time_zero=0
+):
     vids = [imageio.get_reader(fname) for fname in filenames]
-    tss = [(pd.read_csv(tsn, names=['time']) - time_zero) / 1000 for tsn in ts_names]
-    file_code = path_prefix_free(filenames[0]).split('.')[0][3:]
-    suffix = path_prefix_free(filenames[0]).split('.')[1]
-    w = imageio.get_writer(os.path.join(out_folder, f'{file_code}_sample.{suffix}'), format='FFMPEG',
-                           mode='I', fps=fps)  # figure out what mode means
+    tss = [(pd.read_csv(tsn, names=["time"]) - time_zero) / 1000 for tsn in ts_names]
+    file_code = path_prefix_free(filenames[0]).split(".")[0][3:]
+    suffix = path_prefix_free(filenames[0]).split(".")[1]
+    w = imageio.get_writer(
+        os.path.join(out_folder, f"{file_code}_sample.{suffix}"),
+        format="FFMPEG",
+        mode="I",
+        fps=fps,
+    )  # figure out what mode means
 
     alt_order = {2: 0, 1: 1, 3: 2, 0: 3}
     total_frames = min(duration * fps, min(len(tsdf) for tsdf in tss))
@@ -60,7 +95,15 @@ def chunk_four_vids_and_stitch(filenames, ts_names, out_folder, fps, duration, t
         for j in range(4):
             jframe = vids[j].get_data(i)
             jtime = np.around(tss[j].time[i], 2)
-            pjframe = cv2.putText(jframe, f'R{j+1}: {jtime}', (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 2)
+            pjframe = cv2.putText(
+                jframe,
+                f"R{j+1}: {jtime}",
+                (10, 200),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.4,
+                (255, 255, 255),
+                2,
+            )
             r, c = alt_order[j] // 2, alt_order[j] % 2
             frames[r][c] = pjframe
 
@@ -68,30 +111,34 @@ def chunk_four_vids_and_stitch(filenames, ts_names, out_folder, fps, duration, t
         frames[1] = np.concatenate(frames[1], axis=1)
         final_frame = np.concatenate(frames, axis=0)
         w.append_data(final_frame)
-        print(f'writing {i}th')
+        print(f"writing {i}th")
     w.close()
 
 
-def chunk_helper_session(animal, session, folder, out_folder, duration=20*60):
+def chunk_helper_session(animal, session, folder, out_folder, duration=20 * 60):
     fps = 30
     vid_files = [None] * 4
     vid_times = [None] * 4
     for f in os.listdir(os.path.join(folder, animal)):
-        if (animal in f) and (session in f) and (f.startswith('RR_')):
+        if (animal in f) and (session in f) and (f.startswith("RR_")):
             bfile = os.path.join(folder, animal, f)
-            bdf = pd.read_csv(bfile, sep = ' ', header = None, names = ['time', 'b_code', 'none'])
-            df_zero = bdf.loc[0, 'time']
+            bdf = pd.read_csv(
+                bfile, sep=" ", header=None, names=["time", "b_code", "none"]
+            )
+            df_zero = bdf.loc[0, "time"]
             break
 
-    for f in os.listdir(os.path.join(folder, animal, 'video')):
+    for f in os.listdir(os.path.join(folder, animal, "video")):
         for i in range(1, 5):
-            vidf = f'R{i}_cam'
-            vtsf = f'R{i}_vidTS'
+            vidf = f"R{i}_cam"
+            vtsf = f"R{i}_vidTS"
             if (animal in f) and (session in f) and (f.startswith(vidf)):
-                vid_files[i-1] = os.path.join(folder, animal, 'video', f)
+                vid_files[i - 1] = os.path.join(folder, animal, "video", f)
             elif (animal in f) and (session in f) and (f.startswith(vtsf)):
-                vid_times[i-1] = os.path.join(folder, animal, 'video', f)
-    chunk_four_vids_and_stitch(vid_files, vid_times, out_folder, fps, duration, time_zero=df_zero)
+                vid_times[i - 1] = os.path.join(folder, animal, "video", f)
+    chunk_four_vids_and_stitch(
+        vid_files, vid_times, out_folder, fps, duration, time_zero=df_zero
+    )
 
 
 """####################################################
@@ -122,7 +169,9 @@ def make_stim_blocks(n=20, p=0.25, zero=False):
     subN = int(n * p)
     stim_seq = np.zeros(n)
     if subN:
-        randInds = np.sort(np.random.choice(n-subN, subN, replace=False)) + np.arange(subN)
+        randInds = np.sort(np.random.choice(n - subN, subN, replace=False)) + np.arange(
+            subN
+        )
         stim_seq[randInds] = 1
     return stim_seq
 
@@ -134,13 +183,13 @@ def make_long_stim_blocks(N, p=0.25, n=20):
     zero = False
     for i in range(loops):
         stim_seq = make_stim_blocks(n, p, zero)
-        zero = (stim_seq[-1] == 1)
+        zero = stim_seq[-1] == 1
         all_stims.append(stim_seq)
     all_stims.append(make_stim_blocks(tail, p, zero))
     return np.concatenate(all_stims)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # archive_date = datetime.datetime.strptime("2019/05/31", "%Y/%m/%d")
     # src_folder = "/Volumes/Wilbrecht_file_server"
     # archive = os.path.join(src_folder, '_ARCHIVE')

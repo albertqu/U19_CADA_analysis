@@ -22,6 +22,9 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, explained_variance_score, r2_score
 from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis as QDA
 from sklearn.model_selection import KFold
+import copy, itertools
+from sklearn.model_selection._search import ParameterGrid
+from sklearn.metrics._scorer import check_scoring
 import logging
 
 try:
@@ -417,6 +420,57 @@ def get_data_label(tPDF, tLabels, label=None, STRIFY=True):
 """ ########################################
 ################ Validation ################
 ######################################## """
+
+
+def df_preprocess_cv_fit(data, y_col, model, preprocessor, cv, param_grid, metrics=None):
+    """ Function splits data into train test folds, preprocess data, and then tune the hyperparameter
+    data: pd.DataFrame with data to fit
+    y: column variable in data used for model fitting
+    model: sklearn style model
+    preprocessor: CV_df_Preprocessor instance
+    cv: sklearn style cv splitter class, e.g.
+        from sklearn.model_selection import StratifiedKFold, KFold
+        skf = StratifiedKFold(n_splits=3); skf.split(X, y)
+    param_grid: dictionary of {'model__*': ..., 'prep__*': ...} for gridsearch hyperparam tune
+    """
+    y = data[y_col].values
+    all_res = []
+    pgrid = ParameterGrid(param_grid)
+
+    for i, (train_inds, test_inds) in enumerate(cv.split(data, y)):
+
+        for pdict in pgrid:
+            # use itertools to parse preprocessor arg
+            # use iter
+            model_p = {}
+            prep_p = {}
+            for k, v in pdict.items():
+                step, arg = k.split('__')
+                if step == 'model':
+                    model_p[k] = v
+                else:
+                    prep_p[k] = v
+
+            prep = preprocessor(**prep_p)
+            X, y = prep.fit_transform(data)
+            d_train_inds, d_test_inds = prep.index_train_test(train_inds, test_inds)
+            mdl = model(**model_p)
+            mdl.fit(X[d_train_inds], y[d_train_inds])
+            # metrics
+            m_res = {}
+            if metrics is None:
+                m_res['accuracy'] = mdl.score(X[d_test_inds], y[d_test_inds])
+            else:
+                for m in metrics:
+                    scorer = check_scoring(mdl, m)
+                    m_res[m] = scorer(mdl, X[d_test_inds], y[d_test_inds])
+            res_d = copy.deepcopy(model_p)
+            res_d.update(prep_p)
+            res_d.update(metrics)
+            res_d['iter'] = i
+            all_res.append(res_d)
+    result_df = pd.DataFrame(all_res)
+    return result_df
 
 
 def auc_roc_2dist(d1, d2, method='QDA', k=5, return_dist=False):

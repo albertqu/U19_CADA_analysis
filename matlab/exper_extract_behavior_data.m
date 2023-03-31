@@ -108,7 +108,7 @@ function [out] = exper_extract_beh_data_bonsai(folder, experf, lvttlf, lvtsf, se
         Digital_LV_on_time=Analog_LV_time(find([0;diff(Digital_LV)]>0));
         Digital_LV_off_time=Analog_LV_time(find([0;diff(Digital_LV)]<0));
         % sanity check LV duration=24ms
-        % plot(LV_off_time-LV_on_time);shg
+        % plot(Digital_LV_off_time-Digital_LV_on_time);shg
 
         % find LV time in exper
         n_trial_events=length(exper.rpbox.param.trial_events.value);
