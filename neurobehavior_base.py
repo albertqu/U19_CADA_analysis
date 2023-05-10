@@ -5,7 +5,7 @@ from nb_viz import *
 from peristimulus import *
 from abc import abstractmethod
 from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegressionCV
 from statsmodels.tsa.tsatools import lagmat
 from utils import decode_from_regfeature
 import logging
@@ -31,11 +31,6 @@ class NBM_Preprocessor:
 
     def transform(self):
         pass
-
-    @staticmethod
-    def align_time_in(s, start, end):
-        t = float(s.split("|")[1])
-        return (t >= start) & (t < end)
 
     def get_neural_mat_wide(self, nb_df, **kwargs):
         return nb_df
@@ -164,6 +159,11 @@ class NeuroBehaviorMat:
         self.event_time_windows = {}
         self.nb_cols = None
         self.nb_lag_cols = None
+
+    @staticmethod
+    def align_time_in(s, start, end):
+        t = float(s.split("|")[1])
+        return (t >= start) & (t < end)
 
     def default_ev_neur(self, ev):
         if "{" in ev:
@@ -739,7 +739,7 @@ class PS_NBMat(NeuroBehaviorMat):
             X, y, test_size=0.3, random_state=RAND_STATE
         )
         # clf = LogisticRegression(random_state=0, class_weight='balanced').fit(X_train, y_train)
-        clf = LogisticRegression(random_state=RAND_STATE).fit(X_train, y_train)
+        clf = LogisticRegressionCV(random_state=RAND_STATE).fit(X_train, y_train)
         cv_score = clf.score(X_test, y_test)
         # use full dataset to calculate action logits
         clf_psy = clf.fit(X, y)
