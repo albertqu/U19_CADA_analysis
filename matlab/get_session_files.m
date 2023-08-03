@@ -1,4 +1,5 @@
 function [filenames] = get_session_files(folder, animal, session, ftypes, fs_opt)
+% TODO: add check to filter out session0
     if ~iscell(ftypes)
         ftypes = {ftypes};
     end

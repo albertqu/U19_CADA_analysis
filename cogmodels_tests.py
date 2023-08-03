@@ -292,7 +292,7 @@ def test_model_differentiability():
     pass
 
 
-def viz_genrec_recovery(model, gen_arg):
+def viz_genrec_recovery(model, gen_arg, ncols=2):
     # viz_genrec_recovery(BIModel, 'full_20230118_3s5ht')
     mdl = model()
     model_arg = str(mdl)
@@ -333,7 +333,7 @@ def viz_genrec_recovery(model, gen_arg):
         x="truth",
         y="fitted",
         col="param",
-        col_wrap=2,
+        col_wrap=ncols,
         facet_kws={"sharey": False, "sharex": False},
         scatter_kws={"alpha": 0.3, "color": "r"},
     )

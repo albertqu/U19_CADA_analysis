@@ -161,8 +161,10 @@ class NeuroBehaviorMat:
         self.nb_lag_cols = None
 
     @staticmethod
-    def align_time_in(s, start, end):
+    def align_time_in(s, start, end, include_upper=False):
         t = float(s.split("|")[1])
+        if include_upper:
+            return (t >= start) & (t <= end)
         return (t >= start) & (t < end)
 
     def default_ev_neur(self, ev):
@@ -487,7 +489,7 @@ class NeuroBehaviorMat:
         return self.apply_to_idgroups(nb_df, self.register_roi_ID, virus_map=virus_map)
 
     def apply_to_idgroups(self, nb_df, func, id_vars=None, *args, **kwargs):
-        """ func: must takes in nb_df,
+        """func: must takes in nb_df,
         *args, **kwargs: additional argument for func
         potentially replace with:
         import pandas as pd
@@ -601,7 +603,6 @@ class NeuroBehaviorMat:
         return rdf
 
     def dim_reduce_aligned_neural(self, nb_df, event, start=0, end=1.001):
-
         # find relevant columns, also save dropcols
         dimred_cols = [
             c
@@ -891,7 +892,6 @@ class PS_NBMat(NeuroBehaviorMat):
 
 
 class RR_NBMat(NeuroBehaviorMat):
-
     fields = [
         "tone_onset",
         "T_Entry",
@@ -1078,8 +1078,7 @@ class NBExperiment:
         return all_nb_df.merge(self.meta, how="left", on=["animal", "session"])
 
     def align_lagged_view_parquet(self, parquet_file):
-        """ :) Tying shoe laces, loads aligned nb_df from memory instead of computing on the fly
-        """
+        """:) Tying shoe laces, loads aligned nb_df from memory instead of computing on the fly"""
         nb_df = pd.read_parquet(parquet_file)
         self.nbm.nb_cols, self.nbm.nb_lag_cols = self.nbm.parse_nb_cols(nb_df)
         nb_df.drop(
@@ -1120,6 +1119,7 @@ class NBExperiment:
         proj_sel = self.meta["animal"].str.startswith(proj)
         meta_sel = df_select_kwargs(self.meta, return_index=True, **kwargs)
         all_bdfs = []
+        errors = []
 
         for animal, session in self.meta.loc[
             meta_sel & proj_sel, ["animal", "session"]
@@ -1133,6 +1133,7 @@ class NBExperiment:
                     continue
             except Exception:
                 logging.warning(f"Error in {animal} {session}")
+                errors.append([animal, session, "loading"])
                 bmat, ps_series = None, None
 
             if bmat is None:
@@ -1142,10 +1143,14 @@ class NBExperiment:
                     bdf = bmat.todf()
                     all_bdfs.append(bdf)
                 except Exception:
+                    errors.append([animal, session, "bdf_error"])
                     logging.warning(
                         f"Error in computing bmat for {animal}, {session}, check session"
                     )
-
+        error_df = pd.DataFrame(
+            np.array(errors), columns=["animal", "session", "error"]
+        )
+        error_df.to_csv(os.path.join(self.folder, "error_log.csv"))
         all_bdf = pd.concat(all_bdfs, axis=0)
         final_bdf = all_bdf.merge(self.meta, how="left", on=["animal", "session"])
         if "stimulation_on" in all_bdf.columns:
@@ -1276,7 +1281,7 @@ class PS_Expr(NBExperiment):
         return bmat, ps_series
 
     def encode_to_filename(self, animal, session, ftypes="processed_all"):
-        """
+        """Returns filenames requested by ftypes, or None if not found
         :param folder: str
                 folder for data storage
         :param animal: str
@@ -1291,7 +1296,7 @@ class PS_Expr(NBExperiment):
                 'red': red FP
                 'behavior': .mat behavior file
                 'FP': processed dff hdf5 file
-                if ftypes=="all"
+                when ftypes is a single str, return the filename directly
         :return:
                 returns all 5 files in a dictionary; otherwise return all file types
                 in a dictionary, None if not found
@@ -1485,11 +1490,9 @@ class RR_Expr(NBExperiment):
 
 
 class RR_Opto(RR_Expr):
-
     info_name = "rr_opto_subset.csv"
     spec_name = "rr_animal_specs.csv"
 
     def __init__(self, folder, **kwargs):
         super().__init__(folder, **kwargs)
         self.nbm = RR_NBMat(neural=False)
-

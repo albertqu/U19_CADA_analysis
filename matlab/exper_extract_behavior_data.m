@@ -123,11 +123,20 @@ function [out] = exper_extract_beh_data_bonsai(folder, experf, lvttlf, lvtsf, se
 
         % sanity check Expert_LV_on (in ms) is close to LV_on_time (in ms)
         LV1_on_time=Digital_LV_on_time(1:2:end);
-        if length(LV1_on_time)~=length(Expert_LV_on_time) %need to go back and fix
-            mod_LV1_on_time = LV1_on_time;
-            mod_LV1_on_time = mod_LV1_on_time(length(mod_LV1_on_time)-length(Expert_LV_on_time)+1:end);
+        if length(LV1_on_time) > length(Expert_LV_on_time)
             disp('Extra LV_on_time detected. Assuming these are valve test before the behavior session. Please double check!!!');
-            LV1_on_time = mod_LV1_on_time;
+            [lag, r2] = find_lag(LV1_on_time', Expert_LV_on_time);
+            if 1-r2 > 0.001
+                disp('warning bad fit');
+            end
+            LV1_on_time = LV1_on_time(lag:lag+length(Expert_LV_on_time)-1);
+        elseif length(LV1_on_time) < length(Expert_LV_on_time)
+            disp('Extra Expert_LV_on_time detected. Please double check!!!');
+            [lag, r2] = find_lag(Expert_LV_on_time, LV1_on_time');
+            if 1-r2 > 0.001
+                disp('warning bad fit');
+            end
+            Expert_LV_on_time = Expert_LV_on_time(lag:lag+length(LV1_on_time)-1);
         end
     end
         
