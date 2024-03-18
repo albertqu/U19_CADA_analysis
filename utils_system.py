@@ -159,7 +159,7 @@ def rename_dir_files_recursive(root, namemap):
 
 def make_stim_blocks(n=20, p=0.25, zero=False):
     # p: percentage of stimulation, p<0.5
-    """ Use this example to visualize:
+    """Use this example to visualize:
     import matplotlib.pyplot as plt
     plt.stem(make_stim_blocks(20))
     plt.xticks(np.arange(20)[4::5], np.arange(1, 21)[4::5])
@@ -189,6 +189,8 @@ def make_long_stim_blocks(N, p=0.25, n=20):
     return np.concatenate(all_stims)
 
 
+from pipeline import organize_RR_structures
+
 if __name__ == "__main__":
     # archive_date = datetime.datetime.strptime("2019/05/31", "%Y/%m/%d")
     # src_folder = "/Volumes/Wilbrecht_file_server"
@@ -197,6 +199,5 @@ if __name__ == "__main__":
     #     os.makedirs(archive)
     # archive_by_date(src_folder, archive, archive_date)
     ROOT = r"Z:\Restaurant Row\Data"
-    out = r"D:\U19\data\RR"
+    out = r"D:\U19\data\RR\DREADD_raw"  # r"D:\U19\data\RR"
     organize_RR_structures(ROOT, out)
-

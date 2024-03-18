@@ -12,6 +12,7 @@ import logging
 import patsy
 import sklearn
 from tqdm import tqdm
+import traceback
 
 logging.basicConfig(level=logging.INFO)
 # sns.set_context("talk")
@@ -678,7 +679,7 @@ class PS_NBMat(NeuroBehaviorMat):
         self.event_time_windows = {
             "center_in": np.arange(-1, 1.001, 0.05),
             "center_out": np.arange(-1, 1.001, 0.05),
-            "outcome": np.arange(-0.5, 1.001, 0.05),
+            "outcome": np.arange(-0.5, 2.001, 0.05),
             "side_in": np.arange(-0.5, 1.001, 0.05),
             "zeroth_side_out": np.arange(-0.5, 2.001, 0.05),
             "first_side_out": np.arange(-0.5, 2.001, 0.05),
@@ -1045,6 +1046,7 @@ class NBExperiment:
                 bmat, neuro_series = self.load_animal_session(animal, session)
             except Exception:
                 logging.warning(f"Error in {animal} {session}")
+                traceback.print_exc()
                 bmat, ps_series = None, None
 
             if bmat is None:
@@ -1132,6 +1134,7 @@ class NBExperiment:
                     )
                     continue
             except Exception:
+                traceback.print_exc()
                 logging.warning(f"Error in {animal} {session}")
                 errors.append([animal, session, "loading"])
                 bmat, ps_series = None, None
@@ -1147,10 +1150,11 @@ class NBExperiment:
                     logging.warning(
                         f"Error in computing bmat for {animal}, {session}, check session"
                     )
-        error_df = pd.DataFrame(
-            np.array(errors), columns=["animal", "session", "error"]
-        )
-        error_df.to_csv(os.path.join(self.folder, "error_log.csv"))
+        if errors:
+            error_df = pd.DataFrame(
+                np.array(errors), columns=["animal", "session", "error"]
+            )
+            error_df.to_csv(os.path.join(self.folder, "error_log.csv"))
         all_bdf = pd.concat(all_bdfs, axis=0)
         final_bdf = all_bdf.merge(self.meta, how="left", on=["animal", "session"])
         if "stimulation_on" in all_bdf.columns:
@@ -1257,6 +1261,7 @@ class PS_Expr(NBExperiment):
             modeling_id=self.modeling_id,
             cache_folder=cfolder,
         )
+        hfile.close()
         fp_file = filemap["FP"]
         fp_timestamps = filemap["FPTS"]
 

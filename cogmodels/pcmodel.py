@@ -145,9 +145,7 @@ class PCModel(BayesianModel):
             if (n > 0) and (sess.iat[n] == sess.iat[n - 1]):
                 if c.iat[n - 1] == -1:
                     # Handling miss decisions
-                    m[n,] = m[
-                        n - 1,
-                    ]
+                    m[n,] = m[n - 1,]
                 else:
                     m[n,] = (1 - alpha) * m[n - 1,] + alpha * c.iat[n - 1]
         eps = 0.001
@@ -168,9 +166,18 @@ class PCModel(BayesianModel):
         if "loglik" in data.columns:
             return np.exp(data["loglik"].values)
         else:
-            params_in = (
-                self.fitted_params[["ID", "beta", "st"]] if params is None else params
-            )
+            if "beta" in self.fixed_params:  # change emulate function
+                params_in = (
+                    self.fitted_params[["ID", "st"]].copy() if params is None else params
+                )
+                params_in["beta"] = self.fixed_params["beta"]
+            else:
+                params_in = (
+                    self.fitted_params[["ID", "beta", "st"]]
+                    if params is None
+                    else params
+                )
+
             new_data = data.merge(params_in, how="left", on="ID")
             ms = new_data["m"].values
             logodd = np.log(ms) - np.log(1 - ms)
@@ -198,7 +205,7 @@ class PCModel(BayesianModel):
 
 class PCModel_fixpswgam(PCModel):
 
-    """ PCModel class with fixed p, sw, gam
+    """PCModel class with fixed p, sw, gam
     # STILL updates w
     """
 
@@ -254,7 +261,7 @@ class PCModel_fixpswgam(PCModel):
 
 class PCBRL(PCModel):
 
-    """ PCModel class with fixed p, sw, gam
+    """PCModel class with fixed p, sw, gam
     # STILL updates w
     """
 

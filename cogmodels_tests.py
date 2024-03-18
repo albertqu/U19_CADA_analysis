@@ -9,15 +9,19 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import psutil
 
+CACHE_FOLDER = r"D:\U19\data\Probswitch\caching"
+DATA_ARG = "full_20230118"
+
 np.random.seed(230)
 
 ## TODO: verify that BRL is significantly different from BImodel
+
 
 ##########################################
 # ******* Basic Implementation Test ******
 ##########################################
 def test_model_functional():
-    """ First test to run to guarantee that there is no runtime error 
+    """First test to run to guarantee that there is no runtime error
     in the implementation -- test that code runs
     """
     # pcm = PCModel()
@@ -26,8 +30,8 @@ def test_model_functional():
     v_old = "v13"
 
     # take in data
-    cache_folder = r"D:\U19\data\Probswitch\caching"
-    data_arg = "full_20230118"
+    cache_folder = CACHE_FOLDER
+    data_arg = DATA_ARG
     data_file = os.path.join(cache_folder, f"bsd_model_data_{data_arg}.pq")
     data = pd.read_parquet(data_file)
     data["ID"] = data["Subject"]
@@ -83,8 +87,8 @@ def test_sim_consistency_version_update():
     model_arg = str(model)  # 'RLCF'
 
     # take in data
-    cache_folder = r"D:\U19\data\Probswitch\caching"
-    data_arg = "full_20230118"
+    cache_folder = CACHE_FOLDER
+    data_arg = DATA_ARG
     data_file = os.path.join(cache_folder, f"bsd_model_data_{data_arg}.pq")
     data = pd.read_parquet(data_file)
     data["ID"] = data["Subject"]
@@ -142,8 +146,8 @@ def test_sim_consistency_version_update():
 def test_model_recovery():
     v_old = "v13"
     # load data
-    cache_folder = r"D:\U19\data\Probswitch\caching"
-    data_arg = "full_20230118"
+    cache_folder = CACHE_FOLDER
+    data_arg = DATA_ARG
     data_file = os.path.join(cache_folder, f"bsd_model_data_{data_arg}.pq")
     data = pd.read_parquet(data_file)
     data["ID"] = data["Subject"]
@@ -171,8 +175,8 @@ def test_model_recovery():
 
 
 def test_model_generate():
-    cache_folder = r"D:\U19\data\Probswitch\caching"
-    data_arg = "full_20230105"
+    cache_folder = CACHE_FOLDER
+    data_arg = DATA_ARG
     data_file = os.path.join(cache_folder, f"bsd_model_data_{data_arg}.pq")
     data = pd.read_parquet(data_file)
     data["ID"] = data["Subject"]
@@ -202,7 +206,7 @@ def test_modelgen_mp(
     model, model_arg, gen_arg, param_ranges, niters=1000, save_folder=None
 ):
     if save_folder is None:
-        cache_folder = r"D:\U19\data\Probswitch\caching"
+        cache_folder = CACHE_FOLDER
     else:
         cache_folder = save_folder
     params = {
@@ -251,7 +255,7 @@ def test_modelgen_recover_mp(
     nsess=2,
 ):
     if save_folder is None:
-        cache_folder = r"D:\U19\data\Probswitch\caching"
+        cache_folder = CACHE_FOLDER
     else:
         cache_folder = save_folder
     params = {
@@ -297,7 +301,7 @@ def viz_genrec_recovery(model, gen_arg, ncols=2):
     mdl = model()
     model_arg = str(mdl)
     method = "L-BFGS-B"
-    cache_folder = r"D:\U19\data\Probswitch\caching"
+    cache_folder = CACHE_FOLDER
     params_x = pd.read_csv(
         os.path.join(cache_folder, f"genrec_{gen_arg}_{model_arg}_{method}_paramsx.csv")
     )
@@ -326,7 +330,7 @@ def viz_genrec_recovery(model, gen_arg, ncols=2):
         ax = plt.gca()
         ax.set_title(f"{param}({oratio*100:.02f}% outlier)")
 
-    sns.set_context("talk")
+    # sns.set_context("talk")
     # TODO: drop outliers by type
     g = sns.lmplot(
         data=df.groupby("param").apply(drop_outlier).reset_index(drop=True),
@@ -347,8 +351,8 @@ def viz_genrec_recovery(model, gen_arg, ncols=2):
 
 # model testing
 def test_model_recovery_mp(model, model_arg):
-    cache_folder = r"D:\U19\data\Probswitch\caching"
-    # data_arg = "full_20230105"
+    cache_folder = CACHE_FOLDER
+    # data_arg = DATA_ARG
     data_arg = "eckstein2022_full"
     version = "v15"
     data_file = os.path.join(cache_folder, f"bsd_model_data_{data_arg}.pq")
@@ -406,8 +410,8 @@ def test_model_recovery_mp(model, model_arg):
 def test_mp_multiple_animals(model):
     # Function for fitting data for multiple animals
     model_arg = str(model())
-    cache_folder = r"D:\U19\data\Probswitch\caching"
-    data_arg = "full_20230118"
+    cache_folder = CACHE_FOLDER
+    data_arg = DATA_ARG
     # data_arg = 'eckstein2022_full'
     data_file = os.path.join(cache_folder, f"bsd_model_data_{data_arg}.pq")
     data = pd.read_parquet(data_file)
@@ -450,8 +454,8 @@ def test_mp_multiple_animals(model):
 def test_model_genrec_BSD(model):
     mdl = model()
     model_arg = str(mdl)
-    cache_folder = r"D:\U19\data\Probswitch\caching"
-    data_arg = "full_20230118"
+    cache_folder = CACHE_FOLDER
+    data_arg = DATA_ARG
     version = "v15"
     pfile = os.path.join(
         cache_folder, f"bsd_simopt_params_{data_arg}_{model_arg}_{version}.csv"
@@ -477,7 +481,7 @@ def test_model_genrec_BSD(model):
 
 
 def test_multiple_animals():
-    cache_folder = r"D:\U19\data\Probswitch\caching"
+    cache_folder = CACHE_FOLDER
     data_arg = "sample"  # "full_20230105"
     data_file = os.path.join(cache_folder, f"bsd_model_data_{data_arg}.pq")
     data = pd.read_parquet(data_file)
@@ -534,8 +538,8 @@ def fit_model_per_subject(data_subj, model):
 
 def fit_LR_BSD():
     model_arg = "LR"
-    cache_folder = r"D:\U19\data\Probswitch\caching"
-    data_arg = "full_20230118"
+    cache_folder = CACHE_FOLDER
+    data_arg = DATA_ARG
     version = "v13"
     data_file = os.path.join(cache_folder, f"bsd_model_data_{data_arg}.pq")
     data = pd.read_parquet(data_file)
@@ -568,7 +572,7 @@ def fit_LR_BSD():
 
 
 def viz_BSD_genrec():
-    data_arg = "full_20230118"
+    data_arg = DATA_ARG
     gen_arg = f"{data_arg}_3s5ht_restruct"
     viz_genrec_recovery(PCBRL, gen_arg)
     viz_genrec_recovery(BRL, gen_arg)
@@ -589,7 +593,7 @@ def visualize_model_params_single_session(model, params):
 
 
 def gendata_behavior_plot(model_arg, gen_arg):
-    cache_folder = r"D:\U19\data\Probswitch\caching"
+    cache_folder = CACHE_FOLDER
     plot_folder = r"D:\U19\plots\Probswitch"
     data = pd.read_csv(os.path.join(cache_folder, f"gendata_{model_arg}_{gen_arg}.csv"))
     # problem at edge of block switch, check edge behavior
@@ -599,8 +603,8 @@ def gendata_behavior_plot(model_arg, gen_arg):
 
 
 def viz_model_comp():
-    cache_folder = r"D:\U19\data\Probswitch\caching"
-    data_arg = "full_20230118"
+    cache_folder = CACHE_FOLDER
+    data_arg = DATA_ARG
     version = "v13"
     all_mdf = []
     for model in [PCModel_fixpswgam, BIModel_fixp, RLCF, RL_4p, PCModel, BIModel]:
@@ -614,7 +618,7 @@ def viz_model_comp():
         all_mdf.append(mdf)
     all_mdf = pd.concat(all_mdf, axis=0)
     fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(15, 15))
-    sns.set_context("talk")
+    # sns.set_context("talk")
     sns.boxplot(data=all_mdf, x="model", y="aic", ax=axes[0][0])
     sns.boxplot(data=all_mdf, x="model", y="bic", ax=axes[0][1])
     for j, prm in enumerate(["beta", "st"]):
@@ -680,8 +684,8 @@ def animal_behavior_plot_eckstein(data, plot_folder=None, save_arg=None, title=N
 def compare_models():
     from sklearn.metrics import roc_auc_score, balanced_accuracy_score, accuracy_score
 
-    cache_folder = r"D:\U19\data\Probswitch\caching"
-    data_arg = "full_20230118"
+    cache_folder = CACHE_FOLDER
+    data_arg = DATA_ARG
     thres = 0.5
     model_names = ["PC", "PCf", "BI", "BIfp", "RLCF", "RL4p"]
     version = "v13"
@@ -737,9 +741,10 @@ def compare_models():
 ******* Replication to Eckstein 2022 *******
 **************************************** """
 
+
 # next steps test RLCF
 def test_model_eckstein2022_RLCF():
-    cache_folder = r"D:\U19\data\Probswitch\caching"
+    cache_folder = CACHE_FOLDER
     model = RLCF()
     model_arg = "RLCF"
     param_ranges = {
@@ -761,7 +766,7 @@ def test_model_eckstein2022_RLCF():
 
 
 def test_model_gen_eckstein2022():
-    cache_folder = r"D:\U19\data\Probswitch\caching"
+    cache_folder = CACHE_FOLDER
     model = BIModel()
     model_arg = "BI"
     param_ranges = {
@@ -784,7 +789,7 @@ def test_model_gen_eckstein2022():
 def test_model_genrec_eckstein2022():
     model = BIModel
     model_arg = "BI"
-    cache_folder = r"D:\U19\data\Probswitch\caching"
+    cache_folder = CACHE_FOLDER
     param_ranges = {
         "st": (0.07, 0.1),
         "beta": (3.05, 3.3),
@@ -806,7 +811,7 @@ def test_model_genrec_eckstein2022():
 def test_model_genrec_eckstein2022_BIfp():
     model = BIModel_fixp
     model_arg = "BIfp"
-    cache_folder = r"D:\U19\data\Probswitch\caching"
+    cache_folder = CACHE_FOLDER
     param_ranges = {"st": (0, 1), "beta": (1, 4), "sw": (0.01, 0.2)}
     np.random.seed(230)
     data, params_x, params_y = test_modelgen_recover_mp(
@@ -823,7 +828,7 @@ def test_model_genrec_eckstein2022_BIfp():
 def test_model_genrec_eckstein2022_PCf():
     model = PCModel_fixpswgam
     model_arg = "PCf"
-    cache_folder = r"D:\U19\data\Probswitch\caching"
+    cache_folder = CACHE_FOLDER
     param_ranges = {"st": (0, 1), "beta": (1, 4)}
     np.random.seed(230)
     data, params_x, params_y = test_modelgen_recover_mp(
@@ -840,7 +845,7 @@ def test_model_genrec_eckstein2022_PCf():
 def test_model_genrec_eckstein2022_RLCF():
     model = RLCF
     model_arg = "RLCF"
-    cache_folder = r"D:\U19\data\Probswitch\caching"
+    cache_folder = CACHE_FOLDER
     param_ranges = {
         "st": (0.13, 0.2),
         "beta": (2.5, 2.8),
@@ -862,7 +867,7 @@ def test_model_genrec_eckstein2022_RLCF():
 def test_model_genrec_eckstein2022_RLst():
     model = RL_st
     model_arg = "RLst"
-    cache_folder = r"D:\U19\data\Probswitch\caching"
+    cache_folder = CACHE_FOLDER
     param_ranges = {"beta": (2, 4), "alpha": (0.5, 1), "st": (0, 1)}
     np.random.seed(230)
     data, params_x, params_y = test_modelgen_recover_mp(
@@ -881,7 +886,7 @@ def test_model_genrec_eckstein2022_RLst():
 def test_model_genrec_eckstein2022_RL4p():
     model = RL_4p
     model_arg = "RL4p"
-    cache_folder = r"D:\U19\data\Probswitch\caching"
+    cache_folder = CACHE_FOLDER
     param_ranges = {
         "beta": (2, 4),
         "a_neg": (0.5, 0.9),
@@ -905,7 +910,7 @@ def test_model_genrec_eckstein2022_RL4p():
 def test_model_genrec_eckstein2022_RL():
     model = RL
     model_arg = "RL"
-    cache_folder = r"D:\U19\data\Probswitch\caching"
+    cache_folder = CACHE_FOLDER
     param_ranges = {"beta": (2, 4), "alpha": (0.5, 1)}
     np.random.seed(230)
     data, params_x, params_y = test_modelgen_recover_mp(
@@ -926,7 +931,7 @@ def viz_genrec_eckstein2022(model):
 
 
 def replicate_eckstein2022_fit_params():
-    cache_folder = r"D:\U19\data\Probswitch\caching"
+    cache_folder = CACHE_FOLDER
     plot_folder = r"D:\U19\plots\Probswitch"
     data_arg = "eckstein2022_full"
     for model_arg in ["RLCF", "BI", "PC"]:
@@ -945,9 +950,9 @@ def replicate_eckstein2022_fit_params():
 
 
 def bsd_animal_behavior_plot():
-    cache_folder = r"D:\U19\data\Probswitch\caching"
+    cache_folder = CACHE_FOLDER
     plot_folder = r"D:\U19\plots\Probswitch"
-    data_arg = "full_20230118"
+    data_arg = DATA_ARG
     data_file = os.path.join(cache_folder, f"bsd_model_data_{data_arg}.pq")
     data = pd.read_parquet(data_file)
     animal_behavior_plot_eckstein(data, plot_folder, save_arg="BSD_all_animal")
@@ -1022,7 +1027,7 @@ def qdiff(V, beta):
 
 def viz_test_softmax():
     model_arg = "RLCF"
-    cache_folder = r"D:\U19\data\Probswitch\caching"
+    cache_folder = CACHE_FOLDER
     gen_arg = "eckstein2022"
 
     test_data = pd.read_csv(
@@ -1076,7 +1081,7 @@ if __name__ == "__main__":
     # test_model_genrec_eckstein2022_PCf()
     for model in [RLCF]:
         # for model in [BIModel_fixp, PCModel_fixpswgam, BI_log, PCBRL, RL_4p]:
-        test_mp_multiple_animals(model)
+        # test_mp_multiple_animals(model)
         test_model_genrec_BSD(model)
     # test_model_recovery_mp(PCModel, 'PC')
     # test_model_recovery_mp(BIModel, 'BI')

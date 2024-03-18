@@ -70,11 +70,121 @@ class CogModel:
         self.summary = {}
         pass
 
+    def create_params(self, data):
+        uniq_ids = data["ID"].unique()
+        n_id = len(uniq_ids)
+        new_params = {}
+        for p in self.param_dict:
+            self.param_dict[p].n_id = n_id
+            new_params[p] = self.param_dict[p].eval()
+        new_params["ID"] = uniq_ids
+        return pd.DataFrame(new_params)
+
+    @abstractmethod
+    def latents_init(self, N):
+        pass
+
+    @abstractmethod
+    def id_param_init(self, params, id):
+        pass
+
+    @abstractmethod
+    def fit_marginal(self, data):
+        return data
+
     def sim(self, data, params, *args, **kwargs):
         pass
 
     def fit(self, data, *args, **kwargs):
-        pass
+        # Fit model to single subjects and get cross-validation results
+        #
+        # INPUTS:
+        #   data - dataframe with all relevant data
+        #
+        # OUTPUTS:
+        #   bic - subjects x model BIC values
+        #   loglik - subjects x model log likelihood values from cross-validation
+        #   param - model parameters for each subject for model 1 (qdiff + logodds)
+        #   data - dataframe with 'qdiff' (Q-value difference),'rpe' (reward prediction error)
+        #          and 'logodds' (log choice probability) columns added
+        # contrastd softmax anne's with qdiff implementation
+
+        # data <- fit_marginal
+        # params <- create_params
+        # params2x, x2params
+        # x0 = params2x
+        # nll(x, *data, *params): x2params(x), sim, get_prob, negsum
+        # results = scipy.optimize.minimize(nll, x0)
+        # self.fitted_params = x2params(results)
+
+        data = self.fit_marginal(data)
+        params_df = self.create_params(data)
+        id_list = params_df["ID"]
+        param_names = [c for c in params_df if c != "ID"]
+        params2x = lambda params_df: params_df.drop(columns="ID").values.ravel(
+            order="C"
+        )
+        x2params = (
+            lambda x: pd.DataFrame(
+                x.reshape((-1, len(self.param_dict)), order="C"),
+                columns=param_names,
+                index=id_list,
+            )
+            .reset_index()
+            .rename({"index": "ID"})
+        )
+        x0 = params2x(params_df)
+
+        def nll(x):
+            params = x2params(x)
+            data_sim = self.sim(data, params, *args, **kwargs)
+            # balanced weights
+            # vcs = data_sim['Decision'].value_counts()
+            # total1s, total0s = 0, 0
+            # if 1 in vcs.index:
+            #     total1s = vcs[1]
+            # if 0 in vcs.index:
+            #     total0s = vcs[0]
+            # data_sim.loc[data_sim['Decision'] == 1, 'class_weight'] = total1s / (total1s + total0s)
+            # data_sim.loc[data_sim['Decision'] == 0, 'class_weight'] = total0s / (total1s + total0s)
+            # weight by class weights
+            c_valid_sel = data_sim["Decision"] != -1
+            p_s = self.get_proba(data_sim, params)[c_valid_sel].values
+
+            c_vs = data_sim.loc[c_valid_sel, "Decision"].values
+            epsilon = 1e-15  # 0.001
+            p_s = np.minimum(np.maximum(epsilon, p_s), 1 - epsilon)
+            # try out class_weights
+            return -(c_vs @ np.log(p_s) + (1 - c_vs) @ np.log(1 - p_s))
+
+        params_bounds = [self.param_dict[pn].bounds for pn in param_names] * len(
+            id_list
+        )
+        method = "L-BFGS-B"
+        if "method" in kwargs:
+            method = kwargs["method"]
+
+        res = scipy.optimize.minimize(
+            nll, x0, method=method, bounds=params_bounds, tol=1e-6
+        )
+        if not res.success:
+            print("failed", res.message)
+        # TODO: if result gives failure, you throw an error
+        # constrain optimize
+        self.fitted_params = x2params(res.x)
+        negloglik = res.fun
+        bic = len(res.x) * np.log(len(data)) + 2 * negloglik
+        aic = 2 * len(res.x) + 2 * negloglik
+
+        data_sim_opt = self.sim(data, self.fitted_params, *args, **kwargs)
+        data["choice_p"] = self.get_proba(data_sim_opt)
+
+        self.summary = {
+            "bic": bic,
+            "aic": aic,
+            "latents": data[self.latent_names + ["choice_p"]].reset_index(drop=True),
+        }
+        return self
 
     def score(self, data):
         # Cross validate held out data
@@ -113,13 +223,6 @@ class CogModel2ABT_BWQ(CogModel):
         return qdiff, rpe, b_arr, w_arr
 
     @abstractmethod
-    def id_param_init(self, params, id):
-        """abstract method for iniatiating ID parameter
-        Returns: Dict
-        """
-        pass
-
-    @abstractmethod
     def calc_q(self, b, w):
         """abstract method for calcualting action value
         Returns: np.array of q values
@@ -142,7 +245,7 @@ class CogModel2ABT_BWQ(CogModel):
 
     @abstractmethod
     def assign_latents(self, data, qdiff, rpe, b_arr, w_arr):
-        """ abstract method for saving simulated latents,
+        """abstract method for saving simulated latents,
         Returns: data appended with columns storing different latents
         """
         pass
@@ -151,9 +254,19 @@ class CogModel2ABT_BWQ(CogModel):
         if "loglik" in data.columns:
             return np.exp(data["loglik"].values)
         else:
-            params_in = (
-                self.fitted_params[["ID", "beta", "st"]] if params is None else params
-            )
+            if "beta" in self.fixed_params:  # change emulate function
+                params_in = (
+                    self.fitted_params[["ID", "st"]].copy()
+                    if params is None
+                    else params
+                )
+                params_in["beta"] = self.fixed_params["beta"]
+            else:
+                params_in = (
+                    self.fitted_params[["ID", "beta", "st"]]
+                    if params is None
+                    else params
+                )
             new_data = data.merge(params_in, how="left", on="ID")
             return expit(
                 new_data["qdiff"] * new_data["beta"] + new_data["m"] * new_data["st"]
@@ -196,6 +309,25 @@ class CogModel2ABT_BWQ(CogModel):
     def sim(self, data, params, *args, **kwargs):
         """
         Simulates the model for single subject that matches the data
+
+        Pseudo code:
+        ```
+        def sim(data, params):
+            # b: belief related latents
+            # w: learning weight of models
+            *latents <- latents_init # initialize all model latents
+            rs, cs <- extract_data(data) # load reward and choice data
+            for i=1:len(data):
+                if new subject:
+                    params_d <- id_param_init(params, get_data_id(data, i))
+                    # initialize when there is a new subject ID
+                r, c = rs[i], cs[i]
+                qs <- calc_qs(b, w) # calculate q values given
+                rpe <- calculate_rpe(r, qs)
+                w <- update_w(b, w, c, rpe, params_d)
+                b <- update_b(b, w, c, rpe, params_d)
+            return assign_latents(data, w,b,rpe ...)
+        ```
 
         Input:
             data: pd.DataFrame
@@ -475,16 +607,6 @@ class CogModel2ABT_BWQ(CogModel):
         # qdiff[n], rpe[n], b, w, b_arr[n], w_arr[n]
         return emu_data
 
-    def create_params(self, data):
-        uniq_ids = data["ID"].unique()
-        n_id = len(uniq_ids)
-        new_params = {}
-        for p in self.param_dict:
-            self.param_dict[p].n_id = n_id
-            new_params[p] = self.param_dict[p].eval()
-        new_params["ID"] = uniq_ids
-        return pd.DataFrame(new_params)
-
     def fit(self, data, *args, **kwargs):
         # Fit model to single subjects and get cross-validation results
         #
@@ -575,4 +697,3 @@ class CogModel2ABT_BWQ(CogModel):
             "latents": data[self.latent_names + ["choice_p"]].reset_index(drop=True),
         }
         return self
-

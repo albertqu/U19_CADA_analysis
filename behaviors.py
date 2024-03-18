@@ -21,7 +21,6 @@ from packages.RR_bmat.eventcodedict import *
 from packages.RR_bmat.clean_bonsai_output import *
 
 
-
 #######################################################
 ################### Data Structure ####################
 #######################################################
@@ -101,7 +100,7 @@ class RRBehaviorMat(BehaviorMat):
         events_list_partial = clean_and_organize(events_partial)
         return write_bonsaiEvent_dll(events_list_partial)
 
-    def todf(self, valid=True, comment=False):
+    def todf(self, valid=True, comment=False, overwrite=False):
         # Don't use todf if initialized with STAGE 0
         # trial structure containing pseudotrials
         cache_file = None
@@ -109,7 +108,7 @@ class RRBehaviorMat(BehaviorMat):
             cache_file = os.path.join(
                 self.cache_folder, f"{self.animal}_{self.session}_bdf.pq"
             )
-            if os.path.exists(cache_file):
+            if os.path.exists(cache_file) and (not overwrite):
                 return pd.read_parquet(cache_file)
         trials = trial_writer(self.eventlist)
         trial_info_filler(trials)
@@ -292,6 +291,7 @@ class PSBehaviorMat(BehaviorMat):
                 data = data.T
                 all_data.append(data)
                 all_data_names.append(data_name)
+        hfile.close()
         modeling_pdf = pd.DataFrame(
             np.hstack(all_data), columns=np.concatenate(all_data_names)
         )
@@ -399,8 +399,8 @@ class PSBehaviorMat(BehaviorMat):
                         ), f"side_out not following outcome? {str(curr_node), str(curr_node.prev)}, {self.animal}, {self.session}"
                         curr_node.saliency = code_map[curr_node.ecode][1] + "_zeroth"
                         start_node = curr_node
-                        side_ecoder = (
-                            lambda node: (node.ecode % 10)
+                        side_ecoder = lambda node: (
+                            (node.ecode % 10)
                             if (node.event in ["side_in", "side_out"])
                             else node.ecode
                         )
@@ -475,9 +475,9 @@ class PSBehaviorMat(BehaviorMat):
                     # TODO: triple check why this is needed
                     result_df.loc[node.trial_index(), node.event] = node.etime
                     if "_" in node.saliency:
-                        result_df.loc[
-                            node.trial_index(), "action"
-                        ] = node.saliency.split("_")[0]
+                        result_df.loc[node.trial_index(), "action"] = (
+                            node.saliency.split("_")[0]
+                        )
                     else:
                         result_df.loc[node.trial_index(), "action"] = node.saliency
                 elif node.event == "outcome":

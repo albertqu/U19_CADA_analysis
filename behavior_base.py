@@ -22,10 +22,11 @@ class EventNode:
     Now you have a eventlist full of nodes
     call: eventlist.as_df() to get the dataframe
     """
+
     ABBR = {}
 
     def __init__(self, event, etime, trial, ecode):
-        self.serializable = ['event', 'etime', 'trial', 'ecode']
+        self.serializable = ["event", "etime", "trial", "ecode"]
         if event is None:
             # Implements a circular LinkedList
             self.is_sentinel = True
@@ -42,7 +43,7 @@ class EventNode:
 
     def __str__(self):
         if self.is_sentinel:
-            return 'Sentinel'
+            return "Sentinel"
         return f"{type(self).__name__}({self.event}, {self.trial}, {self.etime:.1f}ms, {self.ecode})"
 
     def trial_index(self):
@@ -54,11 +55,11 @@ class EventNode:
 
     # Methods Reserved For Sentinel Node
     def __len__(self):
-        assert self.is_sentinel, 'must be sentinel node to do this'
+        assert self.is_sentinel, "must be sentinel node to do this"
         return self.size
 
     def __iter__(self):
-        assert self.is_sentinel, 'must be sentinel node to do this'
+        assert self.is_sentinel, "must be sentinel node to do this"
         curr = self.next
         while not curr.is_sentinel:
             yield curr
@@ -66,7 +67,7 @@ class EventNode:
 
     def as_df(self, use_abbr=False):
         # Returns an dataframe representation of the information
-        assert self.is_sentinel, 'must be sentinel node to do this'
+        assert self.is_sentinel, "must be sentinel node to do this"
         if use_abbr:
             results = [None] * len(self)
             node_list = self.tolist()
@@ -76,25 +77,39 @@ class EventNode:
                     field = self.serializable[j]
                     attr = getattr(node_list[i], field)
                     results[i][j] = self.ABBR[attr] if attr in self.ABBR else attr
-            return pd.DataFrame([[getattr(enode, field) for field in self.serializable] for
-                                 enode in self],
-                         columns=self.serializable)
+            return pd.DataFrame(
+                [
+                    [getattr(enode, field) for field in self.serializable]
+                    for enode in self
+                ],
+                columns=self.serializable,
+            )
         else:
-            return pd.DataFrame([[getattr(enode, field) for field in self.serializable] for enode in self],
-                                columns=self.serializable)
+            return pd.DataFrame(
+                [
+                    [getattr(enode, field) for field in self.serializable]
+                    for enode in self
+                ],
+                columns=self.serializable,
+            )
 
     def nodelist_asdf(self, nodelist):
         # a method that looks at a restricted view of eventlist
-        return pd.DataFrame([[getattr(enode, field) for field in self.serializable] for enode in nodelist],
-                                columns=self.serializable)
+        return pd.DataFrame(
+            [
+                [getattr(enode, field) for field in self.serializable]
+                for enode in nodelist
+            ],
+            columns=self.serializable,
+        )
 
     # ideally add iter method but not necessary
     def tolist(self):
-        assert self.is_sentinel, 'must be sentinel node to do this'
+        assert self.is_sentinel, "must be sentinel node to do this"
         return [enode for enode in self]
 
     def append(self, node):
-        assert self.is_sentinel, 'must be sentinel node to do this'
+        assert self.is_sentinel, "must be sentinel node to do this"
         old_end = self.prev
         assert old_end.next is self, "what is happening"
         old_end.next = node
@@ -106,7 +121,7 @@ class EventNode:
 
     def prepend(self, node):
         # Not important
-        assert self.is_sentinel, 'must be sentinel node to do this'
+        assert self.is_sentinel, "must be sentinel node to do this"
         old_first = self.next
         old_first.prev = node
         self.next = node
@@ -116,8 +131,8 @@ class EventNode:
         return node
 
     def remove_node(self, node):
-        assert self.is_sentinel, 'must be sentinel node to do this'
-        assert self.size, 'list must be non-empty'
+        assert self.is_sentinel, "must be sentinel node to do this"
+        assert self.size, "list must be non-empty"
         next_node = node.next
         prev_node = node.prev
         prev_node.next = next_node
@@ -127,8 +142,10 @@ class EventNode:
         self.size -= 1
 
     def swap_nodes(self, node1, node2):
-        assert self.is_sentinel, 'must be sentinel node to do this'
-        assert (not (node1.is_sentinel or node2.is_sentinel)), 'both have to be non-sentinels'
+        assert self.is_sentinel, "must be sentinel node to do this"
+        assert not (
+            node1.is_sentinel or node2.is_sentinel
+        ), "both have to be non-sentinels"
         first_prev = node1.prev
         sec_next = node2.next
         first_prev.next = node2
@@ -139,29 +156,29 @@ class EventNode:
         sec_next.prev = node1
 
     def get_last(self):
-        assert self.is_sentinel, 'must be sentinel node to do this'
+        assert self.is_sentinel, "must be sentinel node to do this"
         return self.prev
 
     def get_first(self):
-        assert self.is_sentinel, 'must be sentinel node to do this'
+        assert self.is_sentinel, "must be sentinel node to do this"
         return self.next
 
     def is_empty(self):
-        assert self.is_sentinel, 'must be sentinel node to do this'
+        assert self.is_sentinel, "must be sentinel node to do this"
         return self.size == 0
 
 
 class PSENode(EventNode):
     # Probswitch Event Node
     ABBR = {
-        'right': 'RT',
-        'left': 'LT',
-        'ipsi': 'IP',
-        'contra': 'CT',
-        'center': 'CE',
+        "right": "RT",
+        "left": "LT",
+        "ipsi": "IP",
+        "contra": "CT",
+        "center": "CE",
     }
 
     def __init__(self, event, etime, trial, ecode):
         super().__init__(event, etime, trial, ecode)
-        self.serializable = self.serializable + ['saliency']
+        self.serializable = self.serializable + ["saliency"]
         self.saliency = None

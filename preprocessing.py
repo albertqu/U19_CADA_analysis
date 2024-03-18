@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from abc import abstractmethod
 from statsmodels.tsa.tsatools import lagmat
+import scipy
 import patsy
 import h5py
 import logging
@@ -309,6 +310,9 @@ class DALR_Preprocessor(CV_df_Preprocessor):
             lagfeats + interactions + ["R", "contra"]
         )  # assuming no effect from past DA
         y, X = patsy.dmatrices(formula, data=lagdf, return_type="dataframe")
+        for col in X.columns:
+            if col != "Intercept":
+                X[col] = scipy.stats.zscore(X[col])
         if self.engine == "sklearn":
             X.drop(columns="Intercept", inplace=True)
         self.x_cols = list(X.columns)

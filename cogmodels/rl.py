@@ -74,8 +74,7 @@ class RL_4p(CogModel2ABT_BWQ):
 
 
 class RLCF(RL_4p):
-
-    """ Model class for counter-factual Q-learning, described in Eckstein et al. 2022
+    """Model class for counter-factual Q-learning, described in Eckstein et al. 2022
     https://doi.org/10.1016/j.dcn.2022.101106
     Here we implement a model where choice stays does not alter Q value but rather
     affects choice selection.
@@ -92,9 +91,7 @@ class RLCF(RL_4p):
 
 
 class RL_st(RL_4p):
-
-    """ Model class for Q-learning with stickiness
-    """
+    """Model class for Q-learning with stickiness"""
 
     def __init__(self):
         super().__init__()
@@ -120,11 +117,7 @@ class RL_st(RL_4p):
 
 
 class RL(RL_4p):
-
-    """ Model class for counter-factual Q-learning, described in Eckstein et al. 2022
-    https://doi.org/10.1016/j.dcn.2022.101106
-    Here we implement a model where choice stays does not alter Q value but rather
-    affects choice selection.
+    """
     # TODO: same model without stickiness
     """
 
@@ -153,6 +146,52 @@ class RL(RL_4p):
         if "loglik" in data.columns:
             return np.exp(data["loglik"].values)
         else:
+            if "beta" in self.fixed_params:  # change emulate function
+                params_in = (
+                    self.fitted_params[["ID", "st"]].copy()
+                    if params is None
+                    else params
+                )
+                params_in["beta"] = self.fixed_params["beta"]
+            else:
+                params_in = (
+                    self.fitted_params[["ID", "beta", "st"]]
+                    if params is None
+                    else params
+                )
+            new_data = data.merge(params_in, how="left", on="ID")
+            return expit(new_data["qdiff"] * new_data["beta"])
+
+    def select_action(self, qdiff, m_1back, params):
+        choice_p = expit(qdiff * params["beta"])
+        return int(np.random.random() <= choice_p)
+
+
+class RL_Forgetting(RL_4p):
+    """
+    Forgetting only on unchosen option ~ stickiness
+    [Katahira et al. 2015](https://doi.org/10.1016/j.cub.2021.12.006)
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.fixed_params.update({"st": 0})
+        self.param_dict = {
+            "beta": CogParam(scipy.stats.expon(1), lb=0),
+            "a_pos": CogParam(scipy.stats.uniform(), lb=0, ub=1),
+            "a_neg": CogParam(scipy.stats.uniform(), lb=0, ub=1),
+            "zeta": CogParam(
+                scipy.stats.uniform(), lb=0, ub=1
+            ),  # forgetting of unchosen
+        }
+
+    def __str__(self):
+        return "RLFQ"
+
+    def get_proba(self, data, params=None):
+        if "loglik" in data.columns:
+            return np.exp(data["loglik"].values)
+        else:
             params_in = self.fitted_params[["ID", "beta"]] if params is None else params
             new_data = data.merge(params_in, how="left", on="ID")
             return expit(new_data["qdiff"] * new_data["beta"])
@@ -160,3 +199,103 @@ class RL(RL_4p):
     def select_action(self, qdiff, m_1back, params):
         choice_p = expit(qdiff * params["beta"])
         return int(np.random.random() <= choice_p)
+
+    def id_param_init(self, params, id):
+        varp_list = ["a_pos", "a_neg", "beta", "zeta"]
+        fixp_list = ["b0", "q_init", "gam", "st"]
+        var_dict = params.loc[params["ID"] == id, varp_list].iloc[0].to_dict()
+        w0_arr = [self.fixed_params["q_init"]] * 2
+        w0 = np.array(w0_arr)
+        d = {"w0": w0}
+        d.update({fp: self.fixed_params[fp] for fp in fixp_list})
+        d.update(var_dict)
+        return d
+
+    def update_w(self, b, w, c_t, rpe_t, params_i):
+        w = super().update_w(b, w, c_t, rpe_t, params_i)
+        w[1 - c_t] = w[1 - c_t] * params_i["zeta"]
+        return w
+
+
+class RL_Forgetting3p(RL_4p):
+    """
+    Forgetting only on unchosen option ~ stickiness
+    [Katahira et al. 2015](https://doi.org/10.1016/j.cub.2021.12.006)
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.fixed_params.update({"st": 0})
+        self.param_dict = {
+            "beta": CogParam(scipy.stats.expon(1), lb=0),
+            "a_pos": CogParam(scipy.stats.uniform(), lb=0, ub=1),
+            "a_neg": CogParam(scipy.stats.uniform(), lb=0, ub=1),
+        }
+
+    def __str__(self):
+        return "RLFQ3p"
+
+    def get_proba(self, data, params=None):
+        if "loglik" in data.columns:
+            return np.exp(data["loglik"].values)
+        else:
+            params_in = self.fitted_params[["ID", "beta"]] if params is None else params
+            new_data = data.merge(params_in, how="left", on="ID")
+            return expit(new_data["qdiff"] * new_data["beta"])
+
+    def select_action(self, qdiff, m_1back, params):
+        choice_p = expit(qdiff * params["beta"])
+        return int(np.random.random() <= choice_p)
+
+    def id_param_init(self, params, id):
+        varp_list = ["a_pos", "a_neg", "beta"]
+        fixp_list = ["b0", "q_init", "gam", "st"]
+        var_dict = params.loc[params["ID"] == id, varp_list].iloc[0].to_dict()
+        w0_arr = [self.fixed_params["q_init"]] * 2
+        w0 = np.array(w0_arr)
+        d = {"w0": w0}
+        d.update({fp: self.fixed_params[fp] for fp in fixp_list})
+        d.update(var_dict)
+        return d
+
+    def update_w(self, b, w, c_t, rpe_t, params_i):
+        w = super().update_w(b, w, c_t, rpe_t, params_i)
+        w[1 - c_t] = w[1 - c_t] * (1 - params_i["a_pos"] / 2 - params_i["a_neg"] / 2)
+        return w
+
+
+class RL_FQST(RL_4p):
+    """
+    Forgetting on all options + stickiness, use forgetting bilaterally
+    [Beron and Linderman 2022](https://www.pnas.org/doi/abs/10.1073/pnas.2113961119)
+    relative equivalence to RFLR
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.param_dict.update(
+            {
+                "zeta": CogParam(
+                    scipy.stats.uniform(), lb=0, ub=1
+                ),  # forgetting of unchosen
+            }
+        )
+
+    def __str__(self):
+        return "RLFQST"
+
+    def id_param_init(self, params, id):
+        varp_list = ["a_pos", "a_neg", "beta", "st", "zeta"]
+        fixp_list = ["b0", "q_init", "gam"]
+        var_dict = params.loc[params["ID"] == id, varp_list].iloc[0].to_dict()
+        w0_arr = [self.fixed_params["q_init"]] * 2
+        w0 = np.array(w0_arr)
+        d = {"w0": w0}
+        d.update({fp: self.fixed_params[fp] for fp in fixp_list})
+        d.update(var_dict)
+        return d
+
+    def update_w(self, b, w, c_t, rpe_t, params_i):
+        w = super().update_w(b, w, c_t, rpe_t, params_i)
+        w = w * params_i["zeta"]
+        return w
