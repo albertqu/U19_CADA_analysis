@@ -1,9 +1,12 @@
 # Structure
 from collections import deque
+
 # Data
 import scipy
 import numpy as np
+
 RAND_STATE = 230
+
 
 ########################################################
 ###################### Filtering #######################
@@ -11,7 +14,7 @@ RAND_STATE = 230
 class DCache:
     # TODO: AUGMENT IT SUCH THAT IT WORKS FOR MULTIPLE
 
-    def __init__(self, size=20, thres=2, buffer=False, ftype='mean'):
+    def __init__(self, size=20, thres=2, buffer=False, ftype="mean"):
         """
         :param size: int, size of the dampening cache
         :param thres: float, threshold for valid data caching, ignore signal if |x - mu_x| > thres * var
@@ -23,10 +26,10 @@ class DCache:
         self.counter = 0
         self.bandwidth = None
         self.ftype = ftype
-        if ftype == 'median':
-            assert buffer, 'median filter requires buffer'
+        if ftype == "median":
+            assert buffer, "median filter requires buffer"
         else:
-            assert ftype == 'mean', 'filter type undefined'
+            assert ftype == "mean", "filter type undefined"
 
         if buffer:
             self.cache = deque()
@@ -42,19 +45,19 @@ class DCache:
         return self.size
 
     def update_model(self):
-        if self.ftype == 'median':
+        if self.ftype == "median":
             self.avg = np.nanmedian(self.cache)
             self.dev = np.median(np.abs(np.array(self.cache) - self.avg))
         elif self.cache is not None:
             self.avg = np.nanmean(self.cache)
             self.dev = np.std(self.cache)
         else:
-            self.dev = np.sqrt(self.m2 - self.avg ** 2)
+            self.dev = np.sqrt(self.m2 - self.avg**2)
 
     def set_init(self, avg, m2):
         self.avg = avg
         self.m2 = m2
-        self.dev = np.sqrt(self.m2 - self.avg ** 2)
+        self.dev = np.sqrt(self.m2 - self.avg**2)
         # TODO: figure out more formal way
         self.counter = 1
 
@@ -63,7 +66,9 @@ class DCache:
         if np.issubdtype(signal, np.number):
             signal = np.array([signal])
         if self.cache is not None:
-            assert np.prod(np.array(signal).shape) == 1, 'cache buffer only supports scalar so far'
+            assert (
+                np.prod(np.array(signal).shape) == 1
+            ), "cache buffer only supports scalar so far"
             if not np.isnan(signal):
                 if self.counter < self.size:
                     self.cache.append(signal)
@@ -80,16 +85,22 @@ class DCache:
                     self.bandwidth = signal.shape[0]
             if self.counter < self.size:
                 if np.sum(~np.isnan(signal)) > 0:
-                    #print(self.avg, self.avg * (self.counter - 1), (self.avg * self.counter + signal) / (self.counter + 1))
+                    # print(self.avg, self.avg * (self.counter - 1), (self.avg * self.counter + signal) / (self.counter + 1))
                     self.avg = (self.avg * self.counter + signal) / (self.counter + 1)
-                    self.m2 = (signal ** 2 + self.m2 * self.counter) / (self.counter+1)
+                    self.m2 = (signal**2 + self.m2 * self.counter) / (self.counter + 1)
                     self.counter += 1
             else:
                 # TODO: make two-sided
-                targets = (~np.isnan(signal)) & ((signal - self.avg) < self.get_dev() * self.thres)
-                #print(self.avg, self.avg * (self.size - 1), (self.avg * (self.size - 1) + signal) / self.size)
-                self.avg[targets] = (self.avg[targets] * (self.size - 1) + signal[targets]) / self.size
-                self.m2[targets] = (signal[targets] ** 2 + self.m2[targets] * (self.size - 1)) / self.size
+                targets = (~np.isnan(signal)) & (
+                    (signal - self.avg) < self.get_dev() * self.thres
+                )
+                # print(self.avg, self.avg * (self.size - 1), (self.avg * (self.size - 1) + signal) / self.size)
+                self.avg[targets] = (
+                    self.avg[targets] * (self.size - 1) + signal[targets]
+                ) / self.size
+                self.m2[targets] = (
+                    signal[targets] ** 2 + self.m2[targets] * (self.size - 1)
+                ) / self.size
                 self.counter += 1
         self.update_model()
 
@@ -110,18 +121,20 @@ def std_filter(width=20, s=2, buffer=False):
 
     def fil(sigs, i):
         dc.add(sigs[i])
-        #print(sigs[i], dc.get_val())
+        # print(sigs[i], dc.get_val())
         return dc.get_val()
+
     return fil, dc
 
 
 def median_filter(width=20, s=2):
-    dc = DCache(width, s, buffer=True, ftype='median')
+    dc = DCache(width, s, buffer=True, ftype="median")
 
     def fil(sigs, i):
         dc.add(sigs[i])
         # print(sigs[i], dc.get_val())
         return dc.get_val()
+
     return fil, dc
 
 
@@ -137,11 +150,27 @@ def robust_filter(ys, method=12, window=200, optimize_window=2, buffer=False):
     if method < 10:
         mf, mDC = median_filter(window, method)
     else:
-        mf, mDC = std_filter(window, method%10, buffer=buffer)
+        mf, mDC = std_filter(window, method % 10, buffer=buffer)
     opt_w = int(np.rint(optimize_window * window))
     # prepend
     init_win_ys = ys[:opt_w]
-    prepend_ys = init_win_ys[opt_w-1:0:-1]
+    prepend_ys = init_win_ys[opt_w - 1 : 0 : -1]
     ys_pp = np.concatenate([prepend_ys, ys])
-    f0 = np.array([(mf(ys_pp, i), mDC.get_dev()) for i in range(len(ys_pp))])[opt_w-1:]
+    f0 = np.array([(mf(ys_pp, i), mDC.get_dev()) for i in range(len(ys_pp))])[
+        opt_w - 1 :
+    ]
     return f0
+
+
+def fast_corrcoef_1d(x, y, lag=0):
+    # fast crosscorr normalized
+    from scipy import signal
+
+    xp, yp = x - np.mean(x), y - np.mean(y)
+    v = signal.correlate(xp, yp, mode="full", method="fft") / (
+        np.linalg.norm(x) * np.linalg.norm(y)
+    )
+    if lag == 0:
+        return v[len(v) // 2]
+    else:
+        return v
