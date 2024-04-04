@@ -122,6 +122,10 @@ class FPSeries:
                     assert zscore, "isosbestic jove is always zscored"
                     dff = get_zdFF_old(iso_sig, rec_sig, remove=0, raw=True)
                     dff = (dff - np.mean(dff)) / np.std(dff)
+                elif method == "lossless":
+                    from packages import flour_prep
+                    data = Preprocess(rec_time, rec_sig, iso_sig)
+                    dff = data.pipeline('tma', 'lpf', 'l')
                 else:
                     dff = raw_fluor_to_dff(
                         rec_time,
