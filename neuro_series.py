@@ -35,7 +35,7 @@ class FPSeries:
     """
 
     io_specs = {"410nm": "green", "415nm": "green", "470nm": "green", "560nm": "red"}
-    params = {"fr": 10, "time_unit": "ms", "control": "410nm", "ignore_channels": []}
+    params = {"fr": 20, "time_unit": "ms", "control": "410nm", "ignore_channels": []}
     fp_flags = {}
     quality_metric = "aucroc"
 

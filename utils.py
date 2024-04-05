@@ -1327,6 +1327,7 @@ def FP_quality_visualization(
     roi="470nm",
     roc_method="QDA",
     tag="",
+    fr=20,
     viz=True,
 ):
     # Assuming signal has already been properly dropped
@@ -1348,7 +1349,19 @@ def FP_quality_visualization(
             raw_reference, raw_signal, use_raw=False, remove=0
         )
     else:
-        raise NotImplementedError(f"{method} not implemented")
+        reference_fitted = fit_reference(
+            ftime,
+            raw_reference,
+            raw_signal,
+            fr,
+            1 / (30 * fr),
+            r_squared_threshold=0.7,
+            pos_coef=False,
+            detrend_last=False,
+            smoothing_method="tma",
+            baseline_method="lpf",
+            fit_method="l",
+        )
     sig_dict = {
         "reference": z_reference,
         "signal": z_signal,
