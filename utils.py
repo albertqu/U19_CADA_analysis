@@ -17,6 +17,7 @@ from scipy import interpolate, signal
 from utils_models import auc_roc_2dist
 from utils_signal import std_filter, median_filter
 from packages.photometry_functions import get_dFF
+from packages.flour_prep.api import fit_reference
 
 # Plotting
 import matplotlib.pyplot as plt
@@ -1362,6 +1363,9 @@ def FP_quality_visualization(
             baseline_method="lpf",
             fit_method="l",
         )
+        z_reference = raw_reference
+        z_signal = z_signal
+        z_reference_fitted = reference_fitted
     sig_dict = {
         "reference": z_reference,
         "signal": z_signal,

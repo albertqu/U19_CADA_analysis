@@ -3,6 +3,7 @@ import os.path
 import pandas as pd
 
 from packages.photometry_functions import get_zdFF, get_zdFF_old, jove_fit_reference
+from packages.flour_prep.flour_prep import Preprocess
 from peristimulus import *
 from os.path import join as oj
 import numbers
@@ -98,6 +99,7 @@ class FPSeries:
         dff_name_map = {"iso_jove_dZF": "jove"}
         iso_time = self.neural_df["time"]
         dff_dfs = {"time": iso_time}
+        DROP = 0
         for ch in self.sig_channels:
             for roi in self.sig_channels[ch]:
                 if (self.hazard != 0) and (roi in self.hazard):
@@ -123,9 +125,10 @@ class FPSeries:
                     dff = get_zdFF_old(iso_sig, rec_sig, remove=0, raw=True)
                     dff = (dff - np.mean(dff)) / np.std(dff)
                 elif method == "lossless":
-                    from packages import flour_prep
-                    data = Preprocess(rec_time, rec_sig, iso_sig)
-                    dff = data.pipeline('tma', 'lpf', 'l')
+                    data = Preprocess(rec_time, rec_sig, iso_sig, drop=200)
+                    DROP = 200
+                    dff = data.pipeline("tma", "lpf", "l")
+                    dff = (dff - np.median(dff)) / np.std(dff)
                 else:
                     dff = raw_fluor_to_dff(
                         rec_time,
@@ -140,8 +143,10 @@ class FPSeries:
                     method = prefix + method
                 meas_name = "ZdFF" if zscore else "dFF"
                 dff_dfs[roi + "_" + meas_name] = dff
-                dff_dfs["method"] = [method] * len(dff)
 
+                dff_dfs["method"] = [method] * len(dff)
+        if DROP:
+            dff_dfs["time"] = dff_dfs["time"].values[DROP:]
         dff_df = pd.DataFrame(dff_dfs)
         if not melt:
             if cache_file is not None:
