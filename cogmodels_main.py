@@ -96,13 +96,13 @@ if __name__ == "__main__":
         # RL_Forgetting3p,
         # RL_FQST,
         # RL_Grossman,
-        RL_Grossman_nof,
-        RL_Grossman_nost,
+        # RL_Grossman_nof,
+        # RL_Grossman_nost,
         # BRL_fwr,
         # BRL_fw,
         # BRL_fp,
         # BRL_wr,
-        # RL_4p,
+        RL_4p,
         # BIModel_fixp
         # RFLR
         # RLCF,

@@ -3,7 +3,7 @@ import os.path
 import pandas as pd
 
 from packages.photometry_functions import get_zdFF, get_zdFF_old, jove_fit_reference
-from packages.flour_prep.flour_prep import Preprocess
+from packages.flour_prep.src import Preprocess
 from peristimulus import *
 from os.path import join as oj
 import numbers
@@ -69,7 +69,7 @@ class FPSeries:
     def __str__(self):
         return f"FP({self.animal},{self.session})"
 
-    def calculate_dff(self, method, zscore=True, melt=True, **kwargs):
+    def calculate_dff(self, method, zscore=True, melt=True, smooth="tma", **kwargs):
         # for all of the channels, calculate df using the method specified
         # TODO: add visualization technique by plotting the approximated
         # baseline against signal channels
@@ -104,15 +104,18 @@ class FPSeries:
             for roi in self.sig_channels[ch]:
                 if (self.hazard != 0) and (roi in self.hazard):
                     continue
-                rec_time = self.neural_df["time"].values
-                rec_sig = self.neural_df[roi].values
-                iso_sig = self.neural_df[roi.replace(ch, self.params["control"])].values
+                rec_time = np.copy(self.neural_df["time"].values)
+                rec_sig = np.copy(self.neural_df[roi].values)
+                iso_sig = np.copy(
+                    self.neural_df[roi.replace(ch, self.params["control"])].values
+                )
                 if method == "dZF_jove":
                     assert zscore, "isosbestic jove is always zscored"
                     dff = get_zdFF(iso_sig, rec_sig, remove=0)
                 elif method == "ZdF_jove":
                     assert zscore, "isosbestic jove is always zscored"
-                    dff = get_zdFF(iso_sig, rec_sig, remove=0)
+                    dff = get_zdFF(iso_sig, rec_sig, remove=200)
+                    DROP = 200
                     dff = (dff - np.median(dff)) / np.std(dff)
                 elif method == "dZF_jove_raw":
                     assert zscore, "isosbestic jove is always zscored"
@@ -125,10 +128,21 @@ class FPSeries:
                     dff = get_zdFF_old(iso_sig, rec_sig, remove=0, raw=True)
                     dff = (dff - np.mean(dff)) / np.std(dff)
                 elif method == "lossless":
-                    data = Preprocess(rec_time, rec_sig, iso_sig, drop=200)
+                    fr = self.params["fr"]
+                    data = Preprocess(
+                        rec_time,
+                        rec_sig,
+                        iso_sig,
+                        sampling_frequency=self.params["fr"],
+                        cutoff=1 / (30 * fr),
+                        drop=200,
+                        window_size=11,
+                        r_squared_threshold=0.7,
+                    )
                     DROP = 200
-                    dff = data.pipeline("tma", "lpf", "l")
-                    dff = (dff - np.median(dff)) / np.std(dff)
+                    dff = data.pipeline(smooth, "lpf", "l")
+                    if zscore:
+                        dff = (dff - np.median(dff)) / np.std(dff)
                 else:
                     dff = raw_fluor_to_dff(
                         rec_time,

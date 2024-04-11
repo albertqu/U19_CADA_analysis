@@ -1324,7 +1324,7 @@ def FP_quality_visualization(
     time_unit="s",
     sig_channel="470nm",
     control_channel="415nm",
-    method="jove",
+    method="lossless",
     roi="470nm",
     roc_method="QDA",
     tag="",
@@ -1347,7 +1347,7 @@ def FP_quality_visualization(
     #                                                                use_raw=False, remove=0, **pgrid)
     if method == "jove":
         z_reference, z_signal, z_reference_fitted = jove_fit_reference(
-            raw_reference, raw_signal, use_raw=False, remove=0
+            raw_reference, raw_signal, use_raw=False, remove=drop_frame
         )
     else:
         reference_fitted = fit_reference(
@@ -1356,6 +1356,8 @@ def FP_quality_visualization(
             raw_signal,
             fr,
             1 / (30 * fr),
+            drop=drop_frame,
+            window_size=11,
             r_squared_threshold=0.7,
             pos_coef=False,
             detrend_last=False,
@@ -1363,8 +1365,8 @@ def FP_quality_visualization(
             baseline_method="lpf",
             fit_method="l",
         )
-        z_reference = raw_reference
-        z_signal = z_signal
+        z_reference = raw_reference[drop_frame:]
+        z_signal = raw_signal[drop_frame:]
         z_reference_fitted = reference_fitted
     sig_dict = {
         "reference": z_reference,
@@ -1387,12 +1389,12 @@ def FP_quality_visualization(
         gs = GridSpec(nrows=4, ncols=3)
         ax0 = fig.add_subplot(gs[0, :])
         min_time = np.min(ftime)
-        segment_sel = ftime <= (min_time + initial_time)
+        segment_sel = ftime[drop_frame:] <= (min_time + initial_time)
 
-        segment_time = ftime[segment_sel][drop_frame:] - min_time
+        segment_time = ftime[drop_frame:][segment_sel] - min_time
         normalize = lambda xs: (xs - np.mean(xs)) / np.std(xs)
-        sig_segment = normalize(raw_signal[segment_sel][drop_frame:])
-        ref_segment = normalize(raw_reference[segment_sel][drop_frame:])
+        sig_segment = normalize(raw_signal[drop_frame:][segment_sel])
+        ref_segment = normalize(raw_reference[drop_frame:][segment_sel])
         ax0.plot(segment_time, sig_segment, label=ch)
         ax0.plot(segment_time, ref_segment, label=control_ch)
         ax0.set_ylabel(f"{roi_string}Z(RawF)")
@@ -1416,11 +1418,11 @@ def FP_quality_visualization(
         ax01.legend()
 
         ax1 = fig.add_subplot(gs[2, :])
-        ax1.plot(segment_time, z_signal[segment_sel][drop_frame:], label=f"Z({ch})")
+        ax1.plot(segment_time, z_signal[segment_sel], label=f"Z({ch})")
         # ax1.plot(segment_time, z_reference[segment_sel][drop_frame:], label=control_ch)
         ax1.plot(
             segment_time,
-            z_reference_fitted[segment_sel][drop_frame:],
+            z_reference_fitted[segment_sel],
             label="~" + control_ch,
         )
         ax1.set_ylabel(f"{roi_string}Z(F)")

@@ -1007,7 +1007,7 @@ class NBExperiment:
     def encode_to_filename(self, animal, session, ftypes="processed_all"):
         return NotImplemented
 
-    def align_lagged_view(self, proj, events, laglist=None, diagnose=False, **kwargs):
+    def align_lagged_view(self, proj, events, laglist=None, diagnose=False, method=None, **kwargs):
         """
         Given the project code specified in `proj`, look through metadata loaded through `self.info_name`
         and align each session's neural data to `events`. If specified, lag the neural data according to
@@ -1053,9 +1053,10 @@ class NBExperiment:
                 logging.info(f"skipping {animal} {session}")
             else:
                 try:
+                    met = method if method is not None else 'ZdF_jove'
                     bdf, dff_df = (
                         bmat.todf(),
-                        neuro_series.calculate_dff(method="ZdF_jove"),
+                        neuro_series.calculate_dff(method=met),
                     )
                     nb_df = self.nbm.align_B2N_dff_ID(bdf, dff_df, events, form="wide")
                     nb_df = self.nbm.extend_features(nb_df)
