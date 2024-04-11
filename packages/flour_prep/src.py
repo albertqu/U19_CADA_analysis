@@ -57,8 +57,8 @@ class Preprocess:
         self.fitted_ref = None
         self.detrended = False
         self.positive_coefficients = positive_coefficients
-        self.cutoff = cutoff
         self.fs = sampling_frequency
+        self.cutoff = cutoff
         self.drop = drop
         self.window_size = window_size
         self.r_squared_threshold = r_squared_threshold
@@ -85,8 +85,8 @@ class Preprocess:
                 fit_method       : Method to Pass to self.fit(); string-type
                     - l    [lasso]
                 detrend_last     : Indicates Whether to Detrend After Subtracting self.fitted_ref From self.detrended_signal
-                ax               : Axis to Pass to _visualize; plt.gca() object
                 show             : Indicates Whether to Graph the Pre-Processed Signal Upon Pipeline Generation
+                ax               : Axis to Pass to _visualize; plt.gca() object
 
             Returns:
                 self.z_dFF       : Normalized, Filtered, Baseline-Corrected signal Channel
@@ -97,12 +97,9 @@ class Preprocess:
         self.compare_and_baseline(baseline_method)
         self.fit(fit_method)
 
-        if self.detrended:
-            self.z_dFF = self.detrended_signal - self.fitted_ref
-        else:
-            self.z_dFF = (self.detrended_signal - self.fitted_ref) / self.fitted_ref
+        self.z_dFF = self.detrended_signal - self.fitted_ref
 
-        if detrend_last:
+        if detrend_last and not self.detrended:
             self.z_dFF = self.baseline(baseline_method, self.z_dFF)
 
         if show:
@@ -170,6 +167,7 @@ class Preprocess:
             reference_baseline = self.lpf_baseline(self.smoothed_ref)
         else:
             raise Exception("Unsupported Detrending Method")
+
         self.signal_baseline = signal_baseline
         self.reference_baseline = reference_baseline
 
@@ -178,15 +176,14 @@ class Preprocess:
         model = sm.OLS(Y, X)
         results = model.fit()
         r_squared = results.rsquared
-        self.r2 = r_squared
 
         if r_squared < self.r_squared_threshold:
             self.detrended_signal = (
                 self.smoothed_signal - signal_baseline[: len(self.smoothed_signal)]
             )
             self.detrended_ref = (
-                self.smoothed_ref
-            )  # - reference_baseline[:len(self.smoothed_ref)]
+                self.smoothed_ref - reference_baseline[: len(self.smoothed_ref)]
+            )
             self.detrended = True
         else:
             self.detrended_signal = self.smoothed_signal
@@ -239,10 +236,6 @@ class Preprocess:
         self.z_ref = self.detrended_ref
 
         if method == "lasso" or method == "l":
-            # if (self.positive_coefficients):
-            #     lin = Lasso(alpha=0,precompute=True,max_iter=1000, positive=True, random_state=9999, selection='random')
-            # else:
-            #     lin = Lasso(alpha=0,precompute=True,max_iter=1000, positive=False, random_state=9999, selection='random')
             lin = LinearRegression(
                 positive=self.positive_coefficients, fit_intercept=True
             )
@@ -250,7 +243,6 @@ class Preprocess:
                 self.detrended_ref.reshape(len(self.detrended_ref), 1),
                 self.detrended_signal.reshape(len(self.detrended_ref), 1),
             )
-            print(lin.coef_)
             self.fitted_ref = lin.predict(
                 self.detrended_ref.reshape(len(self.detrended_ref), 1)
             ).reshape(
