@@ -24,6 +24,8 @@ def fit_reference(
 
     Returns:
         fitted_reference: np.ndarray
+        z_signal: np.ndarray preprocessed signal channel
+        z_reference: np.ndarray preprocessed reference channel
     """
     data = Preprocess(
         timeseries,
@@ -37,4 +39,4 @@ def fit_reference(
         r_squared_threshold,
     )
     data.pipeline(smoothing_method, baseline_method, fit_method, detrend_last)
-    return data.fitted_ref
+    return data.z_ref, data.z_signal, data.fitted_ref
