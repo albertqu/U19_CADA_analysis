@@ -1350,7 +1350,7 @@ def FP_quality_visualization(
             raw_reference, raw_signal, use_raw=False, remove=drop_frame
         )
     else:
-        reference_fitted = fit_reference(
+        z_reference, z_signal, z_reference_fitted = fit_reference(
             ftime,
             raw_reference,
             raw_signal,
@@ -1365,9 +1365,6 @@ def FP_quality_visualization(
             baseline_method="lpf",
             fit_method="l",
         )
-        z_reference = raw_reference[drop_frame:]
-        z_signal = raw_signal[drop_frame:]
-        z_reference_fitted = reference_fitted
     sig_dict = {
         "reference": z_reference,
         "signal": z_signal,
