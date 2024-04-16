@@ -266,7 +266,7 @@ class FPSeries:
                     self.neural_df[c] = transform_func(self.neural_df[c])
         # update time unit to match BehaviorMat
 
-    def diagnose_multi_channels(self, viz=True, plot_path=None):
+    def diagnose_multi_channels(self, viz=True, plot_path=None, method="lossless"):
         # Step 1: Visualize the Discontinuity in first 5 min
         # whole session visualization
         # Step 2:
@@ -287,6 +287,7 @@ class FPSeries:
                     time_unit=self.params["time_unit"],
                     sig_channel=ch,
                     control_channel=control_ch,
+                    method=method,
                     roi=roi,
                     tag=fig_tag,
                     viz=viz,

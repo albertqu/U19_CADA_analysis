@@ -629,9 +629,9 @@ class NeuroBehaviorMat:
             event=event,
             method="mean",
         ).reset_index(drop=True)
-        nb_df.loc[
-            nonansels, list(dim_red1.columns) + list(dim_red2.columns)
-        ] = pd.concat([dim_red1, dim_red2], axis=1).values
+        nb_df.loc[nonansels, list(dim_red1.columns) + list(dim_red2.columns)] = (
+            pd.concat([dim_red1, dim_red2], axis=1).values
+        )
         return nb_df
 
     def debase_gradient(self, nb_df, event):
@@ -869,9 +869,9 @@ class PS_NBMat(NeuroBehaviorMat):
 
         temp_df.loc[temp_df["rewarded{t-2}"] & temp_df["rewarded{t-1}"], "OH"] = "RR"
         temp_df.loc[(~temp_df["rewarded{t-2}"]) & temp_df["rewarded{t-1}"], "OH"] = "UR"
-        temp_df.loc[
-            (~temp_df["rewarded{t-2}"]) & (~temp_df["rewarded{t-1}"]), "OH"
-        ] = "UU"
+        temp_df.loc[(~temp_df["rewarded{t-2}"]) & (~temp_df["rewarded{t-1}"]), "OH"] = (
+            "UU"
+        )
         temp_df.loc[temp_df["rewarded{t-2}"] & (~temp_df["rewarded{t-1}"]), "OH"] = "RU"
         test_df.loc[nonancols, "OH"] = temp_df["OH"].values
         # nonan cols for switch history
@@ -1007,7 +1007,9 @@ class NBExperiment:
     def encode_to_filename(self, animal, session, ftypes="processed_all"):
         return NotImplemented
 
-    def align_lagged_view(self, proj, events, laglist=None, diagnose=False, method=None, **kwargs):
+    def align_lagged_view(
+        self, proj, events, laglist=None, diagnose=False, method=None, **kwargs
+    ):
         """
         Given the project code specified in `proj`, look through metadata loaded through `self.info_name`
         and align each session's neural data to `events`. If specified, lag the neural data according to
@@ -1053,7 +1055,7 @@ class NBExperiment:
                 logging.info(f"skipping {animal} {session}")
             else:
                 try:
-                    met = method if method is not None else 'ZdF_jove'
+                    met = method if method is not None else "ZdF_jove"
                     bdf, dff_df = (
                         bmat.todf(),
                         neuro_series.calculate_dff(method=met),
@@ -1163,7 +1165,18 @@ class NBExperiment:
             final_bdf.loc[final_bdf["opto_stim"] != 1, "stimulation_off"] = None
         return final_bdf
 
-    def neural_sig_check(self, proj, **kwargs):
+    def neural_sig_check(self, proj, method="lossless", **kwargs):
+        """
+        Given a project, which is the selector for what subjects are included in the analysis,
+        perform photometry preprocessing and visualizes data quality for and generates a plot for
+        each single session.
+
+        proj: str, only select animals with ID of the form: '[proj]XX'
+        method: str, default: 'lossless'
+            specifies specific method used for preprocessing, check FP_quality_visualization function
+            for more details.
+        **kwargs: dataframe keyword selectors to specify sessions, e.g. cell_type='D1'
+        """
         proj_sel = self.meta["animal"].str.startswith(proj)
         meta_sel = df_select_kwargs(self.meta, return_index=True, **kwargs)
 
@@ -1174,7 +1187,7 @@ class NBExperiment:
                 _, neuro_series = self.load_animal_session(animal, session)
                 qual_check_folder = oj(self.plot_path, "FP_quality_check")
                 sig_scores = neuro_series.diagnose_multi_channels(
-                    plot_path=qual_check_folder
+                    plot_path=qual_check_folder, method=method
                 )
             except:
                 logging.warning(f"Error in {animal} {session}")
@@ -1352,7 +1365,7 @@ class RR_Expr(NBExperiment):
         super().__init__(folder, modeling_id, cache)
         self.folder = folder
         pathlist = folder.split(os.sep)[:-1] + ["plots"]
-        self.plot_path = oj(os.sep, *pathlist)
+        self.plot_path = oj(os.sep, os.sep.join(pathlist))
         print(f"Changing plot_path as {self.plot_path}")
         if not os.path.exists(self.plot_path):
             os.makedirs(self.plot_path)
