@@ -8,9 +8,8 @@ output:
   pdf_document:
     number_sections: true
 ---
-check tutorials: 
-https://ourcodingclub.github.io/tutorials/mixed-models/
 
+check tutorials: <https://ourcodingclub.github.io/tutorials/mixed-models/>
 
 ```{r setup, echo = FALSE, message=FALSE, warning=FALSE}
 # load in useful packages
@@ -20,6 +19,8 @@ library(lubridate)
 library(stringr)
 library(ggplot2)
 library(dplyr)
+library(lme4)
+library(lmerTest)
 # set default knitr chunks
 knitr::opts_chunk$set(
   echo = FALSE,  # don't print the code chunk
@@ -43,6 +44,46 @@ reset_index <- function(df) {
 # note that the cache = TRUE chunk argument means that the results of this 
 # chunk are saved so it doesn't need to be re-run every time you compile the pdf
 # load the dates data
+data_root <- "D:/U19/data/RR/caching/rglmer/"
+source_file <- "rglmer_archT_5D1.csv"
+psep = ".Platform$file.sep"
+
+data <- read.table(paste0(data_root, source_file), sep=",", header=TRUE)
+data <- mutate(data, across(c("stimType", "restaurant"), as.factor)) 
+data <- mutate(data, animal=as.factor(animal), accept=as.double(accept),
+               restaurant=relevel(as.factor(restaurant), "2"))
+
+head(data)
+```
+
+```{r glmer}
+gm <- glmer(accept ~ offer_prob:Lstim + (offer_prob:Lstim|animal)+
+              offer_prob:Rstim + (offer_prob:Rstim |animal) + 
+              offer_prob + (offer_prob|animal) +
+              Lstim + (Lstim|animal) + Rstim + (Rstim|animal), data=data, 
+            # verbose=TRUE, 
+            family=binomial, 
+            nAGQ=0, control=glmerControl(optimizer="nloptwrap"))
+summary(gm)
+```
+
+```{r}
+library(blme)
+fm <- bglmer(accept ~ offer_prob:Lstim + (offer_prob:Lstim|animal)+
+              offer_prob:Rstim + (offer_prob:Rstim |animal) + 
+              offer_prob + (offer_prob|animal) +
+              Lstim + (Lstim|animal) + Rstim + (Rstim|animal), data=data, 
+            # verbose=TRUE, 
+            family=binomial, nAGQ=0, cov.prior=gamma
+  
+)
+```
+
+
+```{r load-data-old, echo = FALSE, message = FALSE, warning = FALSE, cache = TRUE}
+# note that the cache = TRUE chunk argument means that the results of this 
+# chunk are saved so it doesn't need to be re-run every time you compile the pdf
+# load the dates data
 data_root <- "D:/U19/data/RR/"
 source_file <- 'rrArchT_glmer_R.csv'
 psep = ".Platform$file.sep"
@@ -54,12 +95,14 @@ data <- mutate(data, animal=as.factor(animal), accept=as.double(accept),
                restaurant=relevel(as.factor(restaurant), "2")) 
 head(data)
 ```
+
+
+
 ```{r}
 data %>% 
   select(animal, restaurant, tone_prob, stimType, accept, plugged_in, quit_time) %>% 
   filter(stimType %in% c('stim', 'nostim'), animal=="RRM039", plugged_in=="L", !is.na(quit_time))
 ```
-
 
 ## Data consistency check with Python Psychometric Curve
 
@@ -144,7 +187,6 @@ names(dt_p_df)[3:4] = c("stdE", "p_val")
 dt_p_df %>% filter(p_val <= 0.05, grepl("tone", index))
 ```
 
-
 ```{r stim_only_interaction_dt, echo = TRUE, message=FALSE, warning=FALSE}
 df_list = list()
 i = 1
@@ -170,7 +212,6 @@ dt_p_df <- do.call(rbind, df_list)
 names(dt_p_df)[3:4] = c("stdE", "p_val")
 dt_p_df %>% filter(p_val <= 0.05, grepl("tone", index))
 ```
-
 
 ```{r stim_only_gaussian_dt, echo = TRUE, message=FALSE, warning=FALSE}
 df_list = list()
@@ -198,7 +239,6 @@ names(dt_p_df)[3:4] = c("stdE", "p_val")
 dt_p_df %>% filter(p_val <= 0.05, grepl("tone", index))
 ```
 
-
 ```{r stim_only_gaussian_dt_nointer, echo = TRUE, message=FALSE, warning=FALSE}
 df_list = list()
 i = 1
@@ -225,8 +265,6 @@ names(dt_p_df)[3:4] = c("stdE", "p_val")
 dt_p_df %>% filter(p_val <= 0.05, grepl("stim", index))
 ```
 
-
-
 GLM gaussian and lm yield similar results
 
 ```{r, fig.width=10,fig.height=11}
@@ -246,9 +284,8 @@ glm(decision_time ~ restaurant + tone_prob, data=d39L, family=Gamma) %>% summary
 glm(decision_time ~ restaurant + tone_prob, data=d39L, family=gaussian()) %>% summary()
 ```
 
-
-
 ## EDA: stimulation on quit_time
+
 ```{r, fig.width=15,fig.height=11}
 data %>% 
   select(animal, restaurant, tone_prob, stimType, decision_time, plugged_in, quit_time) %>% 
@@ -282,7 +319,6 @@ dt_p_df <- do.call(rbind, df_list)
 names(dt_p_df)[3:4] = c("stdE", "p_val")
 dt_p_df %>% filter(p_val <= 0.05, grepl("stim", index))
 ```
-
 
 ```{r}
 ivw_mean <- function(x, group) {
@@ -367,8 +403,4 @@ names(accept_p_df)[3:4] = c("stdE", "p_val")
 accept_p_df %>% filter(p_val <= 0.05, grepl("stim", index))
 ```
 
-
-```
-toneprob +  restaurant*animal
-```
-
+    toneprob +  restaurant*animal

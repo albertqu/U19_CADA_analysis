@@ -11,6 +11,11 @@ from statannotations.Annotator import Annotator
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from sklearn.linear_model import LassoCV
 from utils_bsd.configs import RAND_STATE
+import rpy2
+from rpy2.robjects.packages import importr
+from rpy2.robjects import pandas2ri, numpy2ri
+from rpy2.robjects.conversion import localconverter
+import rpy2.robjects as ro
 
 
 def calculate_trial2sw(df):
@@ -102,6 +107,20 @@ def proportion_test(df, dv, between, a, b, alternative="two-sided"):
     ctab = pd.crosstab(df[dv], df[between])
     ctab = ctab.loc[[1, 0], [a, b]].values
     return stats.fisher_exact(ctab, alternative=alternative)
+
+
+def extract_OLS_coef(reg_results, X):
+    coef_df = pd.concat(
+        [reg_results.params, reg_results.pvalues, reg_results.conf_int()], axis=1
+    ).reset_index()
+    coef_df.columns = ["feature", "weight", "pval", "C_lb", "C_ub"]
+
+    # calculate VIF:
+    if isinstance(X, pd.DataFrame):
+        X = X.values
+    vifs = [variance_inflation_factor(X, i) for i in range(X.shape[1])]
+    coef_df["VIF"] = vifs
+    return coef_df
 
 
 def ols_testing(df, y, x_vars, norm_x=False):
@@ -215,3 +234,49 @@ def boxplot_stats(df, x, y, ax=None, **kwargs):
         annotator.apply_and_annotate()
     sns.despine()
     return ax, (p, posthoc_result)
+
+
+#############################################
+################ R stats ####################
+#############################################
+
+
+def rlmer(lmer_df, formula):
+    def pandas2R(df):
+        """Local conversion of pandas dataframe to R dataframe as recommended by rpy2"""
+        with localconverter(ro.default_converter + pandas2ri.converter):
+            data = ro.conversion.py2rpy(df)
+        return data
+
+    def R2pandas(rdf):
+        with localconverter(ro.default_converter + pandas2ri.converter):
+            df = ro.conversion.rpy2py(rdf)
+        return df
+
+    rbase = importr("base")
+    utils = importr("utils")
+    lme4 = importr("lme4")
+    lmerTest = importr("lmerTest")
+    broom = importr("broom.mixed")
+    pd.DataFrame.iteritems = pd.DataFrame.items
+    rdf = pandas2R(lmer_df)
+    fm1 = lmerTest.lmer(formula, data=rdf)
+    rstring = """
+        function(model){
+        summary(model)
+        tidy(model)
+        }
+    """
+    # rstring = (
+    #     """
+    #     function(model){
+    #     out.coef <- data.frame(unclass(summary(model))$coefficients)
+    #     out <- out.coef
+    #     list(out,rownames(out))
+    #     }
+    # """
+    # )
+    estimates_func = ro.r(rstring)
+    out_summary = estimates_func(fm1)
+    df = R2pandas(out_summary)
+    return df

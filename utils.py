@@ -1455,7 +1455,7 @@ def FP_quality_visualization(
             tag = tag + " "
         plt.subplots_adjust(hspace=0.4)
         fig.suptitle(
-            f"{tag}{ch} {roi_title}auc-roc score ({roc_method}): {auc_score:.4f}",
+            f"{method} {tag}{ch} {roi_title}auc-roc score ({roc_method}): {auc_score:.4f}",
             fontsize="xx-large",
         )
 

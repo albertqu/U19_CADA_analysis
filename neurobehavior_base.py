@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegressionCV
 from statsmodels.tsa.tsatools import lagmat
 from utils import decode_from_regfeature
+from utils_system import find_files_recursive
 import logging
 import patsy
 import sklearn
@@ -262,7 +263,6 @@ class NeuroBehaviorMat:
         assert np.all(
             [len(np.unique(behavior_df[v])) == 1 for v in id_set]
         ), "not unique"
-        logging.info("Using jove zdff method for dff calculation by default")
         nb_dfs = []
         dff_cname = "ZdFF"
         result_dfs = []
@@ -1007,6 +1007,9 @@ class NBExperiment:
     def encode_to_filename(self, animal, session, ftypes="processed_all"):
         return NotImplemented
 
+    def clear_cache(self, filetype):
+        find_files_recursive(self.folder, filetype, os.remove, verbose=True)
+
     def align_lagged_view(
         self, proj, events, laglist=None, diagnose=False, method=None, **kwargs
     ):
@@ -1049,13 +1052,19 @@ class NBExperiment:
             except Exception:
                 logging.warning(f"Error in {animal} {session}")
                 traceback.print_exc()
-                bmat, ps_series = None, None
+                bmat, neuro_series = None, None
 
             if bmat is None:
                 logging.info(f"skipping {animal} {session}")
             else:
                 try:
-                    met = method if method is not None else "ZdF_jove"
+                    if method is None:
+                        logging.info(
+                            "Using lossless method for dff calculation by default"
+                        )
+                        met = "lossless"
+                    else:
+                        met = method
                     bdf, dff_df = (
                         bmat.todf(),
                         neuro_series.calculate_dff(method=met),
@@ -1063,7 +1072,9 @@ class NBExperiment:
                     nb_df = self.nbm.align_B2N_dff_ID(bdf, dff_df, events, form="wide")
                     nb_df = self.nbm.extend_features(nb_df)
                     if diagnose:
-                        sig_scores = neuro_series.diagnose_multi_channels(viz=False)
+                        sig_scores = neuro_series.diagnose_multi_channels(
+                            method=met, viz=False
+                        )
                         for sigch in sig_scores:
                             sigch_score_col = neuro_series.quality_metric + f"_{sigch}"
                             self.meta.loc[
@@ -1074,10 +1085,14 @@ class NBExperiment:
                     if laglist is not None:
                         nb_df = self.nbm.lag_wide_df_ID(nb_df, laglist)
                     all_nb_dfs.append(nb_df)
-                except Exception:
+                except Exception or ValueError:
                     logging.warning(
-                        f"Error in calculating dff or AUC-score for {animal}, {session}, check signal"
+                        f"Error in calculating bdf, dff or AUC-score for {animal}, {session}, check signal"
                     )
+                    traceback.print_exc()
+                    bmat, neuro_series = None, None
+        if not all_nb_dfs:
+            return None
 
         all_nb_df = pd.concat(all_nb_dfs, axis=0)
         return all_nb_df.merge(self.meta, how="left", on=["animal", "session"])
@@ -1140,7 +1155,7 @@ class NBExperiment:
                 traceback.print_exc()
                 logging.warning(f"Error in {animal} {session}")
                 errors.append([animal, session, "loading"])
-                bmat, ps_series = None, None
+                bmat, neuro_series = None, None
 
             if bmat is None:
                 logging.info(f"skipping {animal} {session}")
@@ -1160,7 +1175,7 @@ class NBExperiment:
             error_df.to_csv(os.path.join(self.folder, "error_log.csv"))
         all_bdf = pd.concat(all_bdfs, axis=0)
         final_bdf = all_bdf.merge(self.meta, how="left", on=["animal", "session"])
-        if "stimulation_on" in all_bdf.columns:
+        if "opto_stim" in final_bdf.columns:
             final_bdf.loc[final_bdf["opto_stim"] != 1, "stimulation_on"] = None
             final_bdf.loc[final_bdf["opto_stim"] != 1, "stimulation_off"] = None
         return final_bdf

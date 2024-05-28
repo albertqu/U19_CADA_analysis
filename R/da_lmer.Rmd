@@ -1,0 +1,164 @@
+---
+title: "RR ArchT GLMER"
+author: "Albert Qü"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+header-includes:
+   - \usepackage{float}
+output: 
+  pdf_document:
+    number_sections: true
+---
+
+check tutorials: <https://ourcodingclub.github.io/tutorials/mixed-models/>
+
+```{r setup, echo = FALSE, message=FALSE, warning=FALSE}
+# load in useful packages
+library(tidyverse)
+library(forcats)
+library(lubridate)
+library(stringr)
+library(ggplot2)
+library(dplyr)
+library(lmerTest)
+library(lme4)
+library(broom.mixed)
+
+# set default knitr chunks
+knitr::opts_chunk$set(
+  echo = FALSE,  # don't print the code chunk
+  warning = FALSE,  # don't print warnings
+  message = FALSE,  # don't print messages
+  fig.width = 6,  # set default width of figures
+  fig.height = 4,  # set default height of figures
+  fig.align = "center",  # always align figure in center
+  fig.pos = "H",  # always plot figure at the exact location of the code chunk
+  cache = FALSE)  # don't cache results
+
+reset_index <- function(df) {
+  df <- cbind(index = rownames(df), df)
+  rownames(df) <- 1:nrow(df)
+  return(df)
+}
+```
+
+```{r load-data, echo = FALSE, message = FALSE, warning = FALSE, cache = TRUE}
+# note that the cache = TRUE chunk argument means that the results of this 
+# chunk are saved so it doesn't need to be re-run every time you compile the pdf
+# load the dates data
+data_root <- "D:/U19/data/Probswitch/caching/lmer/"
+source_file <- 'DA_reg3R1U_lmer.csv'
+psep = ".Platform$file.sep"
+
+data <- read.table(paste0(data_root, source_file), sep=",", header=TRUE)
+data <- mutate(data, animal=as.factor(animal))
+head(data)
+```
+
+```{r lmer_simp}
+mixed.lmer <- lmer(DA ~ Reward + Reward | animal
+                   , data = data)
+# library(lmerTest)
+# 
+# summary(mixed.lmer)
+# anova(mixed.lmer)
+tidy(mixed.lmer)
+```
+
+```{r lmer, echo = FALSE, message=FALSE, warning=FALSE, cache=TRUE}
+mixed.lmer <- lmer(DA ~ Reward:Switch + (Reward:Switch|animal) + 
+                     R_chosen:Switch + (R_chosen:Switch|animal) + 
+                     R_unchosen:Switch + (R_unchosen:Switch|animal) + 
+                     U_chosen:Switch + (U_chosen:Switch|animal) +
+                     Reward:Stay + (Reward:Stay|animal) + 
+                     R_chosen:Stay + (R_chosen:Stay|animal) + 
+                     R_unchosen:Stay + (R_unchosen:Stay|animal) + 
+                     U_chosen:Stay + (U_chosen:Stay|animal) +
+                     Switch
+                   , data = data)
+summary(mixed.lmer)
+```
+
+```{r}
+print(mixed.lmer@beta)
+(mm_plot <- ggplot(data, aes(x = Reward, y = DA, colour = animal)) +
+      geom_point(alpha = 0.5) +
+      theme_classic() +
+      geom_line(data = cbind(data, pred = predict(mixed.lmer)), aes(y = pred), size = 1) +  # adding predicted line from mixed model 
+      theme(legend.position = "none",
+            panel.spacing = unit(2, "lines"))  # adding space between panels
+)
+```
+
+
+```{r}
+coef <- tidy(mixed.lmer) %>% filter(effect=="fixed")
+for (i in 1:length(coef)) {
+  vars = str_split_fixed(coef$term[i], ':', 2)
+  if (length(vars) == 2 & vars[1] == 'Switch') {
+    new = cbind(vars[2], vars[1])
+    coef$term[i] <- str_c(new, collapse = ":")
+  }
+}
+coef$term[1:2] = cbind('base:Stay', 'base:Switch')
+coef[c("feature", "trial_type")] <- str_split_fixed(coef$term, ':', 2)
+print(coef)
+ggplot(coef, aes(x = feature, y = estimate, fill=trial_type)) + geom_bar(stat = "identity") + theme_minimal()
+```
+
+
+```{r save_coef}
+write.csv(coef, paste0(data_root, 'DAreg_3R1U_lmer_results.csv'), row.names = FALSE)
+```
+
+
+```{r expr2}
+mixed.lmer <- lmer(DA ~ Reward:Switch + (Reward:Switch|animal) + 
+                     R_chosen:Switch + (R_chosen:Switch|animal) + 
+                     R_unchosen:Switch + (R_unchosen:Switch|animal) + 
+                     # U_chosen:Switch + (U_chosen:Switch|animal) +
+                     Reward:Stay + (Reward:Stay|animal) + 
+                     R_chosen:Stay + (R_chosen:Stay|animal) + 
+                     R_unchosen:Stay + (R_unchosen:Stay|animal) + 
+                     # U_chosen:Stay + (U_chosen:Stay|animal) +
+                     Switch
+                   , data = data)
+coef <- tidy(mixed.lmer) %>% filter(effect=="fixed")
+for (i in 1:length(coef)) {
+  vars = str_split_fixed(coef$term[i], ':', 2)
+  if (length(vars) == 2 & vars[1] == 'Switch') {
+    new = cbind(vars[2], vars[1])
+    coef$term[i] <- str_c(new, collapse = ":")
+  }
+}
+coef$term[1:2] = cbind('base:Stay', 'base:Switch')
+coef[c("feature", "trial_type")] <- str_split_fixed(coef$term, ':', 2)
+# write.csv(coef, paste0(data_root, 'DAreg_3R_lmer_results.csv'), row.names = FALSE)
+coef
+```
+
+```{r}
+# following shows how tensor pruduct deals nicely with # badly scaled covariates (range of x 5% of range of z ) 
+require(mgcv) 
+test1 <- function(x,z,sx=0.3,sz=0.4) {
+  x <- x*20 
+  (pi**sx*sz)*(1.2*exp(-(x-0.2)^2/sx^2-(z-0.3)^2/sz^2) + 0.8*exp(-(x-0.7)^2/sx^2-(z-0.8)^2/sz^2)) } 
+n <- 500 
+old.par <- par(mfrow=c(2,2)) 
+x <- runif(n)/20; z <- runif(n); xs <- seq(0,1,length=30)/20;zs <- seq(0,1,length=30) 
+pr <- data.frame(x=rep(xs,30),z=rep(zs,rep(30,30))) 
+truth <- matrix(test1(pr$x,pr$z),30,30) 
+f <- test1(x,z) 
+y <- f + rnorm(n)*0.2 
+b1 <- gam(y~s(x,z)) 
+persp(xs,zs,truth);title("truth") 
+vis.gam(b1);title("t.p.r.s") 
+b2 <- gam(y~te(x,z)) 
+vis.gam(b2);title("tensor product") 
+b3 <- gam(y~ ti(x) + ti(z) + ti(x,z)) 
+vis.gam(b3);title("tensor anova") ## now illustrate partial ANOVA decomp... 
+vis.gam(b3);title("full anova") 
+b4 <- gam(y~ ti(x) + ti(x,z,mc=c(0,1))) ## note z constrained! 
+vis.gam(b4);title("partial anova") 
+plot(b4) 
+par(old.par)
+```

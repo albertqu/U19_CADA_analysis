@@ -23,6 +23,16 @@ def comp(o):
     return int(re.findall(r"\d+", o)[-1])
 
 
+def find_vid_folder_animal(root, animal):
+    d1, d2 = oj(root, "D1"), oj(root, "A2A")
+    if animal in os.listdir(d1):
+        return oj(d1, animal, "video")
+    elif animal in os.listdir(d2):
+        return oj(d2, animal, "video")
+    else:
+        return None
+
+
 def jpg_to_vid_folder(folder, output):
     """converts a folder of jpg files to video"""
     img_array = []

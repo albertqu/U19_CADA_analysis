@@ -276,12 +276,12 @@ def neural_dynamics_plot(
         vmax = np.max(hue_vals) if vmax is None else vmax
         norm_f = Normalize(vmin=vmin, vmax=vmax)
         cmap = sns.color_palette(palette, as_cmap=True)
+        plt.colorbar(plt.cm.ScalarMappable(norm=norm_f, cmap=cmap), ax=ax, label=hue)
 
     if cropcol is None:
-        crop_thres = np.full_like(xts, np.max(xts))
+        crop_thres = np.full(len(data), np.max(xts))
     else:
         crop_thres = data_df[cropcol].values
-
     if ax is None:
         fig = plt.figure(figsize=(10, 10))
         ax = plt.gca()

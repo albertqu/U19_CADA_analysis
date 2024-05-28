@@ -128,6 +128,11 @@ class RRBehaviorMat(BehaviorMat):
         for ev in self.fields:
             result_df[ev] = result_df[ev].astype(float)
         result_df["tone_prob"] = result_df["tone_prob"].astype(float)
+        result_df.rename(columns={"tone_prob": "offer_prob"}, inplace=True)
+        result_df["quit_time"] = result_df["quit"] - result_df["choice"]
+        # result_df["offer_wait"] = result_df["tone_prob"].map(
+        #     {0.0: 7, 20.0: 5, 80.0: 3, 100.0: 1}
+        # )
         old_cols = list(result_df.columns)
         result_df["animal"] = self.animal
         result_df["session"] = self.session

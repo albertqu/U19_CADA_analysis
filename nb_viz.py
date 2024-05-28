@@ -549,3 +549,161 @@ def plot_correlation(dataset: pd.DataFrame, dendo=True) -> None:
     corrmap.ax_row_dendrogram.set_visible(dendo)
     corrmap.ax_col_dendrogram.set_visible(dendo)
     return corrmap
+
+
+def df_barplot_w_ebar(
+    df,
+    x,
+    y,
+    ebar,
+    ebar_u=None,
+    hue=None,
+    x_order=None,
+    hue_order=None,
+    width=0.8,
+    ax=None,
+    palette=None,
+):
+    if x_order is None:
+        xs = df[x].unique()
+    else:
+        xs = x_order
+
+    ebar_args = [ebar] if ebar_u is None else [ebar, ebar_u]
+    if hue is not None:
+        if hue_order is None:
+            hues = df[hue].unique()
+        else:
+            hues = hue_order
+        k_hue = len(hues)
+        uw = width / k_hue
+        ys = [[0] * len(xs) for _ in range(k_hue)]
+        if ebar_u is None:
+            ebars = [[0] * len(xs) for _ in range(k_hue)]
+        else:
+            ebars = [np.zeros((2, len(xs))) for _ in range(k_hue)]
+        for i in range(k_hue):
+            for j in range(len(xs)):
+                vs = df.loc[
+                    (df[x] == xs[j]) & (df[hue] == hues[i]), [y] + ebar_args
+                ].values.ravel()
+                ys[i][j] = vs[0]
+                if ebar_u is None:
+                    ebars[i][j] = vs[1]
+                else:
+                    ebars[i][:, j] = vs[1:]
+    else:
+        uw = width
+        k_hue = 1
+        ys = [[0] * len(xs)]
+        if ebar_u is None:
+            ebars = [[0] * len(xs)]
+        else:
+            ebars = [np.zeros((2, len(xs)))]
+        for j in range(len(xs)):
+            vs = df.loc[df[x] == xs[j], [y] + ebar_args].values.ravel()
+            assert len(vs) <= 3, "duplicate values for x, hue pairs"
+            ys[0][j] = vs[0]
+            if ebar_u is None:
+                ebars[0][j] = vs[1]
+            else:
+                ebars[0][:, j] = vs[1:]
+
+    # Position of bars on x-axis
+    ind = np.arange(len(xs))
+
+    if ax is None:
+        # Figure size
+        plt.figure(figsize=(10, 5))
+        ax = plt.gca()
+
+    if palette is None:
+        palette = sns.color_palette(n_colors=k_hue)
+    # Plotting
+    for i in range(k_hue):
+        ax.bar(ind + i * uw, ys[i], width=uw, yerr=ebars[i], color=palette[i])
+    if hue is not None:
+        ax.legend(hues, loc="best")
+
+    ax.set_xlabel(x)
+    ax.set_ylabel(y)
+    ax.set_xticks(ind + width / 2, xs)
+    return ax
+
+
+def get_sample_size_facegrid(
+    data=None, row=None, col=None, hue=None, style=None, **kwargs
+):
+
+    def sample_size_recursive(data, categories, pre_arg=""):
+        if categories:
+            category = categories[0]
+            assert category in data.columns, f"DATA must contain category {category}"
+            for ctg in np.unique(data[category]):
+                ctg_arg = f"category={ctg}"
+                sample_size_recursive(
+                    data[data[category] == ctg],
+                    categories[1:],
+                    pre_arg + ", " + ctg_arg,
+                )
+        else:
+            sub_df = data[["animal", "session", "trial"]].drop_duplicates()
+            n_animal = len(sub_df["animal"].unique())
+            n_trial = len(sub_df)
+            n_session = len(np.unique(sub_df["animal"] + sub_df["session"]))
+            print(pre_arg + f": A:{n_animal}, S: {n_session}, T: {n_trial}")
+
+    prearg = ""
+    if col is not None:
+        prearg = f"{col}={data[col].unique()[0]}"
+    if row is not None:
+        prearg = prearg + f", {row}={data[row].unique()[0]}"
+    sample_size_recursive(data, [c for c in [hue, style] if c is not None], prearg)
+
+
+def plot_neural_trial_average(
+    nb_df,
+    pse,
+    event,
+    hue=None,
+    style=None,
+    row=None,
+    col=None,
+    xlabel=None,
+    ylabel=None,
+    debase_event=None,
+    **kwargs,
+):
+    if debase_event:
+        nb_df = nb_df.copy()
+        pse.nbm.debase_gradient(nb_df, debase_event)
+    plot_df = pse.nbm.lag_wide_df(nb_df, {f"{event}_neur": {"long": True}}).reset_index(
+        drop=True
+    )
+    x = f"{event}_neur_time"
+    y = f"{event}_neur_ZdFF"
+    params = [x, y, row, col, hue, style]
+    sub_cols = [p for p in params if (p is not None)]
+    # processing plotting data
+    plot_df = pse.meta_safe_drop(plot_df[sub_cols]).reset_index(drop=True)
+    g = sns.relplot(
+        data=plot_df,
+        x=f"{event}_neur_time",
+        y=f"{event}_neur_ZdFF",
+        hue=hue,
+        style=style,
+        kind="line",
+        **kwargs,
+    )
+    if ylabel is not None:
+        g.set_ylabels(ylabel)
+    else:
+        g.set_ylabels("Z(DA)")
+    if xlabel is not None:
+        g.set_xlabels(xlabel)
+    else:
+        g.set_xlabels(f"Time since {event} revealed (s)")
+    g.map_dataframe(lambda data, **kwargs: plt.gca().axvline(0, c="gray", ls="--"))
+    g.set_titles(row_template="{row_name}", col_template="{col_name}")
+    sns.despine()
+    return g

@@ -7,6 +7,7 @@ import re
 import numpy as np
 from copy import deepcopy
 import classes as cl
+import logging
 
 
 def preprocessing(filepath, eventcodedict):
@@ -22,19 +23,19 @@ def preprocessing(filepath, eventcodedict):
 
     keys = list(eventcodedict.keys())
     bonsai_output["timestamp"] = bonsai_output["timestamp"].map(strip).astype(float)
+    first_timestamp = bonsai_output.iloc[0, 0]
+    bonsai_output["timestamp"] = bonsai_output["timestamp"].map(
+        lambda t: (t - first_timestamp) / 1000
+    )
     bonsai_output = bonsai_output[bonsai_output.eventcode.isin(keys)].reset_index(
         drop=True
     )
     bonsai_output["event"] = bonsai_output["eventcode"].map(
         lambda code: eventcodedict[code]
     )
-    first_timestamp = bonsai_output.iloc[0, 0]
     first = bonsai_output[bonsai_output["eventcode"] == 9].index[0]
     bonsai_output = bonsai_output[bonsai_output["eventcode"] != 9].reset_index(
         drop=True
-    )
-    bonsai_output["timestamp"] = bonsai_output["timestamp"].map(
-        lambda t: (t - first_timestamp) / 1000
     )
     bonsai_output = bonsai_output[["event", "timestamp", "eventcode"]]
     bonsai_output_final = bonsai_output[first:]
@@ -178,8 +179,13 @@ def trial_info_filler(trials):
     Fill in information about each trial by interating through all trials
     :param trials: DLL of Trial Objects
     :return: Modifies trials, returns nothing
+    TODO: 1. fix issues where reject occurs earlier than T_Entry,
+        usually that implies trial ends before starting
+        2. Sometimes there is an Exit following entry, a putative quit, but fails to be labeled
     """
     current_trial = trials.sentinel.next
+    # verbose = False
+    trial_i = 0
     while current_trial != trials.sentinel:  # current_trial is a Trial object
         """
         current_trial: Trial Object
@@ -187,6 +193,10 @@ def trial_info_filler(trials):
         current_trial.sentinel.next.item.sentinel.next: a single bonsai event with next and prev
         current_trial.sentinel.next.item.sentinel.next.restaurant: restaurant of that single bonsai event
         """
+        # if (trial_i >= 63) and (trial_i <= 68):
+        #     verbose = True
+        # else:
+        #     verbose = False
 
         """Fill Restaurant"""
         current_trial.restaurant = current_trial.item[0][-2]
@@ -196,7 +206,7 @@ def trial_info_filler(trials):
         def trial_detector(sublist, index):
             if "enter" in str(sublist[index:-1]):  # Enter can't be the last event
                 """accepting offer"""
-                enter_index = getindex(sublist, "enter")
+                enter_index = getindex(sublist[index:], "enter") + index
                 current_trial.choice = sublist[enter_index][1]
                 current_trial.accept = 1
                 if "servo open" in str(sublist[index:]):
@@ -251,7 +261,7 @@ def trial_info_filler(trials):
                     current_trial.quit = sublist[reject_index][1]
                     current_trial.trial_end = sublist[reject_index][1]
                     current_trial.comment = (
-                        "animal accepted but quit but quit wasnot timestamped"
+                        "animal accepted but quit but quit was not timestamped"
                     )
                 else:
                     current_trial.quit = sublist[-1][1]
@@ -266,6 +276,10 @@ def trial_info_filler(trials):
             else:
                 current_trial.choice = sublist[-1][1]
                 current_trial.trial_end = sublist[-1][1]
+                # TODO: odd case TEntry is valid but has long reject latency
+                logging.warning(
+                    f"{trial_i}: Entered T junction but no reject/quit/enter {sublist}"
+                )
                 current_trial.comment = (
                     "entered T junction but never entered restaurant"
                 )
@@ -273,6 +287,8 @@ def trial_info_filler(trials):
         """Detect Offer"""
         # Create a deep copy such that the original object variable won't be modified
         event_track = deepcopy(current_trial.item)
+        # if verbose:
+        #     print('TRIAL', trial_i, event_track)
 
         """Write events"""
         for j in range(len(event_track)):
@@ -281,8 +297,10 @@ def trial_info_filler(trials):
                 current_trial.tone_prob = event_track[j][-1].split("_")[0]
                 if "tentry" in str(event_track[j:]):
                     """check if tentry happened"""
-                    tentry_index = getindex(event_track, "tentry")
+                    tentry_index = getindex(event_track[j:], "tentry") + j
                     current_trial.T_Entry = event_track[tentry_index][1]
+                    # if verbose:
+                    #     print(f'T{trial_i} TE', event_track[j], tentry_index, event_track[tentry_index:])
                     trial_detector(event_track, tentry_index)
                 elif "enter" in str(event_track[j:]):
                     """t junction entry somehow was not captured"""
@@ -290,7 +308,7 @@ def trial_info_filler(trials):
                     trial_detector(event_track, j)
                 elif "reject" in str(event_track[j:]):
                     """rejecting offer and backtrack into the hallway in current restaurant"""
-                    reject_index = getindex(event_track, "reject")
+                    reject_index = getindex(event_track[j:], "reject") + j
                     current_trial.choice = event_track[reject_index][1]
                     current_trial.trial_end = event_track[reject_index][1]
                     current_trial.comment = (
@@ -328,6 +346,7 @@ def trial_info_filler(trials):
                     tentry_index = getindex(event_track[:j], "tentry")
                     current_trial.T_Entry = event_track[tentry_index][1]
         current_trial = current_trial.next
+        trial_i += 1
 
 
 def trial_merger(trials):
@@ -515,19 +534,17 @@ def write_trial_to_df(trials):
     return -- dataFrame
     """
     current = trials.sentinel.next
-    df = pd.DataFrame.from_dict([trials.sentinel.next.info()])
-    dfs = [df]
+    # df = pd.DataFrame.from_dict([trials.sentinel.next.info()])
+    dfs = []
     while current != trials.sentinel:
         current_df = pd.DataFrame.from_dict([current.info()])
         # df = pd.concat([df, current_df])
         dfs.append(current_df)
         current = current.next
     df = pd.concat(
-        [f for f in dfs if (len(f) > 0) or (np.all(np.isnan(f.values)))], axis=0
+        [f for f in dfs if (len(f) > 0) or (not np.all(np.isnan(f.values)))], axis=0
     )
-    df = df.drop(columns=["item", "firstEventNode", "next", "prev", "enter"]).iloc[
-        1:, :
-    ]
+    df = df.drop(columns=["item", "firstEventNode", "next", "prev", "enter"])
     df = df.rename(columns={"index": "trial_index"}).set_index("trial_index")
     return df
 

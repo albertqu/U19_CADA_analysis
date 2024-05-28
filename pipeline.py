@@ -216,7 +216,8 @@ def organize_RR_structures(root, out=None, fp=False):
         # "RRM042",
         # "RRM051",
         # "RRM052",
-        "RRM046",
+        "RRM054",
+        "RRM056",
         # "RRM048",
         # "RRM049",
     ]  # 'RRM042', 'RRM043', 'RRM044', 'RRM045'
@@ -280,3 +281,82 @@ def organize_RR_local(root, out, category):
     }
 
     pass
+
+
+def RR_organize():
+    ROOT = r"Z:\Restaurant Row\Data"
+    out = r"D:\U19\data\RR\ArchT_raw"  # r"D:\U19\data\RR"
+    organize_RR_structures(ROOT, out)
+
+
+from neurobehavior_base import RR_Expr
+from utils_rr.utils_videos import find_vid_folder_animal
+from loaders.videos import RRVideoLoader
+from utils_rr.utils_pose import generate_behavior_video_with_neural
+from os.path import join as oj
+from multiprocessing import Pool
+import psutil
+import tqdm
+
+
+def generate_neural_with_videos_per_session(
+    animal, session, rse, vidFolder, saveFolder
+):
+    # vidFolder = find_vid_folder_animal(vid_root, animal)
+    # saveFolder = oj(pose_root, animal)
+    # if not os.path.exists(saveFolder):
+    #     os.makedirs(saveFolder)
+    try:
+        vld = RRVideoLoader(vidFolder, animal, session, outpath=saveFolder)
+        bmat, neuro_series = rse.load_animal_session(animal, session)
+        bdf = bmat.todf()
+        vld.realign_time(bmat)
+        generate_behavior_video_with_neural(
+            bdf, neuro_series, vld, label_t=0.3, label=True, overwrite=True
+        )
+        print(animal, session, "Done")
+    except:
+        print(f"Error with video processing {animal} {session}")
+
+
+def generate_neural_videos_all(data_root, vid_root, pose_root):
+    rse = RR_Expr(data_root)
+    sessions = {
+        "RRM026": {151: 2, 160: 2, 167: 2, 172: 2},
+        "RRM027": {155: 1, 170: 2, 175: 3},
+        "RRM028": {123: 2, 130: 2, 136: 1, 141: 3, 151: 3, 156: 3},
+        "RRM029": {125: 2, 130: 2, 141: 2, 153: 2, 158: 3},
+        "RRM030": {139: 3, 143: 3, 146: 3, 149: 2, 154: 3, 159: 3},
+        "RRM031": {125: 2, 130: 1, 134: 3, 139: 1, 143: 3, 146: 3, 149: 2},
+        "RRM032": {118: 1, 122: 3, 128: 3, 132: 1, 135: 3, 138: 2, 143: 3, 147: 3},
+        "RRM033": {118: 1, 122: 2, 132: 2, 135: 2, 138: 2, 143: 3, 147: 3},
+        "RRM035": {195: 1, 198: 1},
+        "RRM036": {161: 1, 169: 1, 172: 1, 176: 3},
+    }
+
+    with Pool(processes=psutil.cpu_count(logical=False)) as pool:
+        results = []
+
+        for animal in sessions:
+            vidFolder = find_vid_folder_animal(vid_root, animal)
+            saveFolder = oj(pose_root, animal)
+            if not os.path.exists(saveFolder):
+                os.makedirs(saveFolder)
+            for sessionN in sessions[animal]:
+                session = f"Day{sessionN}"
+                r = pool.apply_async(
+                    generate_neural_with_videos_per_session,
+                    args=(animal, session, rse, vidFolder, saveFolder),
+                )
+                results.append(r)
+
+        for r in tqdm.tqdm(results):
+            _ = r.get()
+
+
+if __name__ == "__main__":
+    vid_root = r"Z:\Restaurant Row\Data"
+    data_root = r"D:\U19\data\RR\ARJ_raw"
+    pose_root = r"Z:\Restaurant Row\Data\labeled_video_neural"
+    print("running all sessions")
+    generate_neural_videos_all(data_root, vid_root, pose_root)

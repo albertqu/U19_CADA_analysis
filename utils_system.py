@@ -157,6 +157,18 @@ def rename_dir_files_recursive(root, namemap):
                 os.rename(pname, newpname)
 
 
+def find_files_recursive(root, pattern, func, verbose=True):
+    for p in os.listdir(root):
+        pname = os.path.join(root, p)
+        if os.path.isdir(pname):
+            find_files_recursive(pname, pattern, func, verbose)
+        else:
+            if pattern in pname:
+                if verbose:
+                    print("Found", pname)
+                func(pname)
+
+
 def make_stim_blocks(n=20, p=0.25, zero=False):
     # p: percentage of stimulation, p<0.5
     """Use this example to visualize:
@@ -189,7 +201,7 @@ def make_long_stim_blocks(N, p=0.25, n=20):
     return np.concatenate(all_stims)
 
 
-from pipeline import organize_RR_structures
+# from pipeline import organize_RR_structures
 
 if __name__ == "__main__":
     # archive_date = datetime.datetime.strptime("2019/05/31", "%Y/%m/%d")
@@ -198,6 +210,4 @@ if __name__ == "__main__":
     # if not os.path.exists(archive):
     #     os.makedirs(archive)
     # archive_by_date(src_folder, archive, archive_date)
-    ROOT = r"Z:\Restaurant Row\Data"
-    out = r"D:\U19\data\RR\DREADD_raw"  # r"D:\U19\data\RR"
-    organize_RR_structures(ROOT, out)
+    pass

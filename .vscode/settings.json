@@ -3,5 +3,6 @@
         "editor.defaultFormatter": "ms-python.black-formatter"
     },
     "python.formatting.provider": "none",
-    "window.autoDetectColorScheme": true
+    "window.autoDetectColorScheme": true,
+    "editor.defaultFormatter": "ms-python.black-formatter"
 }
