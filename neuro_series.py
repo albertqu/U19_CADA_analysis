@@ -81,7 +81,7 @@ class FPSeries:
                 e.g. {'415nm': ['green_415nm', 'red_415nm'], '470nm': ['green_470nm'], '560nm': ['red_560nm']}
             self.neural_df: output from self.merge_channels, pd.DataFrame with columns ['time'] + rois
 
-        default: "ZdF_jove"
+        default: "ZdF_jove" (old), lossless (new)
 
         Returns: ZdF: making it method dependent, and store in a class variable
         """

@@ -4,5 +4,6 @@
     },
     "python.formatting.provider": "none",
     "window.autoDetectColorScheme": true,
-    "editor.defaultFormatter": "ms-python.black-formatter"
+    "editor.defaultFormatter": "ms-python.black-formatter",
+    "python.analysis.autoImportCompletions": true
 }
