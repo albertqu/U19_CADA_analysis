@@ -14,6 +14,8 @@ from statsmodels.tsa.tsatools import lagmat
 from sklearn.linear_model import LogisticRegression
 import statsmodels.api as sm
 import matplotlib as mpl
+import sys
+from datetime import datetime
 
 plt.subplots_adjust(wspace=0.2, hspace=0.3)
 mpl.rcParams["axes.titlesize"] = 20
@@ -354,9 +356,42 @@ def generate_neural_videos_all(data_root, vid_root, pose_root):
             _ = r.get()
 
 
+def clean_file_with_keywords(keyword, filepaths=None):
+    if filepaths is None:
+        filepaths = [os.path.join(*keyword.split(os.sep)[:-1])]
+        keyword = keyword.split(os.sep)[-1]
+    for fpath in filepaths:
+        for f in os.listdir(fpath):
+            targetf = os.path.join(fpath, f)
+            tdelta = datetime.now() - datetime.fromtimestamp(os.path.getctime(targetf))
+            if (keyword in f) and (tdelta.seconds < 300):
+                print("Deleting", targetf)
+                os.remove(targetf)
+
+
+def clean_bonsai_artifacts():
+    clean_file_with_keywords(sys.argv[1], ["rr_data", "rr_data_FP", "rr_video"])
+
+
 if __name__ == "__main__":
-    vid_root = r"Z:\Restaurant Row\Data"
-    data_root = r"D:\U19\data\RR\ARJ_raw"
-    pose_root = r"Z:\Restaurant Row\Data\labeled_video_neural"
-    print("running all sessions")
-    generate_neural_videos_all(data_root, vid_root, pose_root)
+    # vid_root = r"Z:\Restaurant Row\Data"
+    # data_root = r"D:\U19\data\RR\ARJ_raw"
+    # pose_root = r"Z:\Restaurant Row\Data\labeled_video_neural"
+    # print("running all sessions")
+    # generate_neural_videos_all(data_root, vid_root, pose_root)
+    track_root = r"Z:\Restaurant Row\Data\processed_tracks"
+    for folder in os.listdir(track_root):
+        animal_folder = os.path.join(track_root, folder)
+        if os.path.isdir(animal_folder):
+            for session in os.listdir(animal_folder):
+                session_folder = os.path.join(animal_folder, session)
+                if os.path.isdir(session_folder):
+                    for f in os.listdir(session_folder):
+                        if f.endswith(".csv"):
+                            newf = oj(
+                                session_folder,
+                                f.replace("_processed", "_tracks_processed"),
+                            )
+                            oldf = oj(session_folder, f)
+                            print(oldf, "->", newf)
+                            os.rename(oldf, newf)

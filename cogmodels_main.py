@@ -86,34 +86,49 @@ if __name__ == "__main__":
     # test_model_genrec_eckstein2022()
     # test_model_eckstein2022_RLCF()
     # test_model_eckstein2022_RLCF()
-    print("test V16 2 models RLmeta")
+    print("fast test cross rlg rl4p")
+    models = [RL_Forgetting3p, RL_Grossman, RL_4p, RLCF, RFLR, BRL_fwr, BIModel_fixp]
+    # test_model_identifiability_mp(models, f"{DATA_ARG}_3s5ht")
+    gen_arg = f"{DATA_ARG}_3s5ht"
+    model = RL_Grossman
+    method = "L-BFGS-B"
+
+    gendata = pd.read_csv(
+        os.path.join(
+            CACHE_FOLDER, f"genrec_{gen_arg}_{str(model())}_{method}_gendata.csv"
+        )
+    )
+    fit_model_all_subjects(
+        gendata.iloc[: len(gendata) // 20].reset_index(drop=True), RL_Grossman
+    )
+
     # test_model_genrec_eckstein2022_RLCF()
     # test_model_genrec_eckstein2022()
     # test_model_genrec_eckstein2022_BIfp()
     # test_model_genrec_eckstein2022_PCf()
-    for model in [
-        # RL_Forgetting,
-        # RL_Forgetting3p,
-        # RL_FQST,
-        # RL_Grossman,
-        # RL_Grossman_nof,
-        # RL_Grossman_nost,
-        # BRL_fwr,
-        # BRL_fw,
-        # BRL_fp,
-        # BRL_wr,
-        RL_4p,
-        # BIModel_fixp
-        # RFLR
-        # RLCF,
-        # PCModel_fixpswgam,
-        # PCBRL,
-    ]:  # BRL_fp, BRL_wr, RL_4p, RLCF, PCModel_fixpswgam, PCBRL
-        # for model in [BIModel_fixp, PCModel_fixpswgam, BI_log, PCBRL, RL_4p]:
-        print(str(model()))
-        test_mp_multiple_animals(model)
-        # test_model_genrec_BSD(model)
-        test_model_genrec_BSD(model)
+    # for model in [
+    #     # RL_Forgetting,
+    #     # RL_Forgetting3p,
+    #     # RL_FQST,
+    #     # RL_Grossman,
+    #     # RL_Grossman_nof,
+    #     # RL_Grossman_nost,
+    #     # BRL_fwr,
+    #     # BRL_fw,
+    #     # BRL_fp,
+    #     # BRL_wr,
+    #     RL_4p,
+    #     # BIModel_fixp
+    #     # RFLR
+    #     # RLCF,
+    #     # PCModel_fixpswgam,
+    #     # PCBRL,
+    # ]:  # BRL_fp, BRL_wr, RL_4p, RLCF, PCModel_fixpswgam, PCBRL
+    #     # for model in [BIModel_fixp, PCModel_fixpswgam, BI_log, PCBRL, RL_4p]:
+    #     print(str(model()))
+    #     test_mp_multiple_animals(model)
+    #     # test_model_genrec_BSD(model)
+    #     test_model_genrec_BSD(model)
     # test_model_recovery_mp(PCModel, 'PC')
     # test_model_recovery_mp(BIModel, 'BI')
     # test_model_recovery_mp(RLCF, 'RLCF')

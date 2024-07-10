@@ -1,3 +1,4 @@
+import enum
 from multiprocessing import Pool, current_process
 import numpy as np
 import pandas as pd
@@ -178,7 +179,7 @@ def test_modelgen_recover_mp(
     param_ranges,
     niters=1000,
     save_folder=None,
-    method="trust-constr",
+    method="trust-constr",  # recommended for speed: "L-BFGS-B",
     ntrial=1000,
     nsess=2,
 ):
@@ -220,8 +221,39 @@ def test_modelgen_recover_mp(
     return data, params_df, params_y
 
 
-def test_model_differentiability():
-    pass
+def test_model_identifiability_mp(models, gen_arg, method="L-BFGS-B"):
+
+    # for each model, 1. get gendata, 2. fit model, 3. recover
+    cache_folder = CACHE_FOLDER
+
+    with Pool(processes=psutil.cpu_count(logical=False)) as pool:
+        for mdl in models:
+            model_arg = str(mdl())
+            print("working on", model_arg)
+            gendata = pd.read_csv(
+                os.path.join(
+                    cache_folder, f"genrec_{gen_arg}_{model_arg}_{method}_gendata.csv"
+                )
+            )
+            result = pool.starmap_async(
+                fit_model_all_subjects,
+                [(gendata, omdl) for omdl in models],
+            )
+            for sim_data, fparams, omdl_str in tqdm(result.get()):
+                fparams.to_csv(
+                    os.path.join(
+                        cache_folder,
+                        "model_id",
+                        f"{model_arg}_sim_{omdl_str}_fit_params.csv",
+                    )
+                )
+                sim_data.to_csv(
+                    os.path.join(
+                        cache_folder,
+                        "model_id",
+                        f"{model_arg}_sim_{omdl_str}_sim_data.csv",
+                    )
+                )
 
 
 def viz_genrec_recovery(model, gen_arg, ncols=2):
@@ -331,7 +363,7 @@ def test_model_recovery_mp(model, model_arg):
 
 
 ##########################################
-# ************* Data Fitting *************
+# ************ Data Fitting ************ #
 ##########################################
 
 
@@ -462,6 +494,31 @@ def fit_model_per_subject(data_subj, model):
     fparams["aic"] = pcm.summary["aic"]
     fparams["bic"] = pcm.summary["bic"]
     return data_sim_opt, fparams
+
+
+def fit_model_all_subjects(data, model, ret_model_str=True):
+    # data_subj, data for single subject
+    all_data_sims = []
+    all_params = []
+    for j, subj in enumerate(data["Subject"].unique()):
+        data_subj = data[data["Subject"] == subj].reset_index(drop=True)
+        pcm = model()
+        pcm = pcm.fit(data_subj)
+        data_sim_opt = pcm.sim(data_subj, pcm.fitted_params)
+        fparams = pcm.fitted_params.reset_index(drop=True)
+        fparams["aic"] = pcm.summary["aic"]
+        fparams["bic"] = pcm.summary["bic"]
+        all_data_sims.append(data_sim_opt)
+        all_params.append(fparams)
+
+    if ret_model_str:
+        return (
+            pd.concat(all_data_sims, axis=0),
+            pd.concat(all_params, axis=0),
+            str(model()),
+        )
+    else:
+        return pd.concat(all_data_sims, axis=0), pd.concat(all_params, axis=0)
 
 
 ##########################################

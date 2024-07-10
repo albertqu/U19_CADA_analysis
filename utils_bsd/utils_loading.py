@@ -294,7 +294,7 @@ def add_trial_history(data, length=3, inplace=False):
 
 
 def load_model_data(
-    data_arg, model_strs, version=VERSION, sn_cutoff=11, drop_subj=None
+    data_arg, model_strs, version=VERSION, sn_cutoff=14, drop_subj=None
 ):
     # RPE include
     all_mdf = []
@@ -306,15 +306,15 @@ def load_model_data(
         pfile = os.path.join(
             CACHE_FOLDER, f"bsd_simopt_data_{data_arg}_{model_arg}_{version}.csv"
         )
+        # .values keep reference to original dataframe!!
         if model == LR:
-            mdf = pd.read_csv(pfile)[
-                mdl.data_cols + ["choice_p"]
-            ].copy()  # .values keep reference to original dataframe!!
+            mdf = pd.read_csv(pfile)[mdl.data_cols + ["choice_p"]].copy()
             action_prob = mdf["choice_p"].values.copy()
             action_prob[mdf["Decision"] == -1] = 0
             action_prob[mdf["Decision"] == 0] = 1 - action_prob[mdf["Decision"] == 0]
             mdf["rpe"] = mdf["Reward"] - action_prob
         elif model == RFLR:
+            mdf = pd.read_csv(pfile)[mdl.data_cols + ["choice_p"]].copy()
             mdf["rpe"] = np.nan
         else:
             mdf = pd.read_csv(pfile)[mdl.data_cols + ["rpe", "choice_p"]].copy()

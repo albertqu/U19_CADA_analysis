@@ -6,6 +6,7 @@ from abc import abstractmethod
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegressionCV
 from statsmodels.tsa.tsatools import lagmat
+from preprocessing import NBM_Preprocessor
 from utils import decode_from_regfeature
 from utils_system import find_files_recursive
 import logging

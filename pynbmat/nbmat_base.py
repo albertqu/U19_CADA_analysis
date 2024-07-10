@@ -8,6 +8,7 @@ from sklearn.linear_model import LogisticRegressionCV
 from statsmodels.tsa.tsatools import lagmat
 from utils import decode_from_regfeature
 from utils_system import find_files_recursive
+from pynbmat.nbm_prep import NBM_Preprocessor
 import logging
 import patsy
 import sklearn
