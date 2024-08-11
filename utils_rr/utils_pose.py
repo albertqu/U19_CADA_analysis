@@ -110,6 +110,7 @@ def get_turn_videos(bdf, vld, r_num, label_t=0.2, label=True, overwrite=False):
             format="FFMPEG",
             mode="I",
             fps=fps,
+            macro_block_size=8,
         )
         for i in tqdm.tqdm(range(len(frame_df))):
             iframe = vidObj.get_data(frame_df.loc[i, "idx"])

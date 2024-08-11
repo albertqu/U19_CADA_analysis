@@ -229,7 +229,7 @@ class DALR_Preprocessor(CV_df_Preprocessor):
     """
 
     def __init__(
-        self, lag=4, endog="outcome_DA_mean", y_lag=False, engine="statsmodel", **kwargs
+        self, lag=4, endog="outcome_DA_PT", y_lag=False, engine="statsmodel", **kwargs
     ):
         super().__init__(engine, **kwargs)
         self.lag = lag
@@ -258,9 +258,9 @@ class DALR_Preprocessor(CV_df_Preprocessor):
             .rename(columns={"rewarded": "R"})
             .reset_index(drop=True)
         )
-        if self.endog == "outcome_DA_mean":
+        if self.endog == "outcome_DA_PT":
             self.endog = "ODA"
-            rdf.rename(columns={"outcome_DA_mean": "ODA"}, inplace=True)
+            rdf.rename(columns={"outcome_DA_PT": "ODA"}, inplace=True)
         elif "rpe__" in self.endog:
             old_name = self.endog
             self.endog = self.endog.replace("__", "")
