@@ -246,7 +246,7 @@ def neural_dynamics_plot(
     palette="coolwarm",
     **kwargs,
 ):
-    """
+    """ Utility for plotting neural dynamics
     # TODO: adding offset column or z column
     # not labeling after events for now
     t_start, t_end (inclusive): range describing start end ending time
@@ -254,7 +254,7 @@ def neural_dynamics_plot(
     pse: PS_Expr object]
     event: event for aligning to
     hue: column in nb_df used for hue,
-    cropcol: column in nb_df used for cropping timestamps of the signal
+    cropcol: column in nb_df used for cropping timestamps of the signal, RELATIVE TO EVENT
     """
     neur_cols = pse.nbm.nb_cols[pse.nbm.default_ev_neur(event)]
     col_sels = [

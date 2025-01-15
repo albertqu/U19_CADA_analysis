@@ -11,6 +11,12 @@ import seaborn as sns
 import warnings
 
 
+def savgol_head_xy(df, winlen=10):
+    from scipy.signal import savgol_filter
+    df['Head_x_s'] = savgol_filter(df['Head x'].values, window_length=winlen, polyorder=3)
+    df['Head_y_s'] = savgol_filter(df['Head y'].values, window_length=winlen, polyorder=3)
+    return df
+
 def preprocess_turn_df(bdf):
     """Function to preprocess behavior df for turn analysis"""
     turn_df = bdf[

@@ -6,6 +6,7 @@ from cogmodels.pcmodel import *
 from cogmodels.rl import *
 from cogmodels.utils import *
 from cogmodels.meta_rl import *
+from cogmodels.wsls import *
 
 __author__ = "Albert Qü"
 __version__ = "0.0.1"
@@ -25,6 +26,7 @@ def load_model(desc):
         "BRLfwr": BRL_fwr,
         "BRLwr": BRL_wr,
         "BRLfw": BRL_fw,
+        "BRLwrp": BRL_wrp,
         "LR": LR,
         "RFLR": RFLR,
         "PC": PCModel,
@@ -34,5 +36,8 @@ def load_model(desc):
         "RL_meta_nof": RL_Grossman_nof,
         "RLFQ3p": RL_Forgetting3p,
         "RLFQST": RL_FQST,
+        "RL_metaP": RL_Grossman_prime,
+        "PearceHall": Pearce_Hall,
+        "WSLS": WSLS
     }
     return model_dict[desc]

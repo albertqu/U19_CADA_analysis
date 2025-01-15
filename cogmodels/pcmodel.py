@@ -239,7 +239,7 @@ class PCModel_fixpswgam(PCModel):
         b0, p_rew_init, p_eps_init, gam, sw, alpha, a_marg = [
             self.fixed_params[fp] for fp in fixp_list
         ]
-        w0 = np.array([p_rew_init, p_eps_init])
+        w0 = np.array([p_rew_init, p_eps_init], dtype=float)
         return {
             "b0": b0,
             "w0": w0,
@@ -296,7 +296,7 @@ class PCBRL(PCModel):
         b0, p_rew_init, p_eps_init, gam, sw, alpha = [
             self.fixed_params[fp] for fp in fixp_list
         ]
-        w0 = np.array([p_rew_init, p_eps_init])
+        w0 = np.array([p_rew_init, p_eps_init], dtype=float)
         return {
             "b0": b0,
             "w0": w0,

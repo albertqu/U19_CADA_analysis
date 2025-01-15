@@ -12,6 +12,7 @@ from statsmodels.tsa.tsatools import lagmat
 from utils_bsd.configs import RAND_STATE
 import statsmodels.api as sm
 from os.path import join as oj
+import scipy
 
 
 #####################################################
@@ -131,6 +132,72 @@ def fit_LR_model_add_logit(data, nlag=4):
     coef_df.drop(columns=["feature_d"], inplace=True)
     return coef_df
 
+def fit_LR_model_sklearn(data, nlag=4, i2=False):
+    rdf = (
+        data[["ID", "Session", "Trial", "Decision", "Reward"]]
+        .rename(columns={"Reward": "R"})
+        .reset_index(drop=True)
+    )
+    # feature engineering
+    # input: rdf with C, R columns
+    rdf["C"] = 2 * rdf["Decision"] - 1
+    features = ["C", "R"]
+    lagfeats = list(
+        np.concatenate(
+            [[feat + f"_{i}back" for feat in features] for i in range(1, nlag + 1)]
+        )
+    )
+
+    lagdf = pd.DataFrame(
+        lagmat(rdf[features].values, maxlag=nlag, trim="forward", original="ex"),
+        columns=lagfeats,
+    )
+    col_keys = ["C"] + [f"C_{i}back" for i in range(1, nlag + 1)]
+    lagdf = pd.concat([rdf, lagdf], axis=1)
+    lagdf = lagdf[
+        (lagdf["Trial"] > nlag)
+        & np.logical_and.reduce([(lagdf[c] != -3) for c in col_keys])
+    ].reset_index(drop=True)
+    interactions = [f"C_{i}back:R_{i}back" for i in range(1, nlag + 1)]
+    lagdf["R_1back_neg"] = 1 - lagdf["R_1back"]
+    i2=True
+    if i2:
+        interactions = ["C_1back:R_1back"] + [
+            f"C_{i}back:R_{i}back:R_1back" for i in range(2, nlag + 1)
+        ]
+        interactions2 = [f"C_{i}back:R_{i}back:R_1back_neg" for i in range(2, nlag + 1)]
+    else:
+        interactions2 = []
+    formula = "Decision ~ " + "+".join(lagfeats + interactions + interactions2)
+    import patsy
+
+    y, X = patsy.dmatrices(formula, data=lagdf, return_type="dataframe")
+    X = X.drop(columns="Intercept")
+    from sklearn.linear_model import LogisticRegressionCV
+    model = LogisticRegressionCV(penalty='l2', solver='newton-cholesky').fit(X, y.values.ravel())
+    coef_df = pd.DataFrame({"feature": X.columns, "weight": model.coef_.ravel()})
+    coef_df.columns = ["feature", "weight"]
+    coef_df["feature_d"] = coef_df["feature"].apply(decode_from_regfeature)
+    first_elem = lambda v: v[0]
+    second_elem = lambda v: v[1]
+    coef_df["feature_type"] = coef_df["feature_d"].apply(first_elem)
+    if i2:
+        sel = (~coef_df["feature"].str.contains("_neg")) & (
+            coef_df["feature"].str.count(r":") == 2
+        )
+        coef_df.loc[sel, "feature_type"] = "C:R_b"
+    coef_df["lag"] = coef_df["feature_d"].apply(second_elem)
+    coef_df.drop(columns=["feature_d"], inplace=True)
+    coef_df["feature_name"] = coef_df["feature_type"].map(
+        {
+            "C": "Choice",
+            "R": "Reward",
+            "C:R_b": "R1-blocked",
+            "C:R": "Rew. choice",
+            "Intecept": "Bias",
+        }
+    )
+    return coef_df
 
 def fit_LR_model(data, nlag=4, i2=False, alpha=0.01):
     # assume data comes from one animal
@@ -358,3 +425,67 @@ def beh_regmodel_preprocess(data, lag=4):
     ].reset_index(drop=True)
     lagdf["R_1back_neg"] = 1 - lagdf["R_1back"]
     return lagdf
+
+
+def get_da_modeling_data(rpe_df, mdl, features='default', outcome='DA'):
+    endog = outcome
+    exogs = [
+        "rpe",
+        "ego_action",
+        "Subject",
+        "session_num",
+        "log__MVMT",
+        "log__center_dur",
+        'port_dur',
+        'rewarded'
+    ]
+    aux = ["rpe_sgn"]
+    # deleted Subject columns
+    reg_df = rpe_df.loc[
+        (rpe_df["MVMT"] <= 3) & (rpe_df["center_dur"] <= 0.8) & (rpe_df["model"] == mdl) 
+        & (rpe_df['port_dur'] <= 6) & (rpe_df['SO_lat01'] <= 1),
+        [endog] + exogs + aux,
+    ].reset_index(drop=True)
+    reg_df["rpe_neg"] = (reg_df["rpe_sgn"] < 0).astype(float)
+    reg_df["rpe_pos"] = (reg_df["rpe_sgn"] >= 0).astype(float)
+    if features == 'default':
+        rhs = r"rpe:rpe_pos + rpe:rpe_neg + port_dur:rpe_pos + port_dur:rpe_neg + ego_action + session_num + log__MVMT + log__center_dur"
+    else:
+        rhs = features
+    y, X = patsy.dmatrices(
+        f"{outcome} ~ "+rhs,
+        data=reg_df,
+        return_type="dataframe",
+    )
+    return X, y
+
+
+def get_model_da_fitting(rpe_df, mdl, features='default', outcome='DA'):
+    X, y = get_da_modeling_data(rpe_df, mdl, features, outcome=outcome)
+    for col in X.columns:
+        if col != "Intercept":
+            X[col] = scipy.stats.zscore(X[col])
+    olsm = sm.OLS(y, X)
+    olsr = olsm.fit()
+    X_train0, X_test0, y_train0, y_test0 = train_test_split(
+        X, y, test_size=0.3, random_state=RAND_STATE
+    )
+    ols_train = sm.OLS(y_train0, X_train0)
+    olsr_train = ols_train.fit()
+    llk = sm.OLS(y_test0, X_test0).loglike(olsr_train.params)
+    X_sk = X.drop(columns=["Intercept"])
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_sk, y, test_size=0.3, random_state=RAND_STATE
+    )
+    reg = LassoCV(cv=5, random_state=0).fit(X_train, y_train.values.ravel())
+    cv_score = reg.score(X_test, y_test.values.ravel())
+    i_mcdf = pd.DataFrame(
+        {
+            "aic": [olsr.aic],
+            "bic": [olsr.bic],
+            "R2CV": cv_score,
+            "llk_CV": llk,
+            "model": [mdl],
+        }
+    )
+    return i_mcdf

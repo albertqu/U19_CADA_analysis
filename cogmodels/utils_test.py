@@ -12,6 +12,7 @@ import psutil
 CACHE_FOLDER = r"D:\U19\data\Probswitch\caching"
 DATA_ARG = "full_20230807"
 VERSION = "v16"
+VERSION_SESSION = 'v17'
 
 np.random.seed(230)
 
@@ -392,6 +393,50 @@ def test_mp_multiple_animals(model):
             all_data_sim.append(id_sim)
             all_params.append(id_fp)
     version = VERSION  # 'v11_swp05' # TODO: dont forget to test restructure in v14!
+    # v12 for model recovery test
+    data_sim_opt = pd.concat(all_data_sim, axis=0).sort_values(
+        ["Subject", "Session", "Trial"]
+    )
+    data_sim_opt.to_csv(
+        os.path.join(
+            cache_folder, f"bsd_simopt_data_{data_arg}_{model_arg}_{version}.csv"
+        ),
+        index=False,
+    )
+    pd.concat(all_params, axis=0).sort_values("ID").to_csv(
+        os.path.join(
+            cache_folder, f"bsd_simopt_params_{data_arg}_{model_arg}_{version}.csv"
+        ),
+        index=False,
+    )
+    # v7: multiprocessing fit multiple animals
+
+
+def test_mp_multiple_sessions(model):
+    # Function for fitting data for multiple animals
+    model_arg = str(model())
+    cache_folder = CACHE_FOLDER
+    data_arg = DATA_ARG
+    # data_arg = 'eckstein2022_full'
+    data_file = os.path.join(cache_folder, f"bsd_model_data_{data_arg}.pq")
+    data = pd.read_parquet(data_file)
+    # data["ID"] = data["Subject"]
+    all_data_sim, all_params = [], []
+
+    # model_arg = 'PC_fixpswgam'
+    with Pool(processes=psutil.cpu_count(logical=False)) as pool:
+        results = [
+            pool.apply_async(
+                fit_model_per_subject,
+                args=(data[data["Subject"] == subj].reset_index(drop=True), model),
+            )
+            for subj in data["Subject"].unique()
+        ]
+        for r in tqdm(results):
+            id_sim, id_fp = r.get()
+            all_data_sim.append(id_sim)
+            all_params.append(id_fp)
+    version = VERSION_SESSION  # 'v11_swp05' # TODO: dont forget to test restructure in v14!
     # v12 for model recovery test
     data_sim_opt = pd.concat(all_data_sim, axis=0).sort_values(
         ["Subject", "Session", "Trial"]

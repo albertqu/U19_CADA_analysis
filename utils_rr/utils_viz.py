@@ -63,6 +63,7 @@ def plot_neural_trial_average(
             if expr.nbm.align_time_in(c, base_ts[0], base_ts[1], True)
         ]
     nb_df = nb_df[value_cols].dropna().reset_index(drop=True)
+    expr.nbm.nb_cols, expr.nbm.nb_lag_cols = expr.nbm.parse_nb_cols(nb_df)
     if debase:
         expr.nbm.debase_gradient(nb_df, event, base_event, base_ts[0], base_ts[1])
     plot_df = expr.nbm.lag_wide_df(

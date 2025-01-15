@@ -8,6 +8,9 @@ __email__ = "albert_qu@berkeley.edu"
 __status__ = "Dev"
 
 
+def regularize(x, lb, ub, eps=1e-15):
+    return np.clip(x, lb+eps, ub-eps)
+
 class Task:
 
     def __init__(self):

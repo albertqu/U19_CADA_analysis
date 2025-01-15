@@ -24,6 +24,29 @@ import plotly.graph_objects as go
 from utils_bsd.configs import CACHE_FOLDER, DATA_ROOT, VERSION, PLOT_FOLDER
 
 
+def convert2gershman_format(nb_df, drop_subj=None, sn_cutoff=11):
+    # gdf = 
+    # nb_df_behavior['session_num'].astype(int).astype(str)
+    #Trial	blockTrial	Decision	Switch	Reward	Condition	Target	blockLength	Session	Mouse
+    gdf = nb_df.loc[nb_df['session_num'] <= sn_cutoff, ['animal', 'session_num', 'trial', 'trial_in_block', 'block_num', 'action', 'switch_num', 'rewarded', 'state']].reset_index(drop=True)
+    if drop_subj is not None:
+        gdf = gdf[~gdf['animal'].isin(drop_subj)].reset_index(drop=True)
+    gdf['Session'] = gdf['animal'] + '_' + gdf['session_num'].astype(int).astype(str).str.zfill(2)
+    gdf['Switch'] = 0 
+    gdf.loc[gdf['switch_num'] == 0, 'Switch'] = 1
+    gdf['Reward'] = gdf['rewarded'].map({True:1, False: 0}) # fill na with 0
+    gdf['Decision'] = gdf['action'].map({'left': 0, 'right': 1}).astype(float) # right is 1
+    gdf.loc[gdf['Decision'].isnull(), 'Decision'] = -1
+    gdf['Decision'] = gdf['Decision'].astype(int)
+    gdf['Target'] = gdf['state'].map({'left': 0, 'right': 1}).astype(int)
+    edf =gdf.groupby(['animal', 'Session', 'block_num'], as_index=False).agg({'trial_in_block': 'count'}).rename(columns={'trial_in_block': 'blockLength'})
+    gdf = gdf.merge(edf, on=['animal', 'Session', 'block_num'])
+    gdf = gdf.rename(columns={'animal': 'Subject', 'trial': 'Trial',
+                              'trial_in_block': 'blockTrial', 'block_num': 'blockNum'})
+    gdf['Condition'] = '75-0'
+    gdf['ID'] = gdf['Session']
+    return gdf.sort_values(['ID', 'Subject', 'Session', 'Trial'])
+
 def load_neural_data_BSD(
     sn_cutoff=14, drop_subj=None, return_pse=True, raw=False, **kwargs
 ):
@@ -313,7 +336,7 @@ def load_model_data(
             action_prob[mdf["Decision"] == -1] = 0
             action_prob[mdf["Decision"] == 0] = 1 - action_prob[mdf["Decision"] == 0]
             mdf["rpe"] = mdf["Reward"] - action_prob
-        elif model == RFLR:
+        elif (model == RFLR) or (model == WSLS):
             mdf = pd.read_csv(pfile)[mdl.data_cols + ["choice_p"]].copy()
             mdf["rpe"] = np.nan
         else:

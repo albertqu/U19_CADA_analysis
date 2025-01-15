@@ -25,7 +25,8 @@ def test_model_functional():
     in the implementation -- test that code runs
     """
     # pcm = PCModel()
-    model = PCBRL()
+    # model = PCBRL()
+    model = WSLS()
     model_arg = str(model)  # 'RLCF'
     v_old = "v13"
 
@@ -43,11 +44,10 @@ def test_model_functional():
 
     # test with parameters
     param_file = os.path.join(
-        cache_folder, f"bsd_simopt_params_{data_arg}_PCf_{v_old}.csv"
+        cache_folder, f"bsd_simopt_params_{model_arg}_test.csv"
     )
     params_df = pd.read_csv(param_file)
     params_df = params_df[params_df["ID"].isin(animal_list)].reset_index(drop=True)
-    params_df["a_marg"] = [0.19, 0.2]
 
     data = model.fit_marginal(data)
     # data.to_csv(os.path.join(cache_folder, 'bsd_sim_sample_RLCF.csv'))
@@ -59,7 +59,7 @@ def test_model_functional():
     data_sim_opt = model.sim(data, model.fitted_params)
     data_sim_opt.to_csv(
         os.path.join(
-            cache_folder, f"bsd_simopt_data_{data_arg}_{model_arg}_{v_old}simTest.csv"
+            cache_folder, f"bsd_simopt_data_{model_arg}_{v_old}simTest.csv"
         )
     )
     model.fitted_params.to_csv(
@@ -154,10 +154,10 @@ def test_model_recovery():
     animal_list = ["BSD011", "BSD015"]
     session_list = sum([[a + "_01", a + "_02"] for a in animal_list], [])
     data = data[data["Session"].isin(session_list)].reset_index(drop=True)
-    model = BIModel_fixp()
+    model = Pearce_Hall()
     model_arg = str(model)
     param_file = os.path.join(
-        cache_folder, f"bsd_simopt_params_{data_arg}_{model_arg}_{v_old}.csv"
+        cache_folder, f"bsd_simopt_params_{data_arg}_{model_arg}_test.csv"
     )
     params_df = pd.read_csv(param_file)
     params_df = params_df[params_df["ID"].isin(animal_list)].reset_index(drop=True)
@@ -1074,15 +1074,19 @@ if __name__ == "__main__":
     # test_model_genrec_eckstein2022()
     # test_model_eckstein2022_RLCF()
     # test_model_eckstein2022_RLCF()
-    print("test BRL")
+    print("test RLgrossman new")
     # test_model_genrec_eckstein2022_RLCF()
     # test_model_genrec_eckstein2022()
     # test_model_genrec_eckstein2022_BIfp()
+    from cogmodels.utils_test import *
+    models = [RL_Forgetting3p, RL_Grossman, Pearce_Hall, RL_4p, RLCF, RFLR, BRL_fwr, BIModel_fixp]
+    test_model_identifiability_mp(models, f"{DATA_ARG}_3s5ht")
     # test_model_genrec_eckstein2022_PCf()
-    for model in [RLCF]:
-        # for model in [BIModel_fixp, PCModel_fixpswgam, BI_log, PCBRL, RL_4p]:
-        # test_mp_multiple_animals(model)
-        test_model_genrec_BSD(model)
+    # for model in [RL_Grossman]:
+    #     # for model in [BIModel_fixp, PCModel_fixpswgam, BI_log, PCBRL, RL_4p]:
+    #     print(str(model()))
+    #     test_mp_multiple_animals(model)
+    #     test_model_genrec_BSD(model)
     # test_model_recovery_mp(PCModel, 'PC')
     # test_model_recovery_mp(BIModel, 'BI')
     # test_model_recovery_mp(RLCF, 'RLCF')

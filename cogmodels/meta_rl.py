@@ -4,7 +4,100 @@ import scipy
 
 from cogmodels.base import CogParam
 from cogmodels.rl import RL_4p
+from cogmodels.utils import regularize
 
+PRECISION = 15
+TOL = 1e-15
+
+class Pearce_Hall(RL_4p):
+    """
+    Adapted from Li et al. 2011:
+    Q_{t+1} = Q_t + alpha * alpha_nu_t * rpe_t
+    alpha_nu_{t+1} = psi * (|rpe_t| - alpha_nu_t) + alpha_nu_t
+
+    expected uncertainty reduces learning rate
+    unexpected uncertainty increases learning rate
+
+    latent: w: [q0, q1, omega, nu, a_neg_t]
+
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.fixed_params.update({"b0": 1.0, "q_init": 0.0, "gam": 1.0})
+        # used fixed for hyperparam_tuning
+        self.param_dict.update(
+            {
+                "psi": CogParam(scipy.stats.uniform(), lb=0, ub=1),
+                'zeta': CogParam(scipy.stats.uniform(), lb=0, ub=1),
+                # adaptive parameter for alpha_nu
+            }
+        )
+        self.latent_names = [
+            "qdiff",
+            "rpe",
+            "q0",
+            "q1",
+            "alpha_nu",  # adaptive learning rate
+        ]
+
+    def __str__(self):
+        return "PearceHall"
+
+    def latents_init(self, N):
+        qdiff, rpe, b_arr, _ = super().latents_init(N)
+        w_arr = np.zeros((N, 3), dtype=float)
+        return qdiff, rpe, b_arr, w_arr
+
+    def id_param_init(self, params, id):
+        varp_list = ["a_pos", "a_neg", "beta", "st", "psi", 'zeta']
+        fixp_list = ["b0", "q_init", "gam"]
+        var_dict = params.loc[params["ID"] == id, varp_list].iloc[0].to_dict()
+        w0_arr = [self.fixed_params["q_init"]] * 2 + [1]
+        w0 = np.array(w0_arr, dtype=float)
+        d = {"w0": w0}
+        d.update({fp: self.fixed_params[fp] for fp in fixp_list})
+        d.update(var_dict)
+        return d
+
+    def calc_q(self, b, w):
+        return w[:2]
+
+    def update_b(self, b, w, c_t, r_t, params_i):
+        return b
+
+    def update_w(self, b, w, c_t, rpe_t, params_i):
+        if c_t == 1:
+            d_rpe = np.array([0, rpe_t], dtype=float)
+        else:
+            d_rpe = np.array([rpe_t, 0], dtype=float)
+
+        if "alpha" in params_i:
+            alphas = w[-1] * params_i["alpha"]
+        elif "a_pos" in params_i:
+            alphas = w[-1] * (params_i["a_pos"] * (d_rpe >= 0) + params_i["a_neg"] * (d_rpe < 0))
+        else:
+            raise ValueError("NO alpha?")
+
+        # update qs
+        w0 = params_i['w0']
+        q0 = w0[1-c_t]
+        w[:2] = w[:2] + alphas * d_rpe # modulated with omega
+        w[1 - c_t] = q0 + np.around((w[1-c_t] - q0) *  params_i["zeta"], PRECISION)  # forgetting decay
+        alpha_nu = w[-1]
+        alpha_nu = params_i["psi"] * (abs(rpe_t) - alpha_nu) + alpha_nu
+        w[-1] = max(0, alpha_nu)
+        return w
+
+    def assign_latents(self, data, qdiff, rpe, b_arr, w_arr):
+        data["qdiff"] = qdiff
+        if self.fixed_params["CF"]:
+            data[["rpe", "rpe_cf"]] = rpe
+        else:
+            data["rpe"] = rpe
+        data[["q0", "q1", "alpha_nu"]] = w_arr
+        return data
+    
 
 class RL_Grossman(RL_4p):
     """
@@ -46,7 +139,7 @@ class RL_Grossman(RL_4p):
 
     def latents_init(self, N):
         qdiff, rpe, b_arr, _ = super().latents_init(N)
-        w_arr = np.zeros((N, 5))
+        w_arr = np.zeros((N, 5), dtype=float)
         return qdiff, rpe, b_arr, w_arr
 
     def id_param_init(self, params, id):
@@ -54,7 +147,7 @@ class RL_Grossman(RL_4p):
         fixp_list = ["b0", "q_init", "gam"]
         var_dict = params.loc[params["ID"] == id, varp_list].iloc[0].to_dict()
         w0_arr = [self.fixed_params["q_init"]] * 2 + [0, 0, var_dict["a_neg"]]
-        w0 = np.array(w0_arr)
+        w0 = np.array(w0_arr, dtype=float)
         d = {"w0": w0}
         d.update({fp: self.fixed_params[fp] for fp in fixp_list})
         d.update(var_dict)
@@ -68,9 +161,9 @@ class RL_Grossman(RL_4p):
 
     def update_w(self, b, w, c_t, rpe_t, params_i):
         if c_t == 1:
-            d_rpe = np.array([0, rpe_t])
+            d_rpe = np.array([0.0, rpe_t])
         else:
-            d_rpe = np.array([rpe_t, 0])
+            d_rpe = np.array([rpe_t, 0.0])
 
         if "alpha" in params_i:
             alphas = params_i["alpha"]
@@ -79,9 +172,12 @@ class RL_Grossman(RL_4p):
         else:
             raise ValueError("NO alpha?")
 
+        # w0 = params_i['w0']
+        # q0 = w0[1-c_t]
         # update qs
         w[:2] = w[:2] + alphas * d_rpe
-        w[1 - c_t] = w[1 - c_t] * params_i["zeta"]  # forgetting decay
+        w[1-c_t] = np.clip(w[1-c_t] * params_i["zeta"], TOL, None)
+        # w[1 - c_t] = q0 + np.around((w[1-c_t] - q0) *  params_i["zeta"], PRECISION)  # forgetting decay
 
         # calculate uncertainty latents
         omega = w[2]
@@ -106,6 +202,56 @@ class RL_Grossman(RL_4p):
             data["rpe"] = rpe
         data[["q0", "q1", "omega", "nu", "a_neg_t"]] = w_arr
         return data
+
+
+class RL_Grossman_prime(RL_Grossman):
+    """
+    Adapted from Grossman et al., 2021
+
+    expected uncertainty reduces learning rate
+    unexpected uncertainty increases learning rate
+
+    latent: w: [q0, q1, omega, nu, a_neg_t]
+
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def __str__(self):
+        return "RL_metaP"
+
+    def update_w(self, b, w, c_t, rpe_t, params_i):
+        if c_t == 1:
+            d_rpe = np.array([0.0, rpe_t])
+        else:
+            d_rpe = np.array([rpe_t, 0.0])
+
+        if "alpha" in params_i:
+            alphas = params_i["alpha"]
+        elif "a_pos" in params_i:
+            alphas = params_i["a_pos"] * (d_rpe >= 0) + w[-1] * (d_rpe < 0)
+        else:
+            raise ValueError("NO alpha?")
+
+        # update qs
+        w[:2] = w[:2] + alphas * d_rpe * (1-w[2])
+        w[1 - c_t] = w[1 - c_t] * params_i["zeta"]  # forgetting decay
+
+        # calculate uncertainty latents
+        omega = w[2]
+        nu_t = abs(rpe_t) - omega
+        omega = omega + params_i["alpha_nu"] * nu_t
+        w[2:4] = [omega, nu_t]
+
+        # adapt learning rate
+        if rpe_t < 0:
+            alpha_neg_t = w[-1]
+            a_neg_hat = nu_t + params_i["a_neg"]
+            alpha_neg_t = alpha_neg_t + params_i["psi"] * (a_neg_hat - alpha_neg_t)
+            alpha_neg_t = max(0, alpha_neg_t)
+            w[-1] = alpha_neg_t
+        return w
 
 
 class RL_Grossman_nof(RL_Grossman):
@@ -133,7 +279,7 @@ class RL_Grossman_nof(RL_Grossman):
         fixp_list = ["b0", "q_init", "gam"]
         var_dict = params.loc[params["ID"] == id, varp_list].iloc[0].to_dict()
         w0_arr = [self.fixed_params["q_init"]] * 2 + [0, 0, var_dict["a_neg"]]
-        w0 = np.array(w0_arr)
+        w0 = np.array(w0_arr, dtype=float)
         d = {"w0": w0}
         d.update({fp: self.fixed_params[fp] for fp in fixp_list})
         d.update(var_dict)
@@ -141,9 +287,9 @@ class RL_Grossman_nof(RL_Grossman):
 
     def update_w(self, b, w, c_t, rpe_t, params_i):
         if c_t == 1:
-            d_rpe = np.array([0, rpe_t])
+            d_rpe = np.array([0.0, rpe_t])
         else:
-            d_rpe = np.array([rpe_t, 0])
+            d_rpe = np.array([rpe_t, 0.0])
 
         if "alpha" in params_i:
             alphas = params_i["alpha"]
@@ -194,7 +340,7 @@ class RL_Grossman_nost(RL_Grossman):
         fixp_list = ["b0", "q_init", "gam"]
         var_dict = params.loc[params["ID"] == id, varp_list].iloc[0].to_dict()
         w0_arr = [self.fixed_params["q_init"]] * 2 + [0, 0, var_dict["a_neg"]]
-        w0 = np.array(w0_arr)
+        w0 = np.array(w0_arr, dtype=float)
         d = {"w0": w0}
         d.update({fp: self.fixed_params[fp] for fp in fixp_list})
         d.update(var_dict)

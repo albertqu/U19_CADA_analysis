@@ -90,7 +90,7 @@ class RFLR(CogModel):
         return "RFLR"
 
     def latents_init(self, N):
-        phis = np.zeros(N)
+        phis = np.zeros(N, dtype=float)
         return phis
 
     def id_param_init(self, params, id):
