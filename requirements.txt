@@ -15,6 +15,7 @@ nbconvert
 nbformat
 ipython
 h5py
+opencv-python
 scikit-image
 six
 tifffile
