@@ -70,6 +70,7 @@ class NeuroBehaviorMat:
             return ev + "_neur"
 
     def parse_nb_cols(self, nb_df, ev_neur_func=None):
+        # rse.nbm.nb_cols, rse.nbm.nb_lag_cols = rse.nbm.parse_nb_cols(nb_df)
         # assume roi_long form
         if ev_neur_func is None:
             ev_neur = self.default_ev_neur

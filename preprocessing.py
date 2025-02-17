@@ -173,6 +173,8 @@ class PSLR_Preprocessor(CV_df_Preprocessor):
     Assumes input dataframe follows sam structure described uin cogmodels_base.py
 
     tested: sklearn and sm.GLM LR gives similar results
+    
+    
     """
 
     def __init__(self, lag=4, engine="sklearn", **kwargs):
