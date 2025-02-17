@@ -110,6 +110,29 @@ def load_sleap_data(rse, cache_folder, track_root, sessions, RESAMP_INTV):
     return sleap_bdf, all_track_df, raw_track_df
 
 
+def add_hall_summary_stats(rse, neur_df):
+    # Select the columns that describe neural signals post tone onset
+    tone_onset_cols = [c for c in neur_df.columns if 'tone_onset_neur' in c]
+
+    # Initialize new columns
+    tmean, tmax, tmin = np.full(len(neur_df), np.nan), np.full(len(neur_df), np.nan), np.full(len(neur_df), np.nan)
+
+    # Compute the mean, max, and min for each row
+    for idx, row in neur_df.iterrows():
+        # Select the entries with time stamp less than slp_hall_time
+        valid_entries = [c for c in tone_onset_cols if rse.nbm.align_time_in(c, 0, row['slp_hall_time'])]
+        
+        if valid_entries:
+            # Compute mean, max, and min
+            tmean[idx] = row[valid_entries].mean()
+            tmax[idx] = row[valid_entries].max()
+            tmin[idx] = row[valid_entries].min()
+    neur_df['hall_neur_mean'] = tmean 
+    neur_df['hall_neur_max'] = tmax
+    neur_df['hall_neur_min'] = tmin
+    return neur_df
+
+
 def add_past_outcome_features(data, dt=120, inplace=False): 
     """ Method to add past outcome information as features to data
         data: pd.DataFrame
