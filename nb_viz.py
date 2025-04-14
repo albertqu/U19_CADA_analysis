@@ -17,7 +17,6 @@ import logging
 from matplotlib.colors import Normalize
 import copy
 
-
 class PlotlyFig:
     # TODO: add automatic color palette
 
@@ -40,6 +39,7 @@ class PlotlyFig:
             go.Scatter(x=x, y=y, mode=mode, name=name, line=dict(color=color)),
             row=row,
             col=col,
+            **kwargs
         )
 
     def show(self):
@@ -746,6 +746,8 @@ def plot_neural_trial_average(
     base_ts=(0, 0),
     t_range=None,
     verbose=True,
+    aux_cols=None,
+    df_sel_func=None,
     **kwargs,
 ):
     """
@@ -789,6 +791,8 @@ def plot_neural_trial_average(
             for c in expr.nbm.nb_cols[f"{base_event}_neur"]
             if expr.nbm.align_time_in(c, base_ts[0], base_ts[1], True)
         ]
+    if aux_cols is not None:
+        value_cols = value_cols + aux_cols
     nb_df = nb_df[value_cols].dropna().reset_index(drop=True)
     expr.nbm.nb_cols, expr.nbm.nb_lag_cols = expr.nbm.parse_nb_cols(nb_df)
     if debase:
@@ -797,6 +801,8 @@ def plot_neural_trial_average(
         nb_df, {f"{event}_neur": {"long": True}}
     ).reset_index(drop=True)
     xcol = f"{event}_neur_time"
+    if df_sel_func is not None:
+        plot_df = df_sel_func(plot_df).reset_index(drop=True)
 
     g = sns.relplot(
         data=plot_df,
