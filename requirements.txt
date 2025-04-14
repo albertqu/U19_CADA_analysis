@@ -22,6 +22,7 @@ tifffile
 imageio
 Cython
 scikit-fda
+fastdtw
 pygam
 PyWavelets
 arviz
