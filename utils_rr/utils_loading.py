@@ -140,7 +140,7 @@ def add_past_outcome_features(data, dt=120, inplace=False):
     """
     if not inplace:
         data = data.reset_index(drop=True)
-    data['wait_time'] = np.NaN
+    data['wait_time'] = np.nan
     waited_sel = (data['accept'] == 1) & (~data['outcome'].isnull())
     data.loc[waited_sel, 'wait_time'] =  data.loc[waited_sel, 'outcome'] - data.loc[waited_sel, 'choice']
     quit_sel = ~data['quit'].isnull()

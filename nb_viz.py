@@ -17,7 +17,6 @@ import logging
 from matplotlib.colors import Normalize
 import copy
 
-
 class PlotlyFig:
     # TODO: add automatic color palette
 
