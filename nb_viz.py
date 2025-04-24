@@ -436,8 +436,8 @@ def df_wide_heatmap(
     ax.set_yticks([0, len(heat_df) - 1])
     ax.set_yticklabels([1, len(heat_df)])
     times = np.sort(
-        np.core.defchararray.replace(
-            heat_cols, event + "_neur|", "", count=None
+        np.char.replace(
+            heat_cols, event + "_neur|", "", count=-1
         ).astype(float)
     )
     zero = np.where(times == 0)[0][0]
@@ -467,7 +467,6 @@ def df_wide_heatmap(
         **kwargs,
     )
     return ax
-
 
 def radius2marker_size(r):
     return (
@@ -536,7 +535,7 @@ def plot_nb_df_rr(nb_df, data_cols, idvars):
     )
 
 
-def plot_correlation(dataset: pd.DataFrame, dendo=True) -> None:
+def plot_correlation(dataset: pd.DataFrame, dendo=True, figsize=(12, 12)) -> None:
     corrs = dataset.corr(method="pearson")
     if np.any(corrs.isnull().values.ravel()):
         logging.warning("null entries in correlation matrix, check data")
@@ -546,7 +545,7 @@ def plot_correlation(dataset: pd.DataFrame, dendo=True) -> None:
         vmin=-1,
         vmax=1,
         cbar_kws={"label": "Correlation"},
-        figsize=(12, 12),
+        figsize=figsize,
     )
     corrmap.ax_row_dendrogram.set_visible(dendo)
     corrmap.ax_col_dendrogram.set_visible(dendo)

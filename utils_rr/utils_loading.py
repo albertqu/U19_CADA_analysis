@@ -111,6 +111,8 @@ def load_sleap_data(rse, cache_folder, track_root, sessions, RESAMP_INTV):
 
 
 def add_hall_summary_stats(rse, neur_df):
+    """Add summary statistics for neural signals post tone onset during hall running
+    """
     # Select the columns that describe neural signals post tone onset
     tone_onset_cols = [c for c in neur_df.columns if 'tone_onset_neur' in c]
 

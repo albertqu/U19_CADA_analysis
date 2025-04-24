@@ -108,17 +108,27 @@ def df_melt_lagged_features(df, feat, id_vars, value_vars=None):
     df.drop(columns=f"{feat}_arg", inplace=True)
     return df
 
-
 def pds_is_valid(pds):
     if pd.api.types.is_string_dtype(pds):
         return ~(pds.isnull() | (pds == ""))
     else:
         return ~pds.isnull()
 
-
 def pds_neq(x, y):
     return pds_is_valid(x) & pds_is_valid(y) & (x != y)
 
+def df_groupwise_shift(df, col, lag):
+    if lag > 0:
+        arg = f't-{lag}'
+    elif lag < 0:
+        arg = f't+{-lag}'
+    new_col = col+'{'+arg+'}'
+    df[new_col] = df[col].shift(lag)
+    if lag > 0:
+        df.loc[df['trial'] == 1, new_col] = np.nan
+    elif lag < 0:
+        df.loc[df['lastTrial']==True, new_col] = np.nan
+    return df
 
 ####################################################
 ########## Graphics and Visualization ##############

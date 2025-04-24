@@ -1,17 +1,18 @@
+from ast import Not
 from skglm import GeneralizedLinearEstimator
 from skglm.datafits import LogisticGroup
 from skglm.penalties import WeightedGroupL2
 from skglm.solvers import GroupProxNewton
 from sklearn.model_selection import KFold
 from sklearn.utils.class_weight import compute_class_weight
-from sklearn.metrics import balanced_accuracy_score, accuracy_score, f1_score
+from sklearn.metrics import balanced_accuracy_score, accuracy_score, f1_score, r2_score
 import skglm
 import adelie as ad
 import numpy as np
 import pandas as pd
 import scipy
 import scipy.special
-from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
 
 class GroupLassoLogisticCV(BaseEstimator, ClassifierMixin):
     """ 
@@ -227,6 +228,121 @@ class GroupElasticLogisticCV(BaseEstimator, ClassifierMixin):
     
     def score(self, X, y):
         return balanced_accuracy_score(y, self.predict(X))
+
+class GroupElasticRegressionCV(BaseEstimator, RegressorMixin):
+    """ 
+    This class implements a sklearn compatible class for 
+    group lasso/elastic net regression model with cross-validation.
+
+    To use group lasso function, you need to either:
+    1. provide X as a pd.DataFrame with format `[group]__[feature]`
+    2. provide group_vector as a list of indices for starting index of each group
+
+    diagnostics:
+    ```
+    # diagnostic plot for lasso path
+    # cv_res.plot_loss()
+    # dg=ad.diagnostic.diagnostic(state=state)
+    # dg.plot_coefficients()
+    # dg.plot_devs()
+    # dg.plot_benchmark()
+    ```
+    
+    Notes
+    -----
+    This class solves the following optimization function:
+    .. math::
+        \min_{\beta} \sum_{i=1}^n \log(1 + \exp(-y_i X_i^T \beta)) + \lambda \sum_g w_g \Bigg( \alpha ||\beta_g||_2 + (1-\alpha) \frac{||\beta_g||_2^2}{2} \Bigg)
+    
+    where :math:`\beta_g` is the coefficient vector for group g, and :math:`w_g` is the weight for group g.
+
+    This class builds on top of `Adelie package <https://jamesyang007.github.io/adelie/index.html>`
+
+    .. [1] Yang and Hastie (2024). "A Fast and Scalable Pathwise-Solver for Group Lasso and Elastic Net Penalized Regression via Block-Coordinate Descent""
+    """
+
+    def __init__(self, alpha=1.0, fit_intercept=True, family='gaussian',
+                 group=False, group_vector=None, seed=230):
+        self.alpha = alpha
+        self.fit_intercept = fit_intercept
+        self.group = group
+        self.group_vector = group_vector
+        self.seed = seed
+        self.family = family
+        # self.state = None
+        # self.cv_res_ = None
+        # self.coef_ = None
+        # self.intercept_ = 0
+        # self.best_lam_ = None
+    
+    def fit(self, X, y):
+        if self.group:
+            if self.group_vector:
+                group_vector = self.group_vector
+            elif isinstance(X, pd.DataFrame):
+                group_vector = group_features(X.columns, include_end=False)
+            else:
+                raise ValueError("Please provide group_vector or X as a pd.DataFrame")
+        else:
+            group_vector = None
+        
+        # Check input X and y
+        if isinstance(X, pd.DataFrame):
+            X = X.values
+        if not np.isfortran(X):
+            X = np.asfortranarray(X)
+        
+        if isinstance(y, pd.Series) or isinstance(y, pd.DataFrame):
+            y = y.values.ravel()
+        
+        if len(y.shape) > 1:
+            y = y.ravel()
+        
+        # fit model
+        if self.family == 'gaussian':
+            glm_class = ad.glm.gaussian(y, dtype=np.float64)
+        elif self.family == 'poisson':
+            glm_class = ad.glm.poisson(y, dtype=np.float64)
+        else:
+            raise NotImplementedError(f"{self.family} not implemented")
+        # elif self.family == 'cox':
+        #     glm_class = ad.glm.cox(y, dtype=np.float64)
+        cv_res = ad.cv_grpnet(
+            X=X,
+            glm=glm_class,
+            groups=group_vector,
+            min_ratio=1e-3,
+            seed=self.seed,
+            intercept=self.fit_intercept,
+            progress_bar=False,
+            alpha=self.alpha,
+        )
+
+        state = cv_res.fit(
+            X=X,
+            glm=glm_class,
+            groups=group_vector,
+            min_ratio=1e-3,
+            intercept=self.fit_intercept,
+            progress_bar=False,
+            alpha=self.alpha
+        )
+
+        self.state = state
+        self.cv_res_ = cv_res
+        self.coef_ = state.betas[-1]
+        self.intercept_ = state.intercepts[-1]
+        self.best_lam_ = state.lmdas[-1]
+    
+    def predict(self, X):
+        if isinstance(X, pd.DataFrame):
+            X = X.values
+        if not np.isfortran(X):
+            X = np.asfortranarray(X)
+        return ad.diagnostic.predict(X, self.coef_, np.array([self.intercept_])).squeeze()
+    
+    def score(self, X, y):
+        return r2_score(y, self.predict(X))
     
 #############################################
 ############ Helper Functions ###############
@@ -258,7 +374,6 @@ def group_features(features, include_end=False):
     if include_end:
         group_inds.append(len(features))
     return np.array(group_inds)
-
 
 #################################################
 ################ Experiment #####################
