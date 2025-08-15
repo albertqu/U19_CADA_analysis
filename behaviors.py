@@ -461,7 +461,7 @@ class PSBehaviorMat(BehaviorMat):
         result_df["action"] = pd.Categorical(
             [""] * self.trialN, ["left", "right"], ordered=False
         )
-        result_df["rewarded"] = np.zeros(self.trialN, dtype=bool)
+        result_df["rewarded"] = np.zeros(self.trialN, dtype=float)
         result_df["trial_in_block"] = self.t_in_block
         result_df["prebswitch_num"] = self.prebswitch_num
         result_df["block_num"] = self.block_num
@@ -487,7 +487,7 @@ class PSBehaviorMat(BehaviorMat):
                         result_df.loc[node.trial_index(), "action"] = node.saliency
                 elif node.event == "outcome":
                     result_df.loc[node.trial_index(), node.event] = node.etime
-                    result_df.loc[node.trial_index(), "rewarded"] = (
+                    result_df.loc[node.trial_index(), "rewarded"] = float(
                         "_rewarded" in node.saliency
                     )
                     if node.saliency in ["missed", "abort"]:

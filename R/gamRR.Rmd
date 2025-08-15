@@ -1,0 +1,830 @@
+---
+title: "gamRR"
+output: html_document
+---
+
+```{r setup, echo = FALSE, message=FALSE, warning=FALSE}
+# load in useful packages
+library(tidyverse)
+library(forcats)
+library(lubridate)
+library(stringr)
+library(ggplot2)
+library(dplyr)
+library(lmerTest)
+library(lme4)
+library(mgcv)
+library(gridExtra)
+library(patchwork)
+
+# set default knitr chunks
+knitr::opts_chunk$set(
+  echo = FALSE,  # don't print the code chunk
+  warning = FALSE,  # don't print warnings
+  message = FALSE,  # don't print messages
+  fig.width = 6,  # set default width of figures
+  fig.height = 4,  # set default height of figures
+  fig.align = "center",  # always align figure in center
+  fig.pos = "H",  # always plot figure at the exact location of the code chunk
+  cache = FALSE)  # don't cache results
+
+reset_index <- function(df) {
+  df <- cbind(index = rownames(df), df)
+  rownames(df) <- 1:nrow(df)
+  return(df)
+}
+
+listfunc.get <- function(ilst, str) {
+  arg <- paste0("ilst$", str)
+  return(eval(parse(text=arg)))
+}
+```
+
+```{r load-data, echo = FALSE, message = FALSE, warning = FALSE, cache = TRUE}
+# note that the cache = TRUE chunk argument means that the results of this 
+# chunk are saved so it doesn't need to be re-run every time you compile the pdf
+# load the dates data
+data_root <- "C:/wilbrechtlab/U19/data/RR/caching/gam/"
+plot_path <- "C:/wilbrechtlab/U19/data/RR/plots/gam/"
+source_file <- "all_data_gam_mat.csv"
+psep = ".Platform$file.sep"
+
+data <- read.table(paste0(data_root, source_file), sep=",", header=TRUE)
+data <- mutate(data, animal=as.factor(animal),
+               offer_prob=as.factor(offer_prob))
+head(data)
+```
+
+```{r clean_data, cache=FALSE}
+event_taus = list('tone_onset'=c(0, 1),
+                  'acceptTJ'=c(-1, 1.5),
+                  'rejectTJ'=c(-1, 1.5),
+                  'quit'=c(-1.5, 1),
+                  'rewardT'=c(0, 1.5),
+                  'unrewardT'=c(0, 1.5),
+                  'collection'=c(0, 1))
+
+str.contains <- function(s, sub) {
+  return(grepl(sub, s, fixed=TRUE))
+}
+strip.event_prefix <- function(s) {
+  if (str.contains(s, 'next_') | str.contains(s, 'prev_')) {
+    return(substr(s, 6, nchar(s)))
+  } else {
+    return(s)
+  }
+}
+
+get_indic_vars <- function(df) {
+  evcs <- colnames(df)[12:ncol(df)]
+  ind_lst <- list()
+  for (c in evcs) {
+    ev_taus <- event_taus[[strip.event_prefix(c)]]
+    vs <- df[,c]
+    ind_lst[[paste0('I__', c)]] <- as.double((!is.na(vs)) & (vs>= ev_taus[1]) & (vs <= ev_taus[2]))
+  }
+  return(as.data.frame(do.call(cbind, ind_lst)))
+}
+
+source.unreg <- "all_data_gam_mat_unreg.csv"
+data.raw <- read.table(paste0(data_root, source.unreg), sep=",", header=TRUE)
+data <- cbind(data, get_indic_vars(data.raw))
+data$tentry <- if_else(data$ACC==1, 
+                       data$acceptTJ, data$rejectTJ)
+```
+
+
+
+```{r normalvis, cache=FALSE}
+# d1_left <- data %>% filter((cell_type=='D1') & (hemi=='left'))
+# ggplot(d1_left, aes(x=ZdF)) + geom_histogram()
+# qqnorm(d1_left$ZdF, pch=1, frame=FALSE)
+# qqline(d1_left$ZdF, col="steelblue", lwd=2)
+```
+
+
+## Problem Outline:
+
+We have aligned neural and behavioral data from the RR task combining all animals, session, and `hemi`. We want to identify in `D1, A2A`, `left, right` hemisphere respectively, how are neural data represented in neural traces `ZdF`. We divide our goals into several steps
+
+1.  First we focus on single session analysis
+-   Each analysis we follow the following steps
+  * fit GAM, check residual, record GCV score
+  * plot partial dependence
+  * `vis.gam` for tensor obj if needed
+-   Assumption: $tau_0 = 0$ for each event. However GAM models may not be able to capture this due to identification problem. *A1*
+-   *m.naive1* Naive GAM, with tone_onset:acc + acc/reject movement, and offer tone information (A1)
+    -   compare without A1, using indicator variable instead. *m.naive0*
+-   GAM with previous trial event: `prev_reject, prev_reward` etc. *m.prev*
+- GAM with next trial event *m.next*
+- GAM with all events *m.full*
+2. Full session 
+3. GAMM
+
+```{r gam_examples, cache=FALSE}
+d1_left <- data %>% filter((cell_type=='D1') & (hemi=='left')) %>%
+        mutate(offer_prob=as.factor(offer_prob))
+d1left.s <- d1_left %>% filter(animal=='RRM030' & session=='Day149')
+ps_gam <- function (x) {
+  return(s(x, bs='ps', k=30))
+  
+}
+kspl = 50
+m.naive1 <- gam(
+  ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+    s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+    s(tone_onset, bs='ps', k=kspl, by=ACC) +
+    s(acceptTJ, bs='ps', k=kspl) +
+    s(rejectTJ, bs='ps', k=kspl),
+  data=d1left.s
+)
+# plot(m.naive1)
+# summary(m.naive1)
+# hist(d1left.s$ZdF)
+```
+
+
+```{r naive0, fig.height=6, fig.width=8, cache=FALSE}
+d1left.s0 <- d1left.s
+d1left.s0$tentry <- if_else(d1left.s0$ACC==1, 
+                            d1left.s0$acceptTJ, d1left.s0$rejectTJ)
+m.naive0 <- gam(
+  ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+    s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+    s(tone_onset, bs='ps', k=kspl, by=ACC) +
+    s(tentry, bs='ps', k=kspl) +
+    s(tentry, bs='ps', k=kspl, by=ACC),
+  data=d1left.s0
+)
+pd<-plot(m.naive0, select=0)
+dlst <- gam.pdgather(pd)
+gam.ggplot(dlst)
+```
+
+
+
+
+```{r gamfuncs, fig.width=8, fig.height=6}
+
+assign.ylab <- function(ylab) {
+  colon <- ":"
+  if (grepl(colon, ylab, fixed=TRUE)) {
+    label <- strsplit(ylab, split=colon)[[1]][2]
+  } else {
+    label <- "base"
+  }
+  return(label)
+}
+
+gam.pdgather <- function(pd) {
+  # This function unpacks GAM plotting data and gathers them into 
+  # list of dataframes good for ggplot plotting
+  dlst <- list()
+  colon = ':'
+  for (i in 1:length(pd)) {
+    d <- pd[[i]]
+    group <-d$xlab
+    label <- assign.ylab(d$ylab)
+    if (group %in% names(dlst)) {
+      dlst[[group]][[label]] <- d$fit
+    } else {
+      xv <- d$x
+      dlst[[group]] <- list('x'=xv)
+      dlst[[group]][[label]] <- d$fit
+    }
+  }
+  return(dlst)
+}
+
+gam.ggplot <- function(pd.list) {
+  # takes in gathered gam plotting data and generates ggplots
+  plist <- list()
+  for(g in names(pd.list)) {
+    df <- as.data.frame(do.call(cbind, pd.list[[g]]))
+    colnames(df) <- names(pd.list[[g]])
+    cns <- colnames(df)
+    mut_cols <- cns[!(cns %in% c('x', 'base'))]
+    if ('base' %in% cns) {
+      df[,mut_cols] <- df[,mut_cols] + df[, 'base']
+    }
+    p <- gather(df, condition, ZdF, cns[cns != 'x']) %>%
+      ggplot(aes(x=x, y=ZdF, group=condition, color=condition)) +
+      geom_line() +
+      labs(title=g)+
+      theme(aspect.ratio = 0.8)
+    plist[[length(plist) + 1]] <- p
+  }
+  ncol <- ceiling(sqrt(length(plist)))
+  # grid.arrange(grobs=plist, ncol=ncol)
+  # return(wrap_plots(plist) +
+  #          theme(plot.margin = margin(20, 20, 20, 20),
+  #          # Adjust overall plot size
+  #          plot.background = element_rect(fill = "white", size = 1))
+  #        )
+  return(wrap_plots(plist, ncol=ncol))
+}
+
+run.gam <- function(data, formula, alias, ret_model=FALSE, plotpath=NULL) {
+  # gam function that takes in a formula and a dataset, and obtain gcv, rsq, plots
+  # alias organized as [roi]_[datascope]_[model]
+  m <- gam(eval(parse(text=formula)),
+    data=data)
+  if (ret_model) {
+    return(m)
+  } else {
+    dlst <- gam.pdgather(plot(m, select=0))
+    ps <- gam.ggplot(dlst)
+    fname <- paste0(alias, '.png')
+    if (!is.null(plotpath)){
+      len <- length(ps)
+      cs <- ceiling(sqrt(len))
+      rs <- ceiling(len/cs)
+      ggsave(paste0(plot_path, fname), ps, height=4*rs, width=4*cs)
+    }
+    s <- summary(m)
+    return(list('model'=alias, 'GCV'=s$sp.criterion[[1]], 'R2'=s$r.sq))
+  }
+}
+
+format.m.res <- function(res.lst){
+  return(paste0(res.lst[['alias']], 'GCV: ', round(res.lst[['GCV']], 4), 
+                ' R2: ', round(res.lst[['R2']])))
+}
+
+pack.list.df <- function(named_lst) {
+  result_df <- as.data.frame(named_lst)
+  cvals <- list()
+  cnames <- colnames(result_df)
+  for (c in cnames){
+    cvals[[length(cvals)+1]] <-do.call(rbind, result_df[,c])
+  }
+  result_df <- as.data.frame(do.call(cbind, cvals))
+  colnames(result_df) <- cnames
+  return(result_df)
+}  
+
+```
+
+```{r prep_gam_data} 
+rois <- list(
+  'd1L'= filter(data, (cell_type=='D1') & (hemi=='left')),
+  'd1R'=filter(data, (cell_type=='D1') & (hemi=='right')),
+  'd2L'=filter(data, (cell_type=='A2A') & (hemi=='left')),
+  'd2R'=filter(data, (cell_type=='A2A') & (hemi=='right'))
+)
+
+select.datascope <- function(d, scope, roi) {
+  "Returns the data matching to scope and roi"
+  if (grepl('d1', roi, fixed=TRUE)) {
+    anim <- 'RRM030'
+    sess <- 'Day159'
+  } else {
+    anim <- 'RRM032'
+    sess <- 'Day135'
+  }
+  if (scope=='anim') {
+    return(filter(d, animal==anim))
+  } else if (scope=='sess') {
+    return(filter(d, (animal==anim) & (session==sess)))
+  } else { # full
+    return(d)
+  }
+}
+```
+
+```{r naive_models}
+m.formulas <- list()
+kspl = 50 
+
+formula = "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+    s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+    s(tone_onset, bs='ps', k=kspl, by=ACC) +
+    I__acceptTJ + I__rejectTJ"
+
+m.formulas[['naive_I']] = formula
+
+formula = "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+    s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+    s(tone_onset, bs='ps', k=kspl, by=ACC) +
+    s(neur_time, bs='ps', k=kspl, by=I__acceptTJ) + 
+    s(neur_time, bs='ps', k=kspl, by=I__rejectTJ)"
+m.formulas[['naive_It']] = formula
+
+formula = "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+    s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+    s(tone_onset, bs='ps', k=kspl, by=ACC) +
+    s(acceptTJ, bs='ps', k=kspl) +
+    s(rejectTJ, bs='ps', k=kspl)"
+m.formulas[['naive_g']] = formula
+
+formula = "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+    s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+    s(tone_onset, bs='ps', k=kspl, by=ACC) +
+    s(acceptTJ, bs='ps', k=kspl, by=I__acceptTJ) +
+    s(rejectTJ, bs='ps', k=kspl, by=I__rejectTJ)"
+m.formulas[['naive_Ig']] = formula
+
+formula <- "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+    s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+    s(tone_onset, bs='ps', k=kspl, by=ACC) +
+    s(tentry, bs='ps', k=kspl) +
+    s(tentry, bs='ps', k=kspl, by=ACC)"
+m.formulas[['naive_IgM']] = formula
+
+rois <- list(
+  'd1L'= filter(data, (cell_type=='D1') & (hemi=='left')),
+  'd1R'=filter(data, (cell_type=='D1') & (hemi=='right')),
+  'd2L'=filter(data, (cell_type=='A2A') & (hemi=='left')),
+  'd2R'=filter(data, (cell_type=='A2A') & (hemi=='right'))
+)
+
+select.datascope <- function(d, scope, roi) {
+  "Returns the data matching to scope and roi"
+  if (grepl('d1', roi, fixed=TRUE)) {
+    anim <- 'RRM030'
+    sess <- 'Day159'
+  } else {
+    anim <- 'RRM032'
+    sess <- 'Day135'
+  }
+  if (scope=='anim') {
+    return(filter(d, animal==anim))
+  } else if (scope=='sess') {
+    return(filter(d, (animal==anim) & (session==sess)))
+  } else { # full
+    return(d)
+  }
+}
+
+gam.results <- list()
+
+for (roi in names(rois)) {
+  for(scope in c('sess', 'anim', 'full')) {
+    d <- select.datascope(rois[[roi]], scope, roi)
+    for (mname in names(m.formulas)) {
+      alias <- paste0(roi, '_', scope, '_', mname)
+      res<-run.gam(d, m.formulas[[mname]], alias, ret_model = FALSE, plotpath=plot_path)
+      gam.results[[length(gam.results)+1]] = res
+    }
+  }
+}
+gam.results <- do.call(rbind, gam.results)
+result_df <- pack.list.df(gam.results) %>%
+  separate(model, c('roi', 'datascope', 'model_class', 'model'), sep='_') %>%
+  mutate(model=paste0(model_class, '_', model)) %>%
+  arrange(roi, datascope, GCV)
+result_df
+```
+
+```{r rungam}
+m.formulas <- list()
+kspl = 50 
+
+# formula = "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+#     s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+#     s(tone_onset, bs='ps', k=kspl, by=ACC) +
+#     I__acceptTJ + I__rejectTJ"
+# 
+# m.formulas[['naive_I']] = formula
+# 
+# formula = "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+#     s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+#     s(tone_onset, bs='ps', k=kspl, by=ACC) +
+#     s(neur_time, bs='ps', k=kspl, by=I__acceptTJ) + 
+#     s(neur_time, bs='ps', k=kspl, by=I__rejectTJ)"
+# m.formulas[['naive_It']] = formula
+# 
+# formula = "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+#     s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+#     s(tone_onset, bs='ps', k=kspl, by=ACC) +
+#     s(acceptTJ, bs='ps', k=kspl) +
+#     s(rejectTJ, bs='ps', k=kspl)"
+# m.formulas[['naive_g']] = formula
+# 
+# formula = "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+#     s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+#     s(tone_onset, bs='ps', k=kspl, by=ACC) +
+#     s(acceptTJ, bs='ps', k=kspl, by=I__acceptTJ) +
+#     s(rejectTJ, bs='ps', k=kspl, by=I__rejectTJ)"
+# m.formulas[['naive_Ig']] = formula
+# 
+# formula <- "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+#     s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+#     s(tone_onset, bs='ps', k=kspl, by=ACC) +
+#     s(tentry, bs='ps', k=kspl) +
+#     s(tentry, bs='ps', k=kspl, by=ACC)"
+# m.formulas[['naive_IgM']] = formula
+
+# prev_tone_onset, prev_acceptTJ, prev_rejectTJ, prev_quit, prev_rewardT, prev_unrewardT
+# Ig, g, It
+
+formula <- "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+    s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+    s(tone_onset, bs='ps', k=kspl, by=ACC) +
+    s(acceptTJ, bs='ps', k=kspl, by=I__acceptTJ) +
+    s(rejectTJ, bs='ps', k=kspl, by=I__rejectTJ) +
+    s(neur_time, bs='ps', k=kspl, by=I__prev_tone_onset) +
+    s(neur_time, bs='ps', k=kspl, by=I__prev_acceptTJ) +
+    s(neur_time, bs='ps', k=kspl, by=I__prev_rejectTJ) +
+    s(neur_time, bs='ps', k=kspl, by=I__prev_quit) + 
+    s(neur_time, bs='ps', k=kspl, by=I__prev_rewardT) + 
+    s(neur_time, bs='ps', k=kspl, by=I__prev_unrewardT)
+"
+m.formulas[['prev_It']] = formula
+
+formula <- "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+    s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+    s(tone_onset, bs='ps', k=kspl, by=ACC) +
+    s(acceptTJ, bs='ps', k=kspl, by=I__acceptTJ) +
+    s(rejectTJ, bs='ps', k=kspl, by=I__rejectTJ) +
+    s(prev_tone_onset, bs='ps', k=kspl) +
+    s(prev_acceptTJ, bs='ps', k=kspl) +
+    s(prev_rejectTJ, bs='ps', k=kspl) +
+    s(prev_quit, bs='ps', k=kspl) + 
+    s(prev_rewardT, bs='ps', k=kspl) + 
+    s(prev_unrewardT, bs='ps', k=kspl)"
+
+m.formulas[['prev_g']] = formula
+
+formula <- "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+    s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+    s(tone_onset, bs='ps', k=kspl, by=ACC) +
+    s(acceptTJ, bs='ps', k=kspl, by=I__acceptTJ) +
+    s(rejectTJ, bs='ps', k=kspl, by=I__rejectTJ) +
+    s(prev_tone_onset, bs='ps', k=kspl, by=I__prev_tone_onset) +
+    s(prev_acceptTJ, bs='ps', k=kspl, by=I__prev_acceptTJ) +
+    s(prev_rejectTJ, bs='ps', k=kspl, by=I__prev_rejectTJ) +
+    s(prev_quit, bs='ps', k=kspl, by=I__prev_quit) + 
+    s(prev_rewardT, bs='ps', k=kspl, by=I__prev_rewardT) + 
+    s(prev_unrewardT, bs='ps', k=kspl, by=I__prev_unrewardT)"
+m.formulas[['prev_Ig']] = formula
+
+# next_tone_onset, next_acceptTJ, next_rejectTJ, next_quit
+
+formula <- "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+    s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+    s(tone_onset, bs='ps', k=kspl, by=ACC) +
+    s(acceptTJ, bs='ps', k=kspl, by=I__acceptTJ) +
+    s(rejectTJ, bs='ps', k=kspl, by=I__rejectTJ) +
+    s(neur_time, bs='ps', k=kspl, by=I__next_tone_onset) +
+    s(neur_time, bs='ps', k=kspl, by=I__next_acceptTJ) +
+    s(neur_time, bs='ps', k=kspl, by=I__next_rejectTJ) +
+    s(neur_time, bs='ps', k=kspl, by=I__next_quit)"
+m.formulas[['next_It']] = formula
+
+formula <- "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+    s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+    s(tone_onset, bs='ps', k=kspl, by=ACC) +
+    s(acceptTJ, bs='ps', k=kspl, by=I__acceptTJ) +
+    s(rejectTJ, bs='ps', k=kspl, by=I__rejectTJ) +
+    s(next_tone_onset, bs='ps', k=kspl) +
+    s(next_acceptTJ, bs='ps', k=kspl) +
+    s(next_rejectTJ, bs='ps', k=kspl) +
+    s(next_quit, bs='ps', k=kspl)"
+
+m.formulas[['next_g']] = formula
+
+formula <- "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+    s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+    s(tone_onset, bs='ps', k=kspl, by=ACC) +
+    s(acceptTJ, bs='ps', k=kspl, by=I__acceptTJ) +
+    s(rejectTJ, bs='ps', k=kspl, by=I__rejectTJ) +
+    s(next_tone_onset, bs='ps', k=kspl, by=I__next_tone_onset) +
+    s(next_acceptTJ, bs='ps', k=kspl, by=I__next_acceptTJ) +
+    s(next_rejectTJ, bs='ps', k=kspl, by=I__next_rejectTJ) +
+    s(next_quit, bs='ps', k=kspl, by=I__next_quit)"
+m.formulas[['next_Ig']] = formula
+
+gam.results <- list()
+
+for (roi in names(rois)) {
+  for(scope in c('sess', 'anim', 'full')) {
+    d <- select.datascope(rois[[roi]], scope, roi)
+    for (mname in names(m.formulas)) {
+      alias <- paste0(roi, '_', scope, '_', mname)
+      res<-run.gam(d, m.formulas[[mname]], alias, ret_model = FALSE, plotpath=plot_path)
+      gam.results[[length(gam.results)+1]] = res
+    }
+  }
+}
+gam.results <- do.call(rbind, gam.results)
+result_df <- pack.list.df(gam.results) %>%
+  separate(model, c('roi', 'datascope', 'model_class', 'model'), sep='_') %>%
+  mutate(model=paste0(model_class, '_', model)) %>%
+  arrange(roi, datascope, GCV)
+result_df
+```
+
+```{r more_models}
+# write.csv(result_df, paste0(data_root, 'gam_result_prevnext.csv'))
+
+m.formulas <- list()
+kspl = 50 
+
+formula <- "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+    s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+    s(tone_onset, bs='ps', k=kspl, by=ACC) +
+    s(acceptTJ, bs='ps', k=kspl, by=I__acceptTJ) +
+    s(rejectTJ, bs='ps', k=kspl, by=I__rejectTJ) +
+    s(neur_time, bs='ps', k=kspl, by=I__prev_tone_onset) +
+    s(neur_time, bs='ps', k=kspl, by=I__prev_acceptTJ) +
+    s(neur_time, bs='ps', k=kspl, by=I__prev_rejectTJ) +
+    s(neur_time, bs='ps', k=kspl, by=I__prev_quit) + 
+    s(neur_time, bs='ps', k=kspl, by=I__prev_rewardT) + 
+    s(neur_time, bs='ps', k=kspl, by=I__prev_unrewardT) + 
+    s(neur_time, bs='ps', k=kspl, by=I__next_tone_onset) +
+    s(neur_time, bs='ps', k=kspl, by=I__next_acceptTJ) +
+    s(neur_time, bs='ps', k=kspl, by=I__next_rejectTJ) +
+    s(neur_time, bs='ps', k=kspl, by=I__next_quit)"
+m.formulas[['combined_It']] = formula
+
+formula <- "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+    s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+    s(tone_onset, bs='ps', k=kspl, by=ACC) +
+    s(acceptTJ, bs='ps', k=kspl, by=I__acceptTJ) +
+    s(rejectTJ, bs='ps', k=kspl, by=I__rejectTJ) +
+    s(prev_tone_onset, bs='ps', k=kspl) +
+    s(prev_acceptTJ, bs='ps', k=kspl) +
+    s(prev_rejectTJ, bs='ps', k=kspl) +
+    s(prev_quit, bs='ps', k=kspl) + 
+    s(prev_rewardT, bs='ps', k=kspl) + 
+    s(prev_unrewardT, bs='ps', k=kspl)+
+    s(next_tone_onset, bs='ps', k=kspl) +
+    s(next_acceptTJ, bs='ps', k=kspl) +
+    s(next_rejectTJ, bs='ps', k=kspl) +
+    s(next_quit, bs='ps', k=kspl)
+"
+m.formulas[['combined_g']] = formula
+
+formula <- "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+    s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+    s(tone_onset, bs='ps', k=kspl, by=ACC) +
+    s(acceptTJ, bs='ps', k=kspl, by=I__acceptTJ) +
+    s(rejectTJ, bs='ps', k=kspl, by=I__rejectTJ) +
+    s(prev_tone_onset, bs='ps', k=kspl, by=I__prev_tone_onset) +
+    s(prev_acceptTJ, bs='ps', k=kspl, by=I__prev_acceptTJ) +
+    s(prev_rejectTJ, bs='ps', k=kspl, by=I__prev_rejectTJ) +
+    s(prev_quit, bs='ps', k=kspl, by=I__prev_quit) + 
+    s(prev_rewardT, bs='ps', k=kspl, by=I__prev_rewardT) + 
+    s(prev_unrewardT, bs='ps', k=kspl, by=I__prev_unrewardT) +
+    s(next_tone_onset, bs='ps', k=kspl, by=I__next_tone_onset) +
+    s(next_acceptTJ, bs='ps', k=kspl, by=I__next_acceptTJ) +
+    s(next_rejectTJ, bs='ps', k=kspl, by=I__next_rejectTJ) +
+    s(next_quit, bs='ps', k=kspl, by=I__next_quit)
+"
+m.formulas[['combined_Ig']] = formula
+
+
+library(foreach)
+library(doParallel)
+cores= detectCores()
+print(paste0(cores, ' cores'))
+cl <- makeCluster(cores[1]-2)
+registerDoParallel(cl)
+d.scopes <- c('sess', 'anim', 'full')
+comb.groups <-expand.grid(names(rois), d.scopes)
+
+gam.results.complex <- foreach(i=1:length(comb.groups), 
+                               .combine=rbind,
+                               .packages = c('tidyverse', 'mgcv', 
+                                             'patchwork'),
+                               .export=c('kspl', 'comb.groups')) %dopar% {
+  roi <- as.character(comb.groups[i, 1])
+  scope <- as.character(comb.groups[i, 2])
+  # rlist <- c(roi, scope)
+  d <- select.datascope(rois[[roi]], scope, roi)
+  gam.rs <- list()
+  for (mname in names(m.formulas)) {
+    alias <- paste0(roi, '_', scope, '_', mname)
+    res<-run.gam(d, m.formulas[[mname]], alias, ret_model = FALSE, plotpath=plot_path)
+    gam.rs[[length(gam.rs)+1]] = res
+  }
+  rlist <- do.call(rbind, gam.rs)
+  return(rlist)
+}
+
+result_df.complex <- pack.list.df(gam.results.complex) %>%
+  separate(model, c('roi', 'datascope', 'model_class', 'model'), sep='_') %>%
+  mutate(model=paste0(model_class, '_', model)) %>%
+  arrange(roi, datascope, GCV)
+write.csv(result_df.complex, paste0(data_root, 'gam_result_combined.csv'))
+result_df.complex
+```
+
+```{r example, fig.height=40, fig.width=40}
+kspl <- 50
+formula <- "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+    s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+    s(tone_onset, bs='ps', k=kspl, by=ACC) +
+    s(acceptTJ, bs='ps', k=kspl, by=I__acceptTJ) +
+    s(rejectTJ, bs='ps', k=kspl, by=I__rejectTJ) +
+    s(prev_tone_onset, bs='ps', k=kspl) +
+    s(prev_acceptTJ, bs='ps', k=kspl) +
+    s(prev_rejectTJ, bs='ps', k=kspl) +
+    s(prev_quit, bs='ps', k=kspl) + 
+    s(prev_rewardT, bs='ps', k=kspl) + 
+    s(prev_unrewardT, bs='ps', k=kspl)+
+    s(next_tone_onset, bs='ps', k=kspl) +
+    s(next_acceptTJ, bs='ps', k=kspl) +
+    s(next_rejectTJ, bs='ps', k=kspl) +
+    s(next_quit, bs='ps', k=kspl)
+"
+roi <- 'd1L'
+scope <- 'sess'
+d <- select.datascope(rois[[roi]], scope, roi)
+mname <- 'combined_g'
+alias <- paste0(roi, '_', scope, '_', mname)
+m<-run.gam(d, formula, alias, ret_model = TRUE)
+dlst <- gam.pdgather(plot(m, select=0))
+ps <- gam.ggplot(dlst)
+ps
+
+```
+
+```{r}
+mgcv::gam.check(m)
+```
+
+
+
+```{r diagnose}
+result.cls <- c('gam_result_combined.csv',
+                'gam_result_naive.csv',
+                'gam_result_prevnext.csv')
+df.lsts <-list()
+for (rcls in result.cls) {
+  df.lsts[[length(df.lsts)+1]] <- read.csv(paste0(data_root, rcls))
+}
+result_df.meta <- do.call(rbind, df.lsts) %>% arrange(roi, datascope, GCV) %>% 
+  filter(datascope=='sess')
+result_df.meta             
+```
+
+```{r}
+kspl <- 50
+# formula <- "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+#     s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+#     s(tone_onset, bs='ps', k=kspl, by=ACC) +
+#     s(acceptTJ, bs='ps', k=kspl)+
+#     s(acceptTJ, bs='ps', k=kspl, by=as.factor(acceptTJ==0)) +
+#     s(rejectTJ, bs='ps', k=kspl)
+# "
+formula <- "ZdF ~ s(tone_onset, bs='ps', k=kspl) +
+    s(tone_onset, bs='ps', k=kspl, by=offer_prob) +
+    s(tone_onset, bs='ps', k=kspl, by=ACC) +
+    s(acceptTJ, bs='ps', k=kspl)+
+    s(acceptTJ, bs='ps', k=kspl, by=Iaccept0) +
+    s(rejectTJ, bs='ps', k=kspl)
+"
+roi <- 'd1L'
+scope <- 'sess'
+d <- select.datascope(rois[[roi]], scope, roi)
+mname <- 'combined_g'
+alias <- paste0(roi, '_', scope, '_', mname)
+m<-run.gam(d%>%mutate(Iaccept0=as.double(acceptTJ==0)), formula, alias, ret_model = TRUE)
+dlst <- gam.pdgather(plot(m, select=0))
+ps <- gam.ggplot(dlst) # compare indicator versus 
+ps
+```
+
+```{r practice}
+library(mgcv)
+# Function to choose lambda using GCV
+choose_lambda <- function(x, y, h_length=20, k=10, 
+                         lambda_seq=exp(seq(-10, 10, length=100))) {
+  # Setup initial model
+  tau <- seq(0, 1, length.out=h_length)
+  bp <- setup_basis_penalty(tau, k)
+  Z <- compute_Z(x, bp$X)
+  w <- rep(1, length(y))
+  b <- rep(0, ncol(Z))
+  
+  # Function to compute GCV for given lambda
+  compute_gcv <- function(lambda) {
+    fit <- pcls(y, Z, w, bp$S, lambda, b)
+    yhat <- Z %*% fit
+    n <- length(y)
+    # Effective degrees of freedom
+    A <- solve(crossprod(Z) + lambda * bp$S)
+    df <- sum(diag(Z %*% A %*% t(Z)))
+    # GCV score
+    gcv <- mean((y - yhat)^2) / (1 - df/n)^2
+    return(gcv)
+  }
+  
+  # Find best lambda
+  gcv_scores <- sapply(lambda_seq, compute_gcv)
+  best_lambda <- lambda_seq[which.min(gcv_scores)]
+  
+  return(best_lambda)
+}
+
+# Function to create basis and penalty
+setup_basis_penalty <- function(tau, k=10) {
+  # Create smooth specification
+  sm <- smoothCon(s(tau, k=k, bs="cr", m=2), 
+                  data=data.frame(tau=tau))[[1]]
+  return(sm)
+}
+
+# Function to compute convolution matrix Z
+compute_Z <- function(x, basis_matrix) {
+  n <- length(x)
+  k <- ncol(basis_matrix)
+  Z <- matrix(0, nrow=n, ncol=k)
+  
+  # For each basis function
+  for(j in 1:k) {
+    phi_j <- basis_matrix[,j]
+    # Compute convolution with x
+    for(t in 1:n) {
+      max_lag <- min(t, length(phi_j))
+      Z[t,j] <- sum(x[t - seq_len(max_lag) + 1] * phi_j[seq_len(max_lag)])
+    }
+  }
+  return(Z)
+}
+
+# Function to fit model using pcls
+fit_conv_pcls <- function(x, y, h_length=20, k=10, sp=1) {
+  # Setup basis and penalty
+  # print(sp)
+  tau <- seq(0, 1, length.out=h_length)
+  sm <- setup_basis_penalty(tau, k)
+  
+  # Compute Z matrix (our design matrix)
+  Z <- compute_Z(x, sm$X)
+  # Z <- scale(Z)
+  
+  # Create the pcls input list
+  # M <- list(
+  #   y = y,                    # Response
+  #   w = rep(1, length(y)),   # Weights
+  #   X = Z,                    # Design matrix
+  #   C = matrix(0, 1, ncol(Z)),     # No equality constraints
+  #   S = sm$S,                # List of penalty matrices
+  #   off = 0,            # Offset for penalties
+  #   sp = sp,                 # Smoothing parameter
+  #   p = rnorm(ncol(Z), sd=0.01),     # Initial parameter values
+  #   Ain = matrix(0, 1, ncol(Z)),   # No inequality constraints
+  #   bin = rep(-10000, 1)         # No inequality constraints
+  # )
+  # Fit using pcls
+  #fit <- pcls(M)
+  fit<-mgcv::mgcv(y,Z,sp,sm$S,off=0)
+  
+  return(list(
+    coef = fit$b,
+    basis = sm$X,
+    tau = tau,
+    Z = Z
+  ))
+}
+
+# Simulation example
+set.seed(123)
+n <- 100
+h_length <- 20
+
+# Generate data
+x <- rnorm(n)
+tau <- seq(0, 1, length.out=h_length)
+h_true <- exp(-3*tau) * sin(2*pi*5*tau)
+
+# Create convolution matrix for data generation
+X <- matrix(0, nrow=n, ncol=h_length)
+for(i in 1:n) {
+  for(j in 1:min(i, h_length)) {
+    X[i,j] <- x[i-j+1]
+  }
+}
+y <- X %*% h_true + rnorm(n, sd=0.1)
+
+# Choose lambda using GCV
+# best_lambda <- choose_lambda(x, y, h_length)
+# fit <- pcls(y, w, w, bp$S, lambda, b)
+# print(paste("Best lambda:", best_lambda))
+
+# Fit model
+fit <- fit_conv_pcls(x, y, h_length, k=10)
+
+# Reconstruct h(tau)
+h_est <- fit$basis %*% fit$coef
+
+# Plot results
+par(mfrow=c(1,2))
+#Plot true vs estimated impulse response
+plot(tau, h_true, type='l', col='blue',
+     main='True vs Estimated Impulse Response',
+     xlab='tau', ylab='h(tau)')
+lines(tau, h_est, col='red', lty=2)
+legend('topright', legend=c('True', 'Estimated'),
+       col=c('blue', 'red'), lty=1:2)
+
+# Plot observed vs fitted
+y_fitted <- fit$Z %*% fit$coef
+plot(y, y_fitted,
+     main='Observed vs Fitted Values',
+     xlab='Observed', ylab='Fitted')
+abline(0, 1, col='red', lty=2)
+```

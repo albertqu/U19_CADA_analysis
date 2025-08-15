@@ -14,7 +14,8 @@ from utils import df_select_kwargs, RAND_STATE
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import logging
-
+from matplotlib.colors import Normalize
+import copy
 
 class PlotlyFig:
     # TODO: add automatic color palette
@@ -38,6 +39,7 @@ class PlotlyFig:
             go.Scatter(x=x, y=y, mode=mode, name=name, line=dict(color=color)),
             row=row,
             col=col,
+            **kwargs
         )
 
     def show(self):
@@ -434,8 +436,8 @@ def df_wide_heatmap(
     ax.set_yticks([0, len(heat_df) - 1])
     ax.set_yticklabels([1, len(heat_df)])
     times = np.sort(
-        np.core.defchararray.replace(
-            heat_cols, event + "_neur|", "", count=None
+        np.char.replace(
+            heat_cols, event + "_neur|", "", count=-1
         ).astype(float)
     )
     zero = np.where(times == 0)[0][0]
@@ -465,7 +467,6 @@ def df_wide_heatmap(
         **kwargs,
     )
     return ax
-
 
 def radius2marker_size(r):
     return (
@@ -534,7 +535,7 @@ def plot_nb_df_rr(nb_df, data_cols, idvars):
     )
 
 
-def plot_correlation(dataset: pd.DataFrame, dendo=True) -> None:
+def plot_correlation(dataset: pd.DataFrame, dendo=True, figsize=(12, 12)) -> None:
     corrs = dataset.corr(method="pearson")
     if np.any(corrs.isnull().values.ravel()):
         logging.warning("null entries in correlation matrix, check data")
@@ -544,7 +545,7 @@ def plot_correlation(dataset: pd.DataFrame, dendo=True) -> None:
         vmin=-1,
         vmax=1,
         cbar_kws={"label": "Correlation"},
-        figsize=(12, 12),
+        figsize=figsize,
     )
     corrmap.ax_row_dendrogram.set_visible(dendo)
     corrmap.ax_col_dendrogram.set_visible(dendo)
@@ -661,35 +662,153 @@ def get_sample_size_facegrid(
     sample_size_recursive(data, [c for c in [hue, style] if c is not None], prearg)
 
 
-def plot_neural_trial_average(
+def neural_dynamics_plot(
     nb_df,
     pse,
     event,
+    t_start=0,
+    t_end=1,
     hue=None,
-    style=None,
-    row=None,
-    col=None,
-    xlabel=None,
-    ylabel=None,
-    debase_event=None,
+    cropcol=None,
+    vmin=None,
+    vmax=None,
+    ax=None,
+    palette="coolwarm",
     **kwargs,
 ):
-    if debase_event:
-        nb_df = nb_df.copy()
-        pse.nbm.debase_gradient(nb_df, debase_event)
-    plot_df = pse.nbm.lag_wide_df(nb_df, {f"{event}_neur": {"long": True}}).reset_index(
-        drop=True
+    """
+    # TODO: adding offset column or z column
+    # not labeling after events for now
+    t_start, t_end (inclusive): range describing start end ending time
+    nb_df: dataframe with neural data
+    pse: PS_Expr object]
+    event: event for aligning to
+    hue: column in nb_df used for hue,
+    cropcol: column in nb_df used for cropping timestamps of the signal
+    """
+    neur_cols = pse.nbm.nb_cols[pse.nbm.default_ev_neur(event)]
+    col_sels = [
+        c
+        for c in neur_cols
+        if (pse.nbm.align_time_in(c, t_start, t_end, include_upper=True))
+    ]
+    xts = np.array([float(c.split("|")[1]) for c in col_sels])
+    total_cols = copy.deepcopy(col_sels)
+    if hue is not None:
+        total_cols.append(hue)
+    if cropcol is not None:
+        total_cols.append(cropcol)
+    data_df = nb_df.dropna(subset=total_cols).reset_index(drop=True)
+    data = data_df[col_sels].values
+    if hue is not None:
+        hue_vals = data_df[hue].values
+        vmin = np.min(hue_vals) if vmin is None else vmin
+        vmax = np.max(hue_vals) if vmax is None else vmax
+        norm_f = Normalize(vmin=vmin, vmax=vmax)
+        cmap = sns.color_palette(palette, as_cmap=True)
+        plt.colorbar(plt.cm.ScalarMappable(norm=norm_f, cmap=cmap), ax=ax, label=hue)
+
+    if cropcol is None:
+        crop_thres = np.full(len(data), np.max(xts))
+    else:
+        crop_thres = data_df[cropcol].values
+    if ax is None:
+        fig = plt.figure(figsize=(10, 10))
+        ax = plt.gca()
+
+    d = {"linewidth": 0.5}
+    d.update(kwargs)
+    for i in range(len(data)):
+        upper = crop_thres[i]
+        ix = xts[xts <= upper]
+        zs = data[i]
+        if hue is not None:
+            hue_val = hue_vals[i]
+            ax.plot(ix, zs[xts <= upper], ls="-", color=cmap(norm_f(hue_val)), **d)
+        else:
+            ax.plot(ix, zs[xts <= upper], ls="-", **d)
+    return ax
+
+
+def plot_neural_trial_average(
+    nb_df,
+    expr,
+    event,
+    row=None,
+    col=None,
+    hue=None,
+    style=None,
+    xlabel=None,
+    ylabel=None,
+    debase=False,
+    base_event=None,
+    base_ts=(0, 0),
+    t_range=None,
+    verbose=True,
+    aux_cols=None,
+    df_sel_func=None,
+    **kwargs,
+):
+    """
+    Function to plot trial average, using seaborn as underlying mechanism to automate figure multiplexing.
+    expr: neurobehavior experiment object used to organize data frames
+    event: str
+        behavior event to align
+    row, col, hue, style: str, denoting columns used for sub-dataframe selections
+        detail regarding multiplexing behavior refer to [`seaborn.relplot`](https://seaborn.pydata.org/generated/seaborn.relplot.html)
+    xlabel, ylabel: str
+        customary x/y label
+    debase: bool
+        whether to remove baseline data
+    base_event: str
+        baseline event to use as a baseline
+    base_ts: tuple
+        organized as (b_start, b_end), denoting starting time, end time to be used for baselining purpose, respectively.
+    t_range: tuple
+        organized as (t_start, t_end), denoting starting time, end time for neural event.
+    verbose: True
+        if True, print out sample size information
+    **kwargs:
+        optional keyword arguments for relplot
+    """
+    expr.nbm.nb_cols, expr.nbm.nb_lag_cols = expr.nbm.parse_nb_cols(nb_df)
+    value_cols = list(
+        set([p for p in [row, col, hue, style] if (p is not None)] + expr.nbm.uniq_cols)
     )
-    x = f"{event}_neur_time"
-    y = f"{event}_neur_ZdFF"
-    params = [x, y, row, col, hue, style]
-    sub_cols = [p for p in params if (p is not None)]
-    # processing plotting data
-    plot_df = pse.meta_safe_drop(plot_df[sub_cols]).reset_index(drop=True)
+    ev_cols = expr.nbm.nb_cols[f"{event}_neur"]
+    if t_range is not None:
+        value_cols = value_cols + [
+            c
+            for c in ev_cols
+            if expr.nbm.align_time_in(c, t_range[0], t_range[1], True)
+        ]
+    else:
+        value_cols = value_cols + ev_cols
+    if (base_event is not None) and (base_event != event):
+        value_cols = value_cols + [
+            c
+            for c in expr.nbm.nb_cols[f"{base_event}_neur"]
+            if expr.nbm.align_time_in(c, base_ts[0], base_ts[1], True)
+        ]
+    if aux_cols is not None:
+        value_cols = value_cols + aux_cols
+    nb_df = nb_df[value_cols].dropna().reset_index(drop=True)
+    expr.nbm.nb_cols, expr.nbm.nb_lag_cols = expr.nbm.parse_nb_cols(nb_df)
+    if debase:
+        expr.nbm.debase_gradient(nb_df, event, base_event, base_ts[0], base_ts[1])
+    plot_df = expr.nbm.lag_wide_df(
+        nb_df, {f"{event}_neur": {"long": True}}
+    ).reset_index(drop=True)
+    xcol = f"{event}_neur_time"
+    if df_sel_func is not None:
+        plot_df = df_sel_func(plot_df).reset_index(drop=True)
+
     g = sns.relplot(
         data=plot_df,
-        x=f"{event}_neur_time",
+        x=xcol,
         y=f"{event}_neur_ZdFF",
+        row=row,
+        col=col,
         hue=hue,
         style=style,
         kind="line",
@@ -704,6 +823,10 @@ def plot_neural_trial_average(
     else:
         g.set_xlabels(f"Time since {event} revealed (s)")
     g.map_dataframe(lambda data, **kwargs: plt.gca().axvline(0, c="gray", ls="--"))
+    if verbose:
+        g.map_dataframe(
+            get_sample_size_facegrid, row=row, col=col, hue=hue, style=style
+        )
     g.set_titles(row_template="{row_name}", col_template="{col_name}")
     sns.despine()
     return g

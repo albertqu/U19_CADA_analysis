@@ -8,7 +8,7 @@ from cogmodels.base import CogModel2ABT_BWQ, CogParam
 class RL_4p(CogModel2ABT_BWQ):
     def __init__(self):
         super().__init__()
-        self.fixed_params.update({"b0": 1, "q_init": 0, "gam": 1, "CF": False})
+        self.fixed_params.update({"b0": 1.0, "q_init": 0.0, "gam": 1.0, "CF": False})
         # used fixed for hyperparam_tuning
         self.param_dict = {
             "beta": CogParam(scipy.stats.expon(1), lb=0),
@@ -28,7 +28,7 @@ class RL_4p(CogModel2ABT_BWQ):
             params["ID"] == id, varp_list
         ].values.ravel()
         b0, q0, gam = [self.fixed_params[fp] for fp in fixp_list]
-        w0 = np.array([q0] * 2)
+        w0 = np.array([q0] * 2, dtype=float)
         return {
             "b0": b0,
             "w0": w0,
@@ -52,9 +52,9 @@ class RL_4p(CogModel2ABT_BWQ):
                 d_rpe = rpe_t[::-1]
         else:
             if c_t == 1:
-                d_rpe = np.array([0, rpe_t])
+                d_rpe = np.array([0.0, rpe_t])
             else:
-                d_rpe = np.array([rpe_t, 0])
+                d_rpe = np.array([rpe_t, 0.0])
         if "alpha" in params_i:
             alphas = params_i["alpha"]
         elif ("a_pos" in params_i) and ("a_neg" in params_i):
@@ -112,7 +112,7 @@ class RL_st(RL_4p):
         fixp_list = ["b0", "q_init", "gam"]
         alpha, beta, st = params.loc[params["ID"] == id, varp_list].values.ravel()
         b0, q0, gam = [self.fixed_params[fp] for fp in fixp_list]
-        w0 = np.array([q0] * 2)
+        w0 = np.array([q0] * 2, dtype=float)
         return {"b0": b0, "w0": w0, "gam": gam, "alpha": alpha, "beta": beta, "st": st}
 
 
@@ -139,7 +139,7 @@ class RL(RL_4p):
         fixp_list = ["b0", "q_init", "gam"]
         alpha, beta = params.loc[params["ID"] == id, varp_list].values.ravel()
         b0, q0, gam = [self.fixed_params[fp] for fp in fixp_list]
-        w0 = np.array([q0] * 2)
+        w0 = np.array([q0] * 2, dtype=float)
         return {"b0": b0, "w0": w0, "gam": gam, "alpha": alpha, "beta": beta}
 
     def get_proba(self, data, params=None):
@@ -205,7 +205,7 @@ class RL_Forgetting(RL_4p):
         fixp_list = ["b0", "q_init", "gam", "st"]
         var_dict = params.loc[params["ID"] == id, varp_list].iloc[0].to_dict()
         w0_arr = [self.fixed_params["q_init"]] * 2
-        w0 = np.array(w0_arr)
+        w0 = np.array(w0_arr, dtype=float)
         d = {"w0": w0}
         d.update({fp: self.fixed_params[fp] for fp in fixp_list})
         d.update(var_dict)
@@ -252,7 +252,7 @@ class RL_Forgetting3p(RL_4p):
         fixp_list = ["b0", "q_init", "gam", "st"]
         var_dict = params.loc[params["ID"] == id, varp_list].iloc[0].to_dict()
         w0_arr = [self.fixed_params["q_init"]] * 2
-        w0 = np.array(w0_arr)
+        w0 = np.array(w0_arr, dtype=float)
         d = {"w0": w0}
         d.update({fp: self.fixed_params[fp] for fp in fixp_list})
         d.update(var_dict)
@@ -289,7 +289,7 @@ class RL_FQST(RL_4p):
         fixp_list = ["b0", "q_init", "gam"]
         var_dict = params.loc[params["ID"] == id, varp_list].iloc[0].to_dict()
         w0_arr = [self.fixed_params["q_init"]] * 2
-        w0 = np.array(w0_arr)
+        w0 = np.array(w0_arr, dtype=float)
         d = {"w0": w0}
         d.update({fp: self.fixed_params[fp] for fp in fixp_list})
         d.update(var_dict)

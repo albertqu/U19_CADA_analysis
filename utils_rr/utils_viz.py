@@ -2,6 +2,60 @@ import seaborn as sns
 from nb_viz import get_sample_size_facegrid
 import matplotlib.pyplot as plt
 import pandas as pd
+import numpy as np
+
+def fig_subplots_best_dim(n, width=5, height= 3):
+    col = int(np.ceil(np.sqrt(n)))
+    row = int(np.ceil(n / col))
+    fig, axes = plt.subplots(row, col, figsize=(col * width, row * height))
+    return fig, axes
+
+def visualize_model_posthoc_loss(model, X, y, aux_df, aux_cols, endog_vars, 
+                                 loss_type='clf'):
+    """
+    Analyze posthoc prediction loss w.r.t. auxiliary (excluded) features to understand what features need to be 
+    further included to improve prediction
+
+    Parameters
+    ----------  
+    model : sklearn model
+    X : pd.DataFrame
+    y : pd.Series    
+    aux_df : pd.DataFrame
+    aux_cols : list
+        list of columns in aux_df needed for analysis
+    endog_vars : list
+        list of columns in X needed for analysis
+    loss_type: str
+        'clf', 'reg_abs', 'reg_residual'
+    """
+    posthoc_df = pd.concat([X, y], axis=1)
+    posthoc_df[aux_cols] = aux_df.iloc[X.index][aux_cols]
+    y_vec = y.values.ravel()
+    model.fit(X, y_vec)
+    if loss_type == 'clf':
+        y_proba = model.predict_proba(X)[:, 1]
+        loss = -y_vec * np.log(y_proba) - (1 - y_vec) * np.log(1 - y_proba)
+    elif loss_type == 'reg_abs':
+        y_pred = model.predict(X)
+        loss = np.abs(y_vec - y_pred)
+    elif loss_type == 'reg_resid':
+        y_pred = model.predict(X)
+        loss = y_vec - y_pred
+    posthoc_df['loss'] = loss
+    fig, axes = fig_subplots_best_dim(len(aux_cols), width=5, height= 3)
+    axes = axes.ravel()
+    for i, col in enumerate(aux_cols+endog_vars):
+        sns.scatterplot(ax=axes[i], data=posthoc_df, x=col, y='loss', s=20, alpha=0.5, color='gray')
+        sns.regplot(ax=axes[i], data=posthoc_df, x=col, y='loss', scatter=False, lowess=True, line_kws={'color':'k', 'linewidth':2})
+        axes[i].set_title(col)
+        axes[i].set_xlabel(col)
+        axes[i].set_ylabel('loss')
+    for j in range(i+1, len(aux_cols)):
+        axes[j].set_visible(False)
+    sns.despine()
+    fig.subplots_adjust(hspace=0.6)
+    return fig
 
 
 def plot_neural_trial_average(
@@ -63,6 +117,7 @@ def plot_neural_trial_average(
             if expr.nbm.align_time_in(c, base_ts[0], base_ts[1], True)
         ]
     nb_df = nb_df[value_cols].dropna().reset_index(drop=True)
+    expr.nbm.nb_cols, expr.nbm.nb_lag_cols = expr.nbm.parse_nb_cols(nb_df)
     if debase:
         expr.nbm.debase_gradient(nb_df, event, base_event, base_ts[0], base_ts[1])
     plot_df = expr.nbm.lag_wide_df(

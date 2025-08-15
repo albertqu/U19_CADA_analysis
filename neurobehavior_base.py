@@ -49,6 +49,14 @@ class NeuroBehaviorMat:
 
     @staticmethod
     def align_time_in(s, start, end, include_upper=False):
+        """ Static method for checking if neural column s is in the time window [start, end)
+        s: str
+            s should be in the format of "{event}_neur" or self.default_ev_neur(event)
+        start: float, start time
+        end: float, end time
+        include_upper: bool
+            boolean for including end time or not
+        """
         t = float(s.split("|")[1])
         if include_upper:
             return (t >= start) & (t <= end)
@@ -62,6 +70,7 @@ class NeuroBehaviorMat:
             return ev + "_neur"
 
     def parse_nb_cols(self, nb_df, ev_neur_func=None):
+        # rse.nbm.nb_cols, rse.nbm.nb_lag_cols = rse.nbm.parse_nb_cols(nb_df)
         # assume roi_long form
         if ev_neur_func is None:
             ev_neur = self.default_ev_neur
@@ -593,7 +602,7 @@ class PS_NBMat(NeuroBehaviorMat):
     def get_perc_trial_in_block(self, nb_df):
         # TODO: shift this function to behaviorMat
         def ptib(nb_df):
-            nb_df["perc_TIB"] = 0
+            nb_df["perc_TIB"] = 0.0
             for ibn in np.unique(nb_df["block_num"]):
                 bn_sel = nb_df["block_num"] == ibn
                 mTIB = np.max(nb_df.loc[bn_sel, "trial_in_block"].values)
@@ -909,7 +918,7 @@ class NBExperiment:
         return NotImplemented
 
     @abstractmethod
-    def encode_to_filename(self, animal, session, ftypes="processed_all"):
+    def encode_to_filename(self, animal, session, ftypes="processed_all", aux_folder=None):
         return NotImplemented
 
     def clear_cache(self, filetype):
@@ -1096,7 +1105,7 @@ class NBExperiment:
             specifies specific method used for preprocessing, check FP_quality_visualization function
             for more details.
         **kwargs: dataframe keyword selectors to specify sessions, e.g. cell_type='D1'
-        """
+        """ 
         proj_sel = self.meta["animal"].str.startswith(proj)
         meta_sel = df_select_kwargs(self.meta, return_index=True, **kwargs)
 
@@ -1122,8 +1131,8 @@ class PS_Expr(NBExperiment):
         super().__init__(folder, modeling_id, cache)
         self.folder = folder
         pathlist = folder.split(os.sep)[:-1] + ["plots"]
-        self.plot_path = oj(os.sep, *pathlist)
-        print(f"Changing plot_path as {self.plot_path}")
+        self.plot_path = os.sep.join(pathlist)
+        # print(f"Changing plot_path as {self.plot_path}")
         if not os.path.exists(self.plot_path):
             os.makedirs(self.plot_path)
         for kw in kwargs:
@@ -1219,7 +1228,7 @@ class PS_Expr(NBExperiment):
             ps_series = None
         return bmat, ps_series
 
-    def encode_to_filename(self, animal, session, ftypes="processed_all"):
+    def encode_to_filename(self, animal, session, ftypes="processed_all", aux_folder=None):
         """Returns filenames requested by ftypes, or None if not found
         :param folder: str
                 folder for data storage
@@ -1240,7 +1249,10 @@ class PS_Expr(NBExperiment):
                 returns all 5 files in a dictionary; otherwise return all file types
                 in a dictionary, None if not found
         """
-        folder = self.folder
+        if aux_folder is not None:
+            folder = aux_folder
+        else:
+            folder = self.folder
         paths = [
             os.path.join(folder, animal, session),
             os.path.join(folder, animal + "_" + session),
@@ -1372,7 +1384,7 @@ class RR_Expr(NBExperiment):
             rr_series = None
         return bmat, rr_series
 
-    def encode_to_filename(self, animal, session, ftypes="all"):
+    def encode_to_filename(self, animal, session, ftypes="all", aux_folder=None):
         """
         :param folder: str
                 folder for data storage
@@ -1393,7 +1405,10 @@ class RR_Expr(NBExperiment):
                 returns all 5 files in a dictionary; otherwise return all file types
                 in a dictionary, None if not found
         """
-        folder = self.folder
+        if aux_folder is not None:
+            folder = aux_folder
+        else:
+            folder = self.folder
         # bfolder = oj(folder, 'RR_Behavior_Data')
         # fpfolder = oj(folder, 'RR_FP_Data')
         # paths = [os.path.join(bfolder, animal, session), os.path.join(bfolder, animal + '_' + session),

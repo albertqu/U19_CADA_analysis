@@ -43,8 +43,8 @@ function [out] = run_for_sessions_csv()
     warning('off', 'all');
     folder = 'Z:\2ABT\ProbSwitch';
 %     folder = '/Volumes/Wilbrecht_file_server/2ABT/ProbSwitch'
-%     csvfile = fullfile(folder, 'probswitch_neural_subset_RRM.csv');
-    csvfile = fullfile(folder, 'probswitch_neural_subset_BSD.csv');
+    csvfile = fullfile(folder, 'probswitch_neural_subset_RRM.csv');
+%     csvfile = fullfile(folder, 'probswitch_neural_subset_BSD.csv');
     expr_tb = readtable(csvfile);
 %     targ_etb = expr_tb((expr_tb.recorded==1) & strcmp(expr_tb.epoch, 'Probswitch'), :);
     targ_etb = expr_tb(strcmp(expr_tb.epoch, 'Probswitch'), :);

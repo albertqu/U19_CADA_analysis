@@ -213,13 +213,13 @@ class CogModel2ABT_BWQ(CogModel):
         # used fixed for hyperparam_tuning
 
     def latents_init(self, N):
-        qdiff = np.zeros(N)
+        qdiff = np.zeros(N, dtype=float)
         if self.fixed_params["CF"]:
-            rpe = np.zeros((N, 2))
+            rpe = np.zeros((N, 2), dtype=float)
         else:
-            rpe = np.zeros((N, 1))
-        b_arr = np.zeros(N)
-        w_arr = np.zeros((N, 2))
+            rpe = np.zeros((N, 1), dtype=float)
+        b_arr = np.zeros(N, dtype=float)
+        w_arr = np.zeros((N, 2), dtype=float)
         return qdiff, rpe, b_arr, w_arr
 
     @abstractmethod

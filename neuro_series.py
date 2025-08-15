@@ -352,9 +352,17 @@ class BonsaiFP3001(FPSeries):
         super().__init__(
             data_file, ts_file, trig_mode, animal, session, hazard, cache_folder
         )
-        data = pd.read_csv(
-            data_file, skiprows=1, names=["frame", "cam_time", "flag"] + self.rois
-        )
+        data = pd.read_csv(data_file)
+        colnames = ["frame", "cam_time", "flag"] + self.rois
+        # This solve addresses the difference in columns for new bonsai version
+        if data.shape[1] > len(colnames):
+            data = data.drop(columns=data.columns[3:8])
+        data.columns = colnames
+        for c in data.columns:
+            if data[c].dtype == object:
+                for i in range(len(data[c])):
+                    if isinstance(data[c].iat[i], str):
+                        data.iloc[i, c] = float(data.loc[i, c].replace(';', '').replace(':', ''))              
         data_ts = pd.read_csv(ts_file, names=["time"])
         data_fp = pd.concat([data, data_ts.time], axis=1)
         trig_flags = self.fp_flags[trig_mode]
