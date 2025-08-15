@@ -373,6 +373,34 @@ def clean_bonsai_artifacts():
     clean_file_with_keywords(sys.argv[1], ["rr_data", "rr_data_FP", "rr_video"])
 
 
+
+"""
+Functions to find PSW sessions and store in dataframe
+"""
+def find_psw_fp_sessions(root, pattern):
+    results = []
+    for f in os.listdir(root):
+        if os.path.isdir(os.path.join(root, f)):
+            rs = find_psw_fp_sessions(os.path.join(root, f))
+            results += rs
+        elif f.endswith('.csv') and ('_FP_' in f):
+            m = re.match(pattern, f)
+            if m is None:
+                print('anomaly', f)
+            else:
+                results.append([m.group(1), m.group(2), m.group(3), m.group(4)])
+    return results
+
+def psw_fp_session_df(root, pattern, out=None):
+    psw_fp_sessions = find_psw_fp_sessions(root, pattern)
+    fp_df = pd.DataFrame(psw_fp_sessions, columns=['animal', 'date', 'age', 'plug_in'])
+    fp_df['date'] = pd.to_datetime(fp_df['date'], format='%Y-%m-%d')
+    if out is not None:
+        fp_df.to_csv(out, index=False)
+    return fp_df
+    
+
+
 if __name__ == "__main__":
     # vid_root = r"Z:\Restaurant Row\Data"
     # data_root = r"D:\U19\data\RR\ARJ_raw"
