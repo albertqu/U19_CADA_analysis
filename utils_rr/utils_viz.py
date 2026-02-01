@@ -58,6 +58,63 @@ def visualize_model_posthoc_loss(model, X, y, aux_df, aux_cols, endog_vars,
     return fig
 
 
+def plot_rug_distribution_for_lineplots(df, aux, axes, row=None, row_orders=None, 
+                                        col=None, col_orders=None, rug_height=0.025, **kwargs):
+    """ 
+    show distribution of auxiliary variable `aux` to the line plots (usually neural plots)
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        dataframe containing the data to be plotted
+    row: str
+        name of row variable for facetgrid
+    col: str
+        name of column variable for facetgrid
+    aux : str
+        name of auxiliary variable
+    axes : matplotlib.Axes
+        axes object to plot on
+
+    Returns
+    -------
+    axes : matplotlib.Axes
+        axes object with rug plot
+    """
+    assert row is not None or col is not None, "either row or col must be specified in a 2D facetgrid"
+    for i in range(axes.shape[0]):
+        for j in range(axes.shape[1]):
+            ax = axes[i, j]
+            if row is None:
+                sns.rugplot(df.loc[(df[col] == col_orders[j])], x=aux, 
+                            height=rug_height, color='g', ax=ax, **kwargs)
+            elif col is None:
+                sns.rugplot(df.loc[(df[row] == row_orders[i])], x=aux, 
+                            height=rug_height, color='g', ax=ax, **kwargs)
+            else:
+                sns.rugplot(df.loc[(df[row] == row_orders[i]) & 
+                                   (df[col] == col_orders[j])], x=aux, 
+                                   height=rug_height, color='g', ax=ax, **kwargs)
+    return axes
+
+def plot_timeplot_sampling_density(data=None, event='event', trange=None, factor=0.1, color='blue', **kwargs):
+    ax = plt.gca()
+    ecol = event + '_neur_time'
+
+    import scipy.stats
+    if trange is not None:
+        data = data[(data[ecol] >= trange[0]) & (data[ecol] <= trange[1])]
+    xmin, xmax = data[ecol].min(), data[ecol].max()
+    xs = np.linspace(xmin, xmax, 100)
+    kde_line = scipy.stats.gaussian_kde(data[ecol].values)(xs)
+    ymin, ymax = ax.get_ylim()
+    yrange = ymax - ymin
+    ys = kde_line / np.max(kde_line) * yrange * factor + ymin
+    print(xs.shape, ys.shape)
+    ax.plot(xs, ys, color=color, **kwargs)
+    ax.fill_between(xs, ys, np.ones(len(ys)) * ymin, color=color, alpha=0.2)
+    return ax
+
 def plot_neural_trial_average(
     nb_df,
     expr,

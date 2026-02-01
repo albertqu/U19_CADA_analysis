@@ -56,6 +56,20 @@ def nonparam_anova(df, x, y):
     s_ij, p_ij = stats.kruskal(*[df.loc[df[x] == xval, y].values for xval in xvals])
     return s_ij, p_ij
 
+def permutation_anova(df, x, y, n_perm=1000):
+    xvals = df[x].unique()
+    groups = [df.loc[df[x] == xval, y].values for xval in xvals]
+    f_stat = lambda *xs: stats.f_oneway(*xs)[0] 
+    res = stats.permutation_test(groups, f_stat, n_resamples=n_perm,
+                                 vectorized=False, alternative='two-sided')
+    return res
+
+def parametric_anova_df(df, x, y):
+    
+    xvals = df[x].unique()
+    s_ij, p_ij = stats.f_oneway(*[df.loc[df[x] == xval, y].values for xval in xvals])
+    return s_ij, p_ij
+
 
 def nonparam_pair_test(df, dv, between, a, b=None, alternative="two-sided"):
     """Non-parametric paired test using df

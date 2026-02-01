@@ -747,6 +747,8 @@ def plot_neural_trial_average(
     verbose=True,
     aux_cols=None,
     df_sel_func=None,
+    plot_df_callback=None,
+    return_plot_df=False,
     **kwargs,
 ):
     """
@@ -802,7 +804,8 @@ def plot_neural_trial_average(
     xcol = f"{event}_neur_time"
     if df_sel_func is not None:
         plot_df = df_sel_func(plot_df).reset_index(drop=True)
-
+    if plot_df_callback is not None:
+        plot_df_callback(plot_df)
     g = sns.relplot(
         data=plot_df,
         x=xcol,
@@ -829,4 +832,64 @@ def plot_neural_trial_average(
         )
     g.set_titles(row_template="{row_name}", col_template="{col_name}")
     sns.despine()
+    if return_plot_df:
+        return g, plot_df
     return g
+
+def normalize_and_interp(df, time_col, value_col, tmin, tmax, dt=0.05):
+    from scipy.interpolate import make_interp_spline
+    df = df.sort_values(time_col)
+    ts = df[time_col].values
+    ys = df[value_col].values
+    ts_sel =(ts >= tmin-2*dt) & (ts <= tmax+2*dt)
+    spl = make_interp_spline(ts[ts_sel], ys[ts_sel], k=1)
+    new_ts = np.arange(tmin, tmax+dt, step=dt)
+    return pd.DataFrame({time_col: new_ts, value_col: spl(new_ts)})
+
+def plot_warped_df(plot_df, rse, event, row=None, col=None, hue=None, style=None, **kwargs):
+    xcol = f'{event}_neur_time'
+    rel_xcol = f'rel_{xcol}'
+    ycol = f'{event}_neur_ZdFF'
+    id_cols = rse.nbm.uniq_cols
+    # id_cols = ['animal', 'session', 'roi', 'trial']
+
+    plot_df[rel_xcol] = plot_df[xcol] / plot_df['slp_hall_time']
+    plot_df['curve_id'] = plot_df[id_cols].astype(str).agg('_'.join, axis=1)
+    group_cols = list(plot_df.columns.difference([xcol, ycol, rel_xcol] + id_cols))
+    plot_df_warped = plot_df[id_cols + [rel_xcol, ycol]].groupby(id_cols,
+                                                            as_index=True).apply(normalize_and_interp,
+                                                                                rel_xcol, ycol, 0, 0.95, include_groups=False).reset_index(level=-1, 
+                                                                                                                drop=True).reset_index()
+    plot_df_warped = plot_df_warped.merge(plot_df[group_cols + id_cols].drop_duplicates(), on=id_cols, how='left')
+
+    g = sns.relplot(
+        data=plot_df_warped,
+        x=rel_xcol,
+        y=f"{event}_neur_ZdFF",
+        row=row,
+        col=col,
+        hue=hue,
+        style=style,
+        kind='line',
+        **kwargs
+    )
+    return g, plot_df_warped
+
+
+def plot_timeplot_sampling_density(data=None, event='event', trange=None, factor=0.1, color='blue', **kwargs):
+    ax = plt.gca()
+    ecol = event + '_neur_time'
+
+    import scipy.stats
+    if trange is not None:
+        data = data[(data[ecol] >= trange[0]) & (data[ecol] <= trange[1])]
+    xmin, xmax = data[ecol].min(), data[ecol].max()
+    xs = np.linspace(xmin, xmax, 100)
+    kde_line = scipy.stats.gaussian_kde(data[ecol].values)(xs)
+    ymin, ymax = ax.get_ylim()
+    yrange = ymax - ymin
+    ys = kde_line / np.max(kde_line) * yrange * factor + ymin
+    print(xs.shape, ys.shape)
+    ax.plot(xs, ys, color=color, **kwargs)
+    ax.fill_between(xs, ys, np.ones(len(ys)) * ymin, color=color, alpha=0.2)
+    return ax

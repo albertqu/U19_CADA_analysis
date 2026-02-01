@@ -828,3 +828,7 @@ plot(y, y_fitted,
      xlab='Observed', ylab='Fitted')
 abline(0, 1, col='red', lty=2)
 ```
+```{r}
+m <- matrix(rnorm(200), nrow=10)
+apply(m,1,mean,na.rm=TRUE)
+```
